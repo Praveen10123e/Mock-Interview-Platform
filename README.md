@@ -13,7 +13,8 @@ This platform provides an automated, realistic technical mock interview environm
 3. **Behavioral / HR Interview**: Adaptive AI-driven dialogue assessing communication, problem-solving mindset, and workplace readiness.
 4. **Evidence-Based Assessment Reporting**: Transparent multi-factor competency evaluation synthesizing verified test metrics, complexity analysis, and behavioral transcripts into a 7-dimensional proficiency score.
 5. **AI Learning Assistant & "Ask About My Interview" Chatbot**: Context-aware AI tutor providing step-by-step problem breakdowns, mistake diagnostics, concept revision, and interactive practice.
-6. **Faculty & Administration Portal**: Comprehensive cohort monitoring, question bank authoring, candidate performance analytics, and custom template creation.
+6. **Government Naan Mudhalvan Course Recommendation Engine**: Automated post-assessment alignment suggesting official Tamil Nadu Naan Mudhalvan skilling courses mapped directly to the candidate's diagnosed weak topics.
+7. **Faculty & Administration Portal**: Comprehensive cohort monitoring, question bank authoring, candidate performance analytics, and custom template creation.
 
 ---
 
@@ -40,12 +41,22 @@ This platform provides an automated, realistic technical mock interview environm
 - **7-Dimension Competency Matrix**: Problem-Solving, Algorithmic Efficiency, Code Quality, Edge Case Handling, Communication Clarity, Conceptual Mastery, and Behavioral Aptitude.
 - Transparent mathematical formula display on candidate report cards.
 
-### 5. Interactive Post-Assessment AI Learning Assistant
+### 5. Post-Assessment Naan Mudhalvan Government Course Suggestions
+- **Automated Skill Gap Analysis**: Intelligently identifies candidate weak areas based on wrong aptitude answers, suboptimal algorithmic complexity (e.g. $O(n^2)$ vs $O(n)$), and communication gaps.
+- **Curated Tamil Nadu Naan Mudhalvan Course Alignment**: Recommends targeted government-backed skilling modules directly on the evaluation report, such as:
+  - *Advanced Data Structures & Algorithmic Problem Solving* (for low coding / efficiency scores)
+  - *Quantitative Aptitude & Logical Reasoning Mastery* (for aptitude gaps)
+  - *Python for Modern Software Engineering* (for syntax/implementation errors)
+  - *Corporate Readiness & Professional Communication* (for behavioral round improvement)
+  - *Cloud Architecture & DevOps Foundations* (for system design readiness)
+- **Direct Skill Upgradation Pathways**: Connects students to official Naan Mudhalvan skilling portal resources to close technical deficits.
+
+### 6. Interactive Post-Assessment AI Learning Assistant
 - Evidence-based chat interface allowing candidates to ask questions about their specific interview session.
 - Teaching modes: *Give me a Hint*, *Explain Solution*, *Teach Me From Basics*, *Explain My Mistake*, and *Generate Similar Practice Question*.
 - Interactive inline practice questions with instant evaluation.
 
-### 6. Faculty & Admin Management Dashboard
+### 7. Faculty & Admin Management Dashboard
 - Live interview session monitoring and detailed per-student report inspection.
 - Question Bank CRUD management with dynamic test-case authoring.
 - Assessment template configuration (Aptitude-only, Coding-only, Full-stack, Custom).
@@ -100,7 +111,8 @@ graph TD
     E --> F[Automated Evidence Collection]
     F --> G[Report Synthesis & 7-Dimension Scoring]
     G --> H[Final Assessment Report Card]
-    H --> I[AI Learning Assistant & Session Q&A]
+    H --> I[Weak Topic Diagnosis & Naan Mudhalvan Course Suggestions]
+    I --> J[AI Learning Assistant & Session Q&A]
 ```
 
 ---
