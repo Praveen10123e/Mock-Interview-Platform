@@ -68,34 +68,34 @@ This platform provides an automated, realistic technical mock interview environm
 The application is structured as a scalable monorepo comprising a React Single-Page Application (SPA) frontend, an Express API Gateway, and independent backend microservices communicating over RESTful APIs and Prisma ORM with PostgreSQL.
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Client Frontend                        │
-│             React + TypeScript + Vite + Tailwind            │
-└──────────────────────────────┬──────────────────────────────┘
-                               │ HTTP / WebSocket
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    API Gateway (Port 3000)                  │
-│             Reverse Proxy, Auth, Rate Limiting              │
-└──────┬──────────────┬──────────────┬──────────────┬─────────┘
-       │              │              │              │
-       ▼              ▼              ▼              ▼
-┌──────────────┐┌──────────────┐┌──────────────┐┌──────────────┐
-│ Auth Service ││ User Service ││  Interview   ││ Question     │
-│ (Port 3001)  ││ (Port 3002)  ││   Service    ││ Bank Service │
-│ JWT & RBAC   ││ Profile Mgmt ││ (Port 3004)  ││ (Port 3005)  │
-└──────┬───────┘└──────┬───────┘└──────┬───────┘└──────┬───────┘
-       │               │               │               │
-       └───────────────┼───────────────┴───────────────┘
-                       ▼
-┌─────────────────────────────────────────────────────────────┐
-│                       Judge Service                         │
-│ (Port 3006) - Universal Code Execution & Sandbox Engine     │
-└──────────────────────────────┬──────────────────────────────┘
-                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                 PostgreSQL Database (Prisma)                │
-└─────────────────────────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                                   Client Frontend                                      │
+│                      React + TypeScript + Vite + Tailwind CSS                          │
+└───────────────────────────────────────────┬────────────────────────────────────────────┘
+                                            │ HTTP / WebSocket
+                                            ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                                 API Gateway (Port 3000)                                │
+│                     Reverse Proxy, Authentication, Rate Limiting                       │
+└──────┬──────────────┬──────────────┬──────────────┬──────────────┬──────────────┬──────┘
+       │              │              │              │              │              │
+       ▼              ▼              ▼              ▼              ▼              ▼
+┌──────────────┐┌──────────────┐┌──────────────┐┌──────────────┐┌──────────────┐┌──────────────┐
+│ Auth Service ││ User Service ││  Interview   ││ Question     ││ Scoring &    ││ Recommend-   │
+│ (Port 3001)  ││ (Port 3002)  ││   Service    ││ Bank Service ││ Analytics    ││ ation Engine │
+│ JWT & RBAC   ││ Profile Mgmt ││ (Port 3004)  ││ (Port 3005)  ││ (Port 3007)  ││ (Port 3008)  │
+└──────┬───────┘└──────┬───────┘└──────┬───────┘└──────┬───────┘└──────┬───────┘└──────┬───────┘
+       │               │               │               │               │               │
+       └───────────────┼───────────────┴───────────────┼───────────────┴───────────────┘
+                       ▼                               ▼
+┌──────────────────────────────────────────────┐┌──────────────────────────────────────────────┐
+│                Judge Service                 ││      Naan Mudhalvan Course Engine            │
+│ (Port 3006) - Multi-Language Sandbox Engine  ││ Weak Topic Mapping & Govt Course Alignment   │
+└──────────────────────┬───────────────────────┘└──────────────────────┬───────────────────────┘
+                       ▼                                               ▼
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                              PostgreSQL Database (Prisma ORM)                          │
+└────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
 ---
@@ -104,15 +104,16 @@ The application is structured as a scalable monorepo comprising a React Single-P
 
 ```mermaid
 graph TD
-    A[Student Login] --> B[Interview Dashboard & Template Selection]
-    B --> C[Stage 1: Aptitude MCQ Round]
-    C --> D[Stage 2: Algorithmic Coding Round]
-    D --> E[Stage 3: Behavioral / HR Round]
-    E --> F[Automated Evidence Collection]
-    F --> G[Report Synthesis & 7-Dimension Scoring]
+    A[Student Login & Authentication] --> B[Interview Dashboard & Template Selection]
+    B --> C[Stage 1: Aptitude MCQ Round<br/><i>Timed Quantitative & Logical Questions</i>]
+    C --> D[Stage 2: Algorithmic Coding Round<br/><i>Multi-Language Execution & Hidden Test Suites</i>]
+    D --> E[Stage 3: Behavioral / HR Round<br/><i>Adaptive AI Dialogue & Communication Assessment</i>]
+    E --> F[Automated Session Evidence Collection]
+    F --> G[Report Synthesis & 7-Dimension Proficiency Scoring]
     G --> H[Final Assessment Report Card]
-    H --> I[Weak Topic Diagnosis & Naan Mudhalvan Course Suggestions]
-    I --> J[AI Learning Assistant & Session Q&A]
+    H --> I[Weak Topic Diagnosis<br/><i>Identifies Low-Scoring Topics & Code Inefficiencies</i>]
+    I --> J[Government Naan Mudhalvan Course Suggestions<br/><i>Official Targeted Tamil Nadu Skilling Modules</i>]
+    J --> K[AI Learning Assistant & Post-Interview Q&A Chatbot]
 ```
 
 ---
