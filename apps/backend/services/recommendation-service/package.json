@@ -1,0 +1,10 @@
+{
+  "name": "@nm/recommendation-service",
+  "version": "1.0.0",
+  "main": "src/server.ts",
+  "scripts": {
+    "build": "tsc"
+  },
+  "dependencies": {},
+  "devDependencies": {}
+}

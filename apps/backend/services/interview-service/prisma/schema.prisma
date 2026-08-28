@@ -1,0 +1,339 @@
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+  output = "../src/generated/client"
+}
+
+enum InterviewStateEnum {
+  DRAFT
+  SCHEDULED
+  WAITING
+  RUNNING
+  PAUSED
+  COMPLETED
+  CANCELLED
+  EXPIRED
+  ARCHIVED
+}
+
+model Interview {
+  id                  String             @id @default(uuid())
+  identityId          String             // String Reference
+  profileId           String?            // String Reference
+  templateId          String?            // String Reference
+  
+  title               String
+  interviewType       String
+  difficulty          String
+  programmingLanguage String?
+  
+  state               InterviewStateEnum @default(DRAFT)
+  
+  configuration       InterviewConfiguration?
+  session             InterviewSession?
+  metadata            InterviewMetadata?
+  candidateContext    InterviewCandidateContext?
+  
+  timelines           InterviewTimeline[]
+  snapshots           InterviewSnapshot[]
+  questions           InterviewQuestionReference[]
+  history             InterviewHistory[]
+  events              InterviewEvent[]
+
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+}
+
+model InterviewTemplate {
+  id                  String             @id @default(uuid())
+  name                String
+  description         String
+  interviewType       String             // PRACTICE, MOCK, TECHNICAL, HR, CUSTOM
+  difficulty          String             @default("MIXED")
+  duration            Int                @default(60) // in minutes
+  questionCount       Int                @default(0)
+  programmingLanguage String?
+  defaultConfiguration Json?
+  isActive            Boolean            @default(true)
+  createdBy           String?            // Faculty identityId
+  status              String             @default("PUBLISHED") // DRAFT, PUBLISHED, ARCHIVED
+  
+  questions           TemplateQuestionReference[]
+
+  createdAt           DateTime           @default(now())
+  updatedAt           DateTime           @updatedAt
+}
+
+model TemplateQuestionReference {
+  id          String            @id @default(uuid())
+  templateId  String
+  template    InterviewTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  questionId  String            // References QuestionBank question
+  order       Int
+  createdAt   DateTime          @default(now())
+
+  @@unique([templateId, questionId])
+  @@index([templateId])
+}
+
+model InterviewConfiguration {
+  id                  String             @id @default(uuid())
+  interviewId         String             @unique
+  interview           Interview          @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  
+  duration            Int                // in minutes
+  questionCount       Int
+  strictMode          Boolean            @default(false)
+  cameraRequired      Boolean            @default(false)
+  microphoneRequired  Boolean            @default(false)
+  fullscreenRequired  Boolean            @default(false)
+  tabSwitchingAllowed Boolean            @default(true)
+  autoSaveInterval    Int                @default(60) // seconds
+  heartbeatInterval   Int                @default(30) // seconds
+  maxPauseCount       Int                @default(3)
+  maxResumeCount      Int                @default(3)
+}
+
+model InterviewSession {
+  id                  String             @id @default(uuid())
+  interviewId         String             @unique
+  interview           Interview          @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  
+  startedAt           DateTime?
+  finishedAt          DateTime?
+  cancelledAt         DateTime?
+  lastActiveAt        DateTime?
+  
+  reportSnapshot      Json?
+  reportVersion       Int                @default(1)
+  finalizedAt         DateTime?
+
+  timer               InterviewTimer?
+  progress            InterviewProgress?
+  lock                InterviewLock?
+  focusViolations     InterviewFocusViolation[]
+}
+
+model InterviewTimer {
+  id                  String             @id @default(uuid())
+  sessionId           String             @unique
+  session             InterviewSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  remainingTime       Int                // in seconds
+  elapsedTime         Int                @default(0) // in seconds
+  pausedTime          Int                @default(0) // in seconds
+  resumeCount         Int                @default(0)
+  heartbeatTimestamp  DateTime?
+}
+
+model InterviewProgress {
+  id                  String             @id @default(uuid())
+  sessionId           String             @unique
+  session             InterviewSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  currentQuestionId   String?            // String Reference
+  questionsAnswered   Int                @default(0)
+  percentComplete     Float              @default(0)
+}
+
+model InterviewLock {
+  id                  String             @id @default(uuid())
+  sessionId           String             @unique
+  session             InterviewSession   @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  
+  lockedAt            DateTime           @default(now())
+  lockedBy            String             // e.g. JWT Token ID or IP to prevent duplicate tabs
+  expiresAt           DateTime
+}
+
+model InterviewTimeline {
+  id                  String             @id @default(uuid())
+  interviewId         String
+  interview           Interview          @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  
+  previousState       InterviewStateEnum?
+  newState            InterviewStateEnum
+  reason              String?
+  changedAt           DateTime           @default(now())
+}
+
+model InterviewSnapshot {
+  id                  String             @id @default(uuid())
+  interviewId         String
+  interview           Interview          @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  
+  snapshotNumber      Int
+  currentQuestionId   String?            // String Reference
+  progressPercent     Float
+  remainingTime       Int
+  state               InterviewStateEnum
+  metadata            Json?
+  
+  createdAt           DateTime           @default(now())
+}
+
+model InterviewQuestionReference {
+  id                  String             @id @default(uuid())
+  interviewId         String
+  interview           Interview          @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  
+  questionId          String             // String Reference to QuestionBank
+  order               Int
+  status              String             @default("PENDING") // PENDING, VIEWED, ANSWERED, SKIPPED
+  timeSpent           Int                @default(0) // seconds
+  assignedAt          DateTime           @default(now())
+  
+  answers             InterviewAnswerReference[]
+}
+
+model InterviewAnswerReference {
+  id                  String             @id @default(uuid())
+  questionRefId       String
+  questionRef         InterviewQuestionReference @relation(fields: [questionRefId], references: [id], onDelete: Cascade)
+  
+  answerId            String             // String Reference to Judge0/Submission
+  status              String             @default("SAVED") // SAVED, SUBMITTED
+  submittedAt         DateTime           @default(now())
+  executionReference  String?            // Reference to Execution engine
+}
+
+model InterviewCandidateContext {
+  id                  String             @id @default(uuid())
+  interviewId         String             @unique
+  interview           Interview          @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  
+  identityId          String             // String Reference
+  profileId           String?            // String Reference
+  preferredLanguage   String?
+  careerGoal          String?
+  experienceLevel     String?
+  preferredRole       String?
+}
+
+model InterviewMetadata {
+  id                  String             @id @default(uuid())
+  interviewId         String             @unique
+  interview           Interview          @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  
+  browser             String?
+  operatingSystem     String?
+  deviceType          String?
+  screenResolution    String?
+  timezone            String?
+  ipPlaceholder       String?
+  networkType         String?
+}
+
+model InterviewHistory {
+  id                  String             @id @default(uuid())
+  interviewId         String
+  interview           Interview          @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  
+  event               String
+  details             Json?
+  timestamp           DateTime           @default(now())
+}
+
+model InterviewEvent {
+  id                  String             @id @default(uuid())
+  interviewId         String
+  interview           Interview          @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  
+  eventType           String             // InterviewStarted, QuestionAssigned, etc.
+  payload             Json
+  publishedAt         DateTime           @default(now())
+}
+
+/// Persists the exact questions assigned to each round of an interview session.
+/// Enables refresh-safe question retrieval (same questions on every page load).
+model InterviewRoundAssignment {
+  id            String   @id @default(uuid())
+  interviewId   String
+  questionId    String   // actual questionId in Question Bank
+  questionRefId String   // reference ID sent by frontend
+  round         String   // APTITUDE | CODING | HR
+  position      Int      // 0-indexed order within round
+  createdAt     DateTime @default(now())
+
+  @@unique([interviewId, round, position])
+  @@unique([interviewId, questionRefId])
+  @@index([interviewId, round])
+}
+
+model InterviewExecutionRecord {
+  id                  String   @id @default(uuid())
+  sessionId           String
+  questionRefId       String
+  language            String
+  runMode             String   // RUN or SUBMIT
+  status              String
+  statusDescription   String?
+  passedCount         Int      @default(0)
+  totalCount          Int      @default(0)
+  score               Float    @default(0)
+  executionTime       Float    @default(0)
+  memory              Float    @default(0)
+  compileOutput       String?
+  primaryErrorType    String?
+  attemptNumber       Int
+
+  visiblePassedCount  Int      @default(0)
+  hiddenPassedCount   Int      @default(0)
+  visibleTotalCount   Int      @default(0)
+  hiddenTotalCount    Int      @default(0)
+
+  sourceCode          String?  // Exact submitted student source code
+  stdout              String?  // Program stdout output
+  stderr              String?  // Runtime / error output
+  testCaseResults     Json?    // Detailed test cases with input, expected, actual, passed, hidden
+
+  sourceCodeHash      String
+  sourceCodeLength    Int
+  changedFromPrevious Boolean
+
+  questionTitle       String
+  questionTopic       String?
+  questionTags        Json?
+  questionDifficulty  String
+
+  timestamp           DateTime @default(now())
+
+  @@index([sessionId])
+  @@index([sessionId, questionRefId])
+  @@index([timestamp])
+  @@unique([sessionId, questionRefId, attemptNumber])
+}
+
+model InterviewQuestionResult {
+  id                    String   @id @default(uuid())
+  sessionId             String
+  questionRefId         String
+  finalStatus           String   @default("NOT_ATTEMPTED")
+  finalScore            Float    @default(0)
+  totalScore            Float    @default(0)
+  passedCount           Int      @default(0)
+  totalCount            Int      @default(0)
+  latestRunRecordId     String?
+  latestSubmitRecordId  String?
+  finalizedAt           DateTime?
+
+  @@index([sessionId])
+  @@unique([sessionId, questionRefId])
+}
+
+model InterviewFocusViolation {
+  id              String   @id @default(uuid())
+  sessionId       String
+  session         InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  violationId     String   @unique
+  timestamp       DateTime @default(now())
+  durationMs      Int
+  visibilityState String
+  hasFocus        Boolean
+  
+  @@index([sessionId])
+}
