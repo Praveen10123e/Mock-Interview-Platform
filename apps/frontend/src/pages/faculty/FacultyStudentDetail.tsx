@@ -1,27 +1,21 @@
 import React from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
-  User,
   Mail,
   Phone,
   Building,
   GraduationCap,
   Calendar,
   Code2,
-  CheckCircle2,
   Clock,
   ArrowLeft,
   RefreshCw,
   AlertCircle,
-  FileCode2,
   Activity,
-  Award,
-  Sparkles,
 } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Skeleton } from '../../components/ui/skeleton';
-import { EmptyState } from '../../components/shared/EmptyState';
 import { useFacultyStudentDetail } from '../../api/faculty';
 
 export const FacultyStudentDetail: React.FC = () => {

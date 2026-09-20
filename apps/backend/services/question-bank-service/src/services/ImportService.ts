@@ -133,10 +133,10 @@ export class ImportService {
    */
   static async importCuratedDataset(filepath: string, filename: string): Promise<any> {
     const data = JSON.parse(fs.readFileSync(filepath, 'utf8'));
-    const questions = data.questions;
+    const questions = data.problems || data.questions;
 
     if (!Array.isArray(questions)) {
-      throw new Error('Invalid curated dataset format: missing questions array');
+      throw new Error('Invalid curated dataset format: missing problems/questions array');
     }
 
     const batch = await prisma.questionImportBatch.create({
@@ -151,7 +151,9 @@ export class ImportService {
       try {
         const mappedQuestion = MapperRegistry.map(record);
         // Override datasetName from file root if not mapped
-        if (!mappedQuestion.datasetName) mappedQuestion.datasetName = data.datasetName;
+        if (!mappedQuestion.datasetName) {
+          mappedQuestion.datasetName = data.dataset_name || data.datasetName || 'Curated - Full-Program Coding Interview Dataset';
+        }
         
         const sourceId = await this.getOrCreateSource(mappedQuestion.datasetName);
         await this.insertNormalizedQuestion(mappedQuestion, sourceId, batch.id);
@@ -160,7 +162,7 @@ export class ImportService {
         if (err.message === 'DUPLICATE') {
           skippedCount++;
         } else {
-          console.error(`Curated map/insert failed for record ID ${record.id}:`, err);
+          console.error(`Curated map/insert failed for record ID ${record.problem_id || record.id}:`, err);
           failedCount++;
         }
       }

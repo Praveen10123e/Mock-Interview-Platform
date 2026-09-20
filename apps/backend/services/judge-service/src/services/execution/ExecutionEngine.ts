@@ -47,11 +47,9 @@ function argToStdinLine(arg: any): string {
   if (Array.isArray(arg) && arg.length > 0 && arg.every((item) => typeof item === 'string')) {
     return `${arg.length}\n${arg.join('\n')}`;
   }
-  // 2D array of numbers: [[1, 2], [3, 4]] → "2 2\n1 2\n3 4"
+  // 2D array: serialize directly as JSON representation without inferring matrix dimensions
   if (Array.isArray(arg) && arg.length > 0 && Array.isArray(arg[0])) {
-    const rows = arg.length;
-    const cols = arg[0].length;
-    return `${rows} ${cols}\n${arg.map((r: any[]) => r.join(' ')).join('\n')}`;
+    return JSON.stringify(arg);
   }
   // Empty array
   if (Array.isArray(arg) && arg.length === 0) {
@@ -144,7 +142,30 @@ function extractArgs(rawInput: any): any[] {
 //   displayInput: human-readable representation for UI
 //   stdin: EXACT text that will be sent to Judge0
 // ============================================================
-export function normalizeTestInput(rawInput: any): NormalizedTestInput {
+export function normalizeTestInput(rawInput: any, executionType: string = 'STDIN_PROGRAM'): NormalizedTestInput {
+  // CONTRACT: For STDIN_PROGRAM, if rawInput is already a string, preserve it EXACTLY unchanged.
+  // There must be ZERO input transformation between testCases[].input and Judge0 stdin.
+  if (typeof rawInput === 'string') {
+    return { displayInput: rawInput, stdin: rawInput };
+  }
+
+  if (rawInput === null || rawInput === undefined) {
+    return { displayInput: '', stdin: '' };
+  }
+
+  // If rawInput is an object, check for single-key parameter wrappers
+  if (typeof rawInput === 'object' && !Array.isArray(rawInput)) {
+    const keys = Object.keys(rawInput);
+    if (keys.length === 1 && (keys[0] === 'intervals' || keys[0] === 'arg0' || keys[0] === 'input')) {
+      const inner = rawInput[keys[0]];
+      if (typeof inner === 'string') {
+        return { displayInput: inner, stdin: inner };
+      }
+      const jsonStr = JSON.stringify(inner);
+      return { displayInput: jsonStr, stdin: jsonStr };
+    }
+  }
+
   const args = extractArgs(rawInput);
 
   if (args.length === 0) {
@@ -416,15 +437,52 @@ export function areOutputsEqual(actual: string | null | undefined, expected: any
     if (linesActual.every((l, i) => l === linesExpected[i])) return true;
   }
 
+  // 8. Order-preserving whitespace-separated tokens comparison (preserves order, handles whitespace variations and float tolerance)
+  const actualTokens = normActual.split(/\s+/).filter(Boolean);
+  const expectedTokens = normExpected.split(/\s+/).filter(Boolean);
+  if (actualTokens.length === expectedTokens.length && actualTokens.length > 0) {
+    const tokensMatch = actualTokens.every((tok, idx) => {
+      const expTok = expectedTokens[idx];
+      if (tok === expTok) return true;
+      const numAct = Number(tok);
+      const numExp = Number(expTok);
+      if (!isNaN(numAct) && !isNaN(numExp) && Math.abs(numAct - numExp) <= 1e-5) return true;
+      return false;
+    });
+    if (tokensMatch) return true;
+  }
+
   return false;
 }
 
 // ============================================================
 // MAIN EXECUTION ENGINE
-// Pure competitive-programming stdin/stdout model
+// Pure competitive-programming stdin/stdout model.
+//
+// CONTRACT:
+//   sourceCode  → sent verbatim to Judge0 (NO wrapping, NO modification)
+//   tc.stdin    → sent verbatim as Judge0 stdin
+//   stdout      → compared against tc.expectedOutput
+//
+// starterCode is a display hint for the editor only.
+// It is NEVER used here. Only sourceCode (student submission) matters.
 // ============================================================
 export class ExecutionEngine {
   static async execute(payload: ExecutionPayload): Promise<ExecutionResult> {
+    // ── Execution Type Guard ─────────────────────────────────────────────────
+    // This engine ONLY supports STDIN_PROGRAM mode.
+    // sourceCode is sent verbatim to Judge0. No wrapping. No function injection.
+    const executionType = (payload as any).executionType ?? 'STDIN_PROGRAM';
+    if (executionType === 'FUNCTION_CALL') {
+      return {
+        success: false,
+        errorType: 'INVALID_QUESTION_CONFIGURATION',
+        message:
+          'FUNCTION_CALL execution type is not supported. Set executionType to STDIN_PROGRAM in the question dataset.',
+      };
+    }
+    // ────────────────────────────────────────────────────────────────────────
+
     const {
       runMode = 'SUBMIT',
       languageId,
@@ -446,29 +504,94 @@ export class ExecutionEngine {
       };
     }
 
-    // Custom input mode (sandbox/debug)
-    if (customInput !== undefined && (!rawTestCases || rawTestCases.length === 0)) {
-      const runnerResult = await TestCaseRunner.runSingle(sourceCode, languageId, customInput);
-      if (!runnerResult.success && runnerResult.errorType === 'COMPILATION_ERROR') {
+    // ============================================================
+    // 1. PURE CUSTOM INPUT MODE (Sandbox & Debugging)
+    // Does NOT load expected outputs, does NOT compare against test cases,
+    // does NOT calculate scores or verdicts.
+    // ============================================================
+    const isExplicitCustom = (runMode as string) === 'CUSTOM' || (runMode as string) === 'CUSTOM_RUN';
+    const isImplicitCustom = customInput !== undefined && customInput !== null && String(customInput).trim().length > 0 && runMode !== 'SUBMIT';
+
+    if (isExplicitCustom || isImplicitCustom) {
+      const stdinText = customInput !== undefined && customInput !== null ? String(customInput) : '';
+      const runnerResult = await TestCaseRunner.runSingle(sourceCode, languageId, stdinText);
+      const singleTime = runnerResult.time ? parseFloat(runnerResult.time) || 0 : 0;
+
+      // Status 6: Compilation Error (C, C++, Java) or Python Syntax/Indentation error
+      if (runnerResult.errorType === 'COMPILATION_ERROR' || runnerResult.status?.id === 6) {
         return {
           success: false,
+          runMode: 'CUSTOM',
+          executionStatus: 'COMPILATION_ERROR',
           errorType: 'COMPILATION_ERROR',
           message: runnerResult.message || 'Compilation failed.',
-          compileOutput: runnerResult.compile_output,
+          compileOutput: runnerResult.compile_output || runnerResult.stderr || '',
+          stdout: '',
+          stderr: runnerResult.stderr || runnerResult.compile_output || '',
+          customInput: stdinText,
+          language: langKey,
+          time: runnerResult.time || '0.000',
+          totalExecutionTime: singleTime,
+          memory: runnerResult.memory || 0,
+          peakMemory: runnerResult.memory || 0,
+          status: runnerResult.status || { id: 6, description: 'Compilation Error' },
         };
       }
-      const singleTime = runnerResult.time ? parseFloat(runnerResult.time) || 0 : 0;
+
+      // Status 5: Time Limit Exceeded
+      if (runnerResult.errorType === 'USER_CODE_TIME_LIMIT_EXCEEDED' || runnerResult.status?.id === 5) {
+        return {
+          success: false,
+          runMode: 'CUSTOM',
+          executionStatus: 'TIME_LIMIT_EXCEEDED',
+          errorType: 'TIME_LIMIT_EXCEEDED',
+          message: 'Your code exceeded the execution time limit.',
+          stdout: runnerResult.stdout || '',
+          stderr: 'Time Limit Exceeded',
+          customInput: stdinText,
+          language: langKey,
+          time: runnerResult.time || '0.000',
+          totalExecutionTime: singleTime,
+          memory: runnerResult.memory || 0,
+          peakMemory: runnerResult.memory || 0,
+          status: runnerResult.status || { id: 5, description: 'Time Limit Exceeded' },
+        };
+      }
+
+      // Status 7-12: Runtime Error
+      if (!runnerResult.success || (runnerResult.status?.id && runnerResult.status.id >= 7)) {
+        return {
+          success: false,
+          runMode: 'CUSTOM',
+          executionStatus: 'RUNTIME_ERROR',
+          errorType: 'RUNTIME_ERROR',
+          message: runnerResult.stderr || runnerResult.message || 'A runtime error occurred.',
+          stdout: runnerResult.stdout || '',
+          stderr: runnerResult.stderr || runnerResult.message || 'Runtime Error',
+          customInput: stdinText,
+          language: langKey,
+          time: runnerResult.time || '0.000',
+          totalExecutionTime: singleTime,
+          memory: runnerResult.memory || 0,
+          peakMemory: runnerResult.memory || 0,
+          status: runnerResult.status || { id: 11, description: 'Runtime Error' },
+        };
+      }
+
+      // Pure Execution Success
       return {
-        success: runnerResult.success,
-        runMode,
+        success: true,
+        runMode: 'CUSTOM',
+        executionStatus: 'SUCCESS',
         language: langKey,
-        stdout: runnerResult.stdout,
-        stderr: runnerResult.stderr,
+        stdout: runnerResult.stdout || '',
+        stderr: runnerResult.stderr || '',
+        customInput: stdinText,
         time: runnerResult.time || '0.000',
         totalExecutionTime: singleTime,
         memory: runnerResult.memory || 0,
         peakMemory: runnerResult.memory || 0,
-        status: runnerResult.status,
+        status: runnerResult.status || { id: 3, description: 'Accepted' },
       };
     }
 
@@ -477,11 +600,11 @@ export class ExecutionEngine {
     if (rawTestCases && rawTestCases.length > 0) {
       if (runMode === 'RUN') {
         const hasVisibilityMeta = rawTestCases.some(
-          (tc) => typeof tc.hidden === 'boolean' || typeof tc.visible === 'boolean'
+          (tc) => typeof tc.hidden === 'boolean' || typeof tc.visible === 'boolean' || (tc as any).visibility === 'VISIBLE'
         );
         if (hasVisibilityMeta) {
           activeCases = rawTestCases.filter(
-            (tc: any) => tc.hidden === false || tc.visible === true
+            (tc: any) => tc.hidden === false || tc.visible === true || tc.visibility === 'VISIBLE'
           );
         } else if (examples && examples.length > 0) {
           activeCases = rawTestCases.slice(0, Math.min(examples.length, rawTestCases.length));
@@ -537,11 +660,14 @@ export class ExecutionEngine {
       let stdin = '';
       let cleanDisplayInput = '';
 
-      if (tc.stdin !== undefined && tc.stdin !== null && String(tc.stdin).trim().length > 0) {
+      if (tc.stdin !== undefined && tc.stdin !== null) {
         stdin = String(tc.stdin);
         cleanDisplayInput = tc.displayInput !== undefined ? String(tc.displayInput) : (typeof rawInput === 'string' ? rawInput : JSON.stringify(rawInput));
+      } else if (executionType === 'STDIN_PROGRAM' && typeof rawInput === 'string') {
+        stdin = rawInput;
+        cleanDisplayInput = tc.displayInput !== undefined ? String(tc.displayInput) : rawInput;
       } else {
-        const normalizedInput = normalizeTestInput(rawInput);
+        const normalizedInput = normalizeTestInput(rawInput, executionType);
         cleanDisplayInput = tc.displayInput || normalizedInput.displayInput;
         stdin = normalizedInput.stdin;
       }
@@ -638,18 +764,9 @@ export class ExecutionEngine {
         expected: cleanExpected,
         actualOutput: actualDisplay,
         actual: actualDisplay,
-        hidden: !!tc.hidden,
+        visible: true,
         score: tcScore,
       };
-
-      // Scrub hidden test data on SUBMIT
-      if (runMode === 'SUBMIT' && tc.hidden) {
-        tcResult.input = '<hidden>';
-        tcResult.expected = '<hidden>';
-        tcResult.expectedOutput = '<hidden>';
-        tcResult.actual = isMatch ? '<hidden>' : 'Failed hidden test case';
-        tcResult.actualOutput = isMatch ? '<hidden>' : 'Failed hidden test case';
-      }
 
       results.push(tcResult);
     }

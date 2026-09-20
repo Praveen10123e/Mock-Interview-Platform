@@ -30,15 +30,9 @@ const SUPPORTED_LANGUAGES = [
   { id: 50, key: 'c',          name: 'C',          monaco: 'c' },
 ];
 
-function getDefaultStarterCode(langKey: string): string {
-  const templates: Record<string, string> = {
-    c: `#include <stdio.h>\n\nint main() {\n    // Read input from stdin\n    return 0;\n}\n`,
-    cpp: `#include <bits/stdc++.h>\nusing namespace std;\n\nint main() {\n    // Read input from stdin\n    return 0;\n}\n`,
-    java: `import java.util.*;\n\npublic class Main {\n    public static void main(String[] args) {\n        Scanner sc = new Scanner(System.in);\n        // Read input from stdin\n    }\n}\n`,
-    python: `# Read input from stdin\nimport sys\n\ndef solve():\n    lines = sys.stdin.read().split()\n    if not lines:\n        return\n    # Solution logic here\n\nif __name__ == '__main__':\n    solve()\n`,
-    javascript: `const fs = require("fs");\nconst input = fs.readFileSync(0, "utf8").trim();\n`,
-  };
-  return templates[langKey] || `// Write your ${langKey} solution here\n`;
+function getDefaultStarterCode(_langKey: string): string {
+  // Completely empty editor per full-program dataset specification
+  return '';
 }
 
 export const CodingWorkspace: React.FC<WorkspaceProps> = ({ question: rawQuestion }) => {
@@ -153,44 +147,20 @@ export const CodingWorkspace: React.FC<WorkspaceProps> = ({ question: rawQuestio
     setJudgeResponse(null);
 
     const isCustomRun = mode === 'RUN' && customInput.trim().length > 0;
-    const effectiveRunMode = isCustomRun ? 'CUSTOM_RUN' : mode;
-    setLastRunMode(effectiveRunMode);
+    const effectiveRunMode = isCustomRun ? 'CUSTOM' : mode;
+    setLastRunMode(effectiveRunMode as any);
 
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
     abortControllerRef.current = new AbortController();
 
-    // Prepare test cases
-    const allTestCases = question?.metadata?.jsonPayload?.testCases || [];
-    let activeCases = [];
-
-    if (mode === 'RUN') {
-      if (isCustomRun) {
-        activeCases = [
-          {
-            id: 'custom-stdin-tc',
-            input: customInput,
-            stdin: customInput,
-            expectedOutput: '',
-            hidden: false,
-            visible: true,
-          },
-        ];
-      } else {
-        const visible = allTestCases.filter((tc: any) => tc.hidden === false || tc.visible === true);
-        activeCases = visible.length > 0 ? visible : allTestCases.slice(0, 2);
-      }
-    } else {
-      activeCases = allTestCases;
-    }
-
     const currentLangKey = SUPPORTED_LANGUAGES.find((l) => l.id === languageId)?.key || 'python';
 
     try {
       const res = await executeCodeMutation.mutateAsync({
         executionMode: 'PRACTICE',
-        runMode: mode,
+        runMode: effectiveRunMode,
         sourceCode: code,
         languageId,
         customInput: isCustomRun ? customInput : undefined,
@@ -205,18 +175,24 @@ export const CodingWorkspace: React.FC<WorkspaceProps> = ({ question: rawQuestio
       setJudgeResponse(data);
 
       const isPass = data.success !== false && (data.allPassed || (data.results && data.results.every((r: any) => r.passed)));
-      const verdict = data.success === false
+      const verdict = isCustomRun
+        ? data.executionStatus || (data.success !== false ? 'SUCCESS' : (data.errorType || 'ERROR'))
+        : data.success === false
         ? data.errorType || 'ERROR'
         : isPass
         ? 'ACCEPTED'
         : 'WRONG_ANSWER';
 
-      const passedCount = data.passedCount !== undefined
+      const passedCount = isCustomRun
+        ? 0
+        : data.passedCount !== undefined
         ? data.passedCount
         : data.results?.filter((r: any) => r.passed).length || 0;
-      const totalCount = data.totalCount !== undefined
+      const totalCount = isCustomRun
+        ? 0
+        : data.totalCount !== undefined
         ? data.totalCount
-        : data.results?.length || (isCustomRun ? 0 : 1);
+        : data.results?.length || 0;
 
       // Record attempt
       addAttemptForQuestion(questionIdStr, {
@@ -232,8 +208,6 @@ export const CodingWorkspace: React.FC<WorkspaceProps> = ({ question: rawQuestio
 
       if (data.success === false) {
         setError(data.message || data.compileOutput || 'Execution failed');
-      } else if (data.results) {
-        setOutput(data.stdout || null);
       } else {
         setOutput(data.stdout || null);
       }
@@ -447,7 +421,7 @@ export const CodingWorkspace: React.FC<WorkspaceProps> = ({ question: rawQuestio
                   <Button
                     variant="secondary"
                     size="sm"
-                    className="h-7 px-3 text-xs font-semibold bg-blue-600/20 border border-blue-500/40 text-blue-400 hover:bg-blue-600/30 cursor-pointer"
+                    className="h-8 px-3 text-xs font-semibold"
                     onClick={handleRun}
                     leftIcon={<Play className="h-3 w-3 fill-current" />}
                   >
@@ -456,7 +430,7 @@ export const CodingWorkspace: React.FC<WorkspaceProps> = ({ question: rawQuestio
 
                   <Button
                     size="sm"
-                    className="h-7 px-3 text-xs font-semibold bg-purple-600 hover:bg-purple-500 text-white cursor-pointer"
+                    className="h-8 px-3 text-xs font-semibold"
                     onClick={handleSubmit}
                     leftIcon={<Send className="h-3 w-3" />}
                   >

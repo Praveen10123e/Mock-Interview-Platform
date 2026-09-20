@@ -38,10 +38,18 @@ export interface DetailedAptitudeAnalysis {
   storedExplanation: string | null;
 }
 
+import {
+  CodingDiagnosticEngine,
+  StructuredTestCaseResult,
+  FailedTestAnalysis,
+  ComplexityAnalysisResult,
+} from './CodingDiagnosticEngine';
+
 export interface DetailedCodingAnalysis {
   questionId: string;
   title: string;
   topic: string;
+  pattern?: string;
   difficulty: string;
   language: string;
   finalVerdict: string;
@@ -50,8 +58,19 @@ export interface DetailedCodingAnalysis {
   candidateTimeComplexity: string;
   candidateSpaceComplexity: string;
   expectedComplexity: string;
+  expectedSpaceComplexity?: string;
   approachClassification: 'Optimal' | 'Suboptimal' | 'Brute Force' | 'Syntax / Runtime Error' | 'Not Attempted';
   approachSummary: string;
+  submittedCode?: string | null;
+  compileOutput?: string | null;
+  runtimeError?: string | null;
+  testResults: StructuredTestCaseResult[];
+  failedTests: FailedTestAnalysis[];
+  whatYouDidCorrectly: string[];
+  whatWentWrong: string[];
+  howToFix: string[];
+  complexityAnalysis: ComplexityAnalysisResult;
+  keyLearning: string;
   betterApproach?: {
     suggestedComplexity: string;
     description: string;
@@ -64,6 +83,44 @@ export interface DetailedCodingAnalysis {
     suggestedFix: string;
   };
   optimalGuidance: string;
+  bestResult?: {
+    attemptNumber: number;
+    passedCount: number;
+    totalCount: number;
+    status: string;
+    score: number;
+    verdictText: string;
+  };
+  attempts?: Array<{
+    submissionId: string;
+    sessionId: string;
+    problemId: string;
+    attemptNumber: number;
+    runMode: 'RUN' | 'SUBMIT';
+    language: string;
+    sourceCode: string | null;
+    submittedAt: string;
+    status: string;
+    passedCount: number;
+    failedCount: number;
+    totalTests: number;
+    executionTime: number | null;
+    memory: number | null;
+    compileError: string | null;
+    runtimeError: string | null;
+    testResults: any[];
+    aiAnalysis?: any;
+  }>;
+  progression?: {
+    steps: Array<{
+      attemptNumber: number;
+      passedCount: number;
+      totalCount: number;
+      status: string;
+      symbol: string;
+    }>;
+    explanation: string;
+  };
 }
 
 export interface DetailedHRAnalysis {
@@ -196,76 +253,197 @@ export class ReportAnalysisService {
     );
 
     // 2. Coding Analysis
-    const codingAnalysis: DetailedCodingAnalysis[] = evidence.coding.problems.map((p) => {
-      const { candidateTime, candidateSpace, classification, approachSummary, betterApproach, errorExplanation, optimalGuidance } =
-        this.analyzeCodingProblem(p);
+    const codingAnalysis: DetailedCodingAnalysis[] = await Promise.all(
+      evidence.coding.problems.map(async (p) => {
+        // 1. Process attempts with cached AI analysis
+        const rawAttempts = p.attempts && p.attempts.length > 0 ? p.attempts : [];
+        const enrichedAttempts: any[] = [];
 
-      return {
-        questionId: p.questionId,
-        title: p.title,
-        topic: p.topic,
-        difficulty: p.difficulty,
-        language: p.language,
-        finalVerdict: p.finalVerdict,
-        testsPassed: p.testsPassed,
-        testsTotal: p.testsTotal,
-        candidateTimeComplexity: candidateTime,
-        candidateSpaceComplexity: candidateSpace,
-        expectedComplexity: p.expectedComplexity,
-        approachClassification: classification,
-        approachSummary,
-        betterApproach,
-        errorExplanation,
-        optimalGuidance,
-      };
-    });
+        for (const att of rawAttempts) {
+          let aiAnalysis = att.aiAnalysis;
+          if (!aiAnalysis) {
+            aiAnalysis = CodingDiagnosticEngine.analyzeAttempt(att, {
+              problemId: p.questionId,
+              title: p.title,
+              pattern: p.pattern,
+              topic: p.topic,
+              difficulty: p.difficulty,
+              constraints: p.constraints,
+              expectedComplexity: p.expectedComplexity,
+              expectedSpaceComplexity: p.expectedSpaceComplexity,
+              authoritativeTestCases: p.authoritativeTestCases,
+            });
 
-    // 3. HR Analysis
+            // Cache directly to InterviewExecutionRecord
+            try {
+              await (prisma as any).interviewExecutionRecord.update({
+                where: { id: att.submissionId },
+                data: { aiAnalysis },
+              });
+            } catch (cacheErr) {
+              console.warn(`Failed to cache AI analysis for attempt ${att.submissionId}:`, cacheErr);
+            }
+          }
+
+          enrichedAttempts.push({
+            ...att,
+            aiAnalysis,
+          });
+        }
+
+        // 2. Compute attempt progression
+        const steps = enrichedAttempts.map((att: any) => {
+          const total = att.totalTests ?? att.totalCount ?? p.totalTests ?? 0;
+          const isAcc = att.status === 'ACCEPTED' || att.status === 'PASSED' || (att.passedCount === total && total > 0);
+          const isPartial = !isAcc && att.passedCount > 0;
+          return {
+            attemptNumber: att.attemptNumber,
+            passedCount: att.passedCount,
+            totalCount: total,
+            status: isAcc ? 'ACCEPTED' : (isPartial ? 'PARTIAL' : 'WRONG_ANSWER'),
+            symbol: isAcc ? '✅' : (isPartial ? '⚠️' : '❌'),
+          };
+        });
+
+        let progressionExplanation = 'Single attempt recorded for this problem.';
+        if (steps.length > 1) {
+          const first = steps[0];
+          const last = steps[steps.length - 1];
+          if (last.passedCount > first.passedCount) {
+            progressionExplanation = `Passed tests improved from ${first.passedCount}/${first.totalCount} in Attempt 1 to ${last.passedCount}/${last.totalCount} in Attempt ${last.attemptNumber}.`;
+          } else if (last.status === 'ACCEPTED') {
+            progressionExplanation = `All test cases passed in Attempt ${last.attemptNumber}.`;
+          } else {
+            progressionExplanation = `Multiple attempts recorded with latest result passing ${last.passedCount}/${last.totalCount} test cases.`;
+          }
+        }
+
+        const diagnostic = CodingDiagnosticEngine.analyze(p);
+        const { candidateTime, candidateSpace, classification, approachSummary, betterApproach, errorExplanation, optimalGuidance } =
+          this.analyzeCodingProblem(p);
+
+        return {
+          questionId: p.questionId,
+          title: p.title,
+          topic: p.topic,
+          pattern: p.pattern,
+          difficulty: p.difficulty,
+          language: p.language,
+          finalVerdict: p.bestResult?.status || diagnostic.verdict,
+          testsPassed: p.bestResult?.passedCount ?? diagnostic.passedTests,
+          testsTotal: p.bestResult?.totalCount ?? diagnostic.totalTests,
+          candidateTimeComplexity: diagnostic.actualTimeComplexity,
+          candidateSpaceComplexity: diagnostic.actualSpaceComplexity,
+          expectedComplexity: p.expectedComplexity,
+          expectedSpaceComplexity: p.expectedSpaceComplexity,
+          approachClassification: classification,
+          approachSummary: diagnostic.complexityAnalysis.reason || approachSummary,
+          submittedCode: p.submittedCode,
+          compileOutput: p.compileOutput,
+          runtimeError: p.runtimeError,
+          testResults: diagnostic.testResults,
+          failedTests: diagnostic.failedTests,
+          whatYouDidCorrectly: diagnostic.whatYouDidCorrectly,
+          whatWentWrong: diagnostic.whatWentWrong,
+          howToFix: diagnostic.howToFix,
+          complexityAnalysis: diagnostic.complexityAnalysis,
+          keyLearning: diagnostic.keyLearning,
+          betterApproach: betterApproach || {
+            suggestedComplexity: diagnostic.optimalTimeComplexity,
+            description: diagnostic.complexityAnalysis.optimalApproach,
+            whyBetter: diagnostic.complexityAnalysis.reason,
+          },
+          errorExplanation,
+          optimalGuidance: diagnostic.keyLearning || optimalGuidance,
+          bestResult: p.bestResult || {
+            attemptNumber: 1,
+            passedCount: diagnostic.passedTests,
+            totalCount: diagnostic.totalTests,
+            status: diagnostic.verdict,
+            score: Math.round((diagnostic.passedTests / Math.max(1, diagnostic.totalTests)) * 100),
+            verdictText: `${diagnostic.passedTests}/${diagnostic.totalTests}`,
+          },
+          attempts: enrichedAttempts,
+          progression: {
+            steps,
+            explanation: progressionExplanation,
+          },
+        };
+      })
+    );
+
+    // 3. HR Analysis — use real HRInterviewEvaluation if available, fallback to heuristic
     const hrCandidateResponses = evidence.hr.transcript.filter((t) => t.role === 'candidate');
     const hrTotalWords = hrCandidateResponses.reduce((acc, r) => acc + r.content.split(/\s+/).length, 0);
     const avgWordsPerResponse = hrCandidateResponses.length > 0 ? Math.round(hrTotalWords / hrCandidateResponses.length) : 0;
 
+    // Try to fetch real AI-evaluated HR scores from HRInterviewEvaluation
     let hrScore = 0;
     let clarityScore = 0;
     let relevanceScore = 0;
+    let hrStrengths: string[] = [];
+    let hrImprovements: string[] = [];
+    let hrAiSummary = '';
+    let hrStarGuidance = 'When answering behavioral questions, use the STAR framework: Situation → Task → Action → Result.';
+    let hrFeedback = 'HR behavioral round was not completed.';
 
-    if (evidence.hr.status === 'COMPLETED') {
-      if (avgWordsPerResponse >= 30) {
-        hrScore = 88;
-        clarityScore = 90;
-        relevanceScore = 86;
-      } else if (avgWordsPerResponse >= 10) {
-        hrScore = 75;
-        clarityScore = 78;
-        relevanceScore = 72;
-      } else {
-        hrScore = 60;
-        clarityScore = 65;
-        relevanceScore = 60;
+    try {
+      const hrEval = await (prisma as any).hRInterviewEvaluation.findFirst({
+        where: { hrSession: { interviewId: evidence.interviewId } },
+        include: { hrSession: true },
+      });
+
+      if (hrEval && hrEval.overallScore > 0) {
+        hrScore = Math.round(hrEval.overallScore);
+        clarityScore = Math.round(hrEval.clarityScore);
+        relevanceScore = Math.round(hrEval.relevanceScore);
+        hrStrengths = Array.isArray(hrEval.strengths) ? hrEval.strengths as string[] : [];
+        hrImprovements = Array.isArray(hrEval.improvements) ? hrEval.improvements as string[] : [];
+        hrAiSummary = hrEval.aiSummary || '';
+        hrStarGuidance = hrEval.starGuidance || hrStarGuidance;
+        hrFeedback = hrEval.feedback || '';
+      } else if (evidence.hr.status === 'COMPLETED') {
+        // Heuristic fallback when HR was completed but no AI evaluation exists yet
+        if (avgWordsPerResponse >= 30) {
+          hrScore = 88; clarityScore = 90; relevanceScore = 86;
+        } else if (avgWordsPerResponse >= 10) {
+          hrScore = 75; clarityScore = 78; relevanceScore = 72;
+        } else {
+          hrScore = 60; clarityScore = 65; relevanceScore = 60;
+        }
+        hrFeedback = `Candidate participated in a behavioral interview dialogue (${hrCandidateResponses.length} responses recorded).`;
+        hrStrengths = ['Engaged across multiple dialogue turns', 'Maintained professional tone throughout'];
+        hrImprovements = ['Structure responses using the STAR framework', 'Quantify outcomes with specific metrics'];
+      }
+    } catch (hrEvalErr) {
+      // If DB lookup fails, use heuristic
+      if (evidence.hr.status === 'COMPLETED') {
+        hrScore = avgWordsPerResponse >= 30 ? 88 : avgWordsPerResponse >= 10 ? 75 : 60;
+        clarityScore = avgWordsPerResponse >= 30 ? 90 : avgWordsPerResponse >= 10 ? 78 : 65;
+        relevanceScore = avgWordsPerResponse >= 30 ? 86 : avgWordsPerResponse >= 10 ? 72 : 60;
+        hrFeedback = `Candidate participated in a behavioral interview dialogue (${hrCandidateResponses.length} responses recorded).`;
       }
     }
 
     const hrAnalysis: DetailedHRAnalysis = {
       overallAssessment:
         evidence.hr.status === 'COMPLETED'
-          ? `Candidate participated in a multi-turn behavioral interview dialogue (${hrCandidateResponses.length} candidate responses recorded).`
+          ? hrAiSummary || hrFeedback || `Candidate participated in a multi-turn behavioral interview dialogue (${hrCandidateResponses.length} candidate responses recorded).`
           : 'HR behavioral round was not completed.',
       communicationScore: hrScore,
       clarityScore,
       relevanceScore,
       strengthsObserved:
-        evidence.hr.status === 'COMPLETED'
-          ? [
-              'Engaged across multiple dialogue turns with relevant technical and situational context.',
-              'Maintained professional and polite tone throughout the interaction.',
-            ]
+        hrStrengths.length > 0
+          ? hrStrengths
+          : evidence.hr.status === 'COMPLETED'
+          ? ['Engaged across multiple dialogue turns with relevant technical context.', 'Maintained professional tone throughout.']
           : ['Participated in mock interview lifecycle.'],
-      areasToImprove: [
-        'Structure behavioral examples using the STAR framework (Situation, Task, Action, Result).',
-        'Quantify results (e.g., performance gains, percentage improvements, team sizes).',
-      ],
-      starMethodGuidance:
-        'When answering behavioral and situational questions, clearly define the Situation, explain your assigned Task, detail the specific Actions YOU took, and conclude with measurable Results.',
+      areasToImprove:
+        hrImprovements.length > 0
+          ? hrImprovements
+          : ['Structure behavioral examples using the STAR framework.', 'Quantify results with specific metrics.'],
+      starMethodGuidance: hrStarGuidance,
     };
 
     // 4. Transparent Scoring Calculation
@@ -398,7 +576,11 @@ export class ReportAnalysisService {
       candidateIdentityId: evidence.candidateIdentityId,
       interviewTitle: evidence.interviewTitle,
       assessmentDate: evidence.startedAt || new Date().toISOString(),
-      sessionDuration: `${evidence.durationMinutes} min`,
+      sessionDuration: evidence.durationMinutes < 60
+        ? `${evidence.durationMinutes} min`
+        : (evidence.durationMinutes % 60 === 0
+            ? `${Math.floor(evidence.durationMinutes / 60)} hr`
+            : `${Math.floor(evidence.durationMinutes / 60)} hr ${evidence.durationMinutes % 60} min`),
       assessmentStatus: 'COMPLETED',
       overallProficiencyScore,
       scoreBreakdown: {

@@ -91,7 +91,7 @@ export const StudentReports: React.FC = () => {
                         onClick={() => navigate(`/student/interviews/session/${interview.id}`)}
                         rightIcon={<Play className="h-3.5 w-3.5 fill-current" />}
                       >
-                        Resume Assessment
+                        Enter Assessment
                       </Button>
                     )}
                   </div>

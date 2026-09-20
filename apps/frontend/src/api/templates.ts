@@ -18,6 +18,8 @@ export interface TemplateQuestionDetail {
   metadata?: any;
 }
 
+export type SelectionMode = 'MANUAL' | 'RANDOM';
+
 export interface HRStageConfig {
   mode: 'CONVERSATIONAL';
   initialQuestionId?: string | null;
@@ -29,6 +31,7 @@ export interface HRStageConfig {
 }
 
 export interface AssessmentStructure {
+  selectionMode?: SelectionMode;
   aptitude: {
     count: number;
     minRequired: number;
@@ -61,7 +64,9 @@ export interface InterviewTemplateItem {
   duration: number;
   questionCount: number;
   programmingLanguage?: string | null;
+  selectionMode?: SelectionMode;
   defaultConfiguration?: {
+    selectionMode?: SelectionMode;
     allowSkipping?: boolean;
     randomizeOrder?: boolean;
     timePerQuestion?: number;
@@ -94,7 +99,9 @@ export interface CreateTemplatePayload {
   difficulty?: string;
   status?: 'DRAFT' | 'PUBLISHED' | 'ARCHIVED';
   programmingLanguage?: string;
+  selectionMode?: SelectionMode;
   defaultConfiguration?: {
+    selectionMode?: SelectionMode;
     allowSkipping?: boolean;
     randomizeOrder?: boolean;
     timePerQuestion?: number;

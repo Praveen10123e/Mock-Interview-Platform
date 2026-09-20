@@ -28,7 +28,7 @@ export class CodingEvidenceService {
     interviewId: string,
     identityId: string,
     body: any,
-    runMode: 'RUN' | 'SUBMIT'
+    runMode: 'RUN' | 'SUBMIT' | 'SAMPLE' | 'CUSTOM'
   ) {
     // 1. Centralized SESSION_FINALIZED guard
     const interview = await InterviewSessionService.requireActiveSession(interviewId, identityId);
@@ -41,8 +41,12 @@ export class CodingEvidenceService {
     // 2. Resolve questionRefId -> actual questionId via InterviewRoundAssignment
     let questionId = questionRefId;
     try {
+      const targetInterviewId = interview.id || interviewId;
       const ref = await (prisma as any).interviewRoundAssignment.findFirst({
-        where: { interviewId, questionRefId },
+        where: {
+          OR: [{ interviewId }, { interviewId: targetInterviewId }],
+          questionRefId,
+        },
       });
       if (ref?.questionId) questionId = ref.questionId;
     } catch {
@@ -51,41 +55,41 @@ export class CodingEvidenceService {
 
     // 3. Hydrate authoritative question metadata
     const question = await fetchQuestionMeta(questionId);
+    const isCustom =
+      runMode === 'CUSTOM' ||
+      (runMode as any) === 'CUSTOM_RUN' ||
+      (runMode === 'RUN' && body.customInput !== undefined && body.customInput !== null && String(body.customInput).trim() !== '');
+
     const payload: any = {
       ...body,
       questionId,
-      runMode,
+      runMode: isCustom ? 'CUSTOM' : runMode,
       interviewId,
       executionMode: 'INTERVIEW',
     };
 
-    if (question?.metadata?.jsonPayload?.testCases) {
-      const allTC = question.metadata.jsonPayload.testCases;
-      if (runMode === 'RUN') {
-        // Custom Input handling for RUN
-        if (body.customInput !== undefined && body.customInput !== null && body.customInput !== '') {
-          payload.testCases = [
-            {
-              id: 'custom-stdin-tc',
-              input: String(body.customInput),
-              expectedOutput: '',
-              hidden: false,
-              visible: true,
-            },
-          ];
-          payload.stdin = String(body.customInput);
-        } else {
-          // Sample / Visible test cases only (No hidden test case evaluation in RUN mode)
-          const visibleTC = allTC.filter((tc: any) => tc.hidden === false || tc.visible === true);
-          payload.testCases =
-            visibleTC.length > 0
-              ? visibleTC
-              : question.examples?.length > 0
-              ? allTC.slice(0, Math.min(question.examples.length, allTC.length))
-              : allTC.slice(0, 1);
-        }
+    const rawTCs =
+      question?.metadata?.jsonPayload?.testCases ||
+      question?.testCases ||
+      question?.metadata?.testCases;
+
+    if (isCustom) {
+      payload.customInput = String(body.customInput || '');
+      payload.stdin = String(body.customInput || '');
+      delete payload.testCases;
+    } else if (rawTCs && Array.isArray(rawTCs) && rawTCs.length > 0) {
+      const allTC = rawTCs;
+      if (runMode === 'RUN' || (runMode as any) === 'SAMPLE') {
+        // Sample / Visible test cases only (No hidden test case evaluation in RUN/SAMPLE mode)
+        const visibleTC = allTC.filter((tc: any) => tc.hidden === false || tc.visible === true || tc.visibility === 'VISIBLE');
+        payload.testCases =
+          visibleTC.length > 0
+            ? visibleTC
+            : question.examples?.length > 0
+            ? allTC.slice(0, Math.min(question.examples.length, allTC.length))
+            : allTC.slice(0, 1);
       } else {
-        // SUBMIT mode: all test cases (visible + hidden)
+        // SUBMIT mode: all test cases (visible)
         payload.testCases = allTC;
       }
     }
@@ -97,6 +101,25 @@ export class CodingEvidenceService {
       payload.examples = question.examples;
     }
 
+    // Forward executionType from dataset (default: STDIN_PROGRAM)
+    // This tells the judge service which execution model to use.
+    const executionType =
+      (question?.metadata?.jsonPayload?.executionType as string) ?? 'STDIN_PROGRAM';
+    payload.executionType = executionType;
+
+    // For STDIN_PROGRAM: preserve raw stdin exactly without parsing or restructuring.
+    if (executionType === 'STDIN_PROGRAM' && Array.isArray(payload.testCases)) {
+      payload.testCases = payload.testCases.map((tc: any) => {
+        const exactInput = typeof tc.input === 'string' ? tc.input : String(tc.input ?? '');
+        return {
+          ...tc,
+          input: exactInput,
+          stdin: tc.stdin ?? exactInput,
+          displayInput: tc.displayInput ?? exactInput,
+        };
+      });
+    }
+
     // 4. Proxy to Judge Service
     const judgeRes = await axios.post('http://localhost:3006/execute', payload, {
       headers: { 'x-identity-id': identityId || 'anonymous' },
@@ -105,10 +128,7 @@ export class CodingEvidenceService {
 
     const result = judgeRes.data;
     const targetSessionId = interview.session?.id || interviewId;
-    const effectiveRunMode: any =
-      runMode === 'RUN' && body.customInput !== undefined && body.customInput !== null && String(body.customInput).trim() !== ''
-        ? 'CUSTOM_RUN'
-        : runMode;
+    const effectiveRunMode: any = isCustom ? 'CUSTOM' : runMode;
 
     // 5. Persist official execution evidence
     await recordExecution(
@@ -121,7 +141,7 @@ export class CodingEvidenceService {
       question
     );
 
-    // 6. Mask hidden test cases for student-facing response
+    // 6. Mask hidden test cases for student-facing response (if evaluation results exist)
     const maskedResults = (result.results || []).map((tc: any) => {
       if (tc.hidden === true) {
         return {
@@ -138,7 +158,9 @@ export class CodingEvidenceService {
 
     return {
       ...result,
-      results: maskedResults,
+      runMode: effectiveRunMode,
+      customInput: isCustom ? String(body.customInput || '') : undefined,
+      results: result.results ? maskedResults : undefined,
     };
   }
 

@@ -9,10 +9,11 @@ export const ThemeProvider: FC<ThemeProviderProps> = ({ children }) => {
   return (
     <NextThemesProvider 
       attribute="class" 
-      defaultTheme="dark" 
-      enableSystem={true}
+      defaultTheme="light" 
+      forcedTheme="light"
+      enableSystem={false}
       storageKey="nm_theme"
-      disableTransitionOnChange={false}
+      disableTransitionOnChange={true}
     >
       {children}
     </NextThemesProvider>

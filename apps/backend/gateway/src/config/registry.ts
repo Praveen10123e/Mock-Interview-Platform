@@ -56,4 +56,12 @@ export const ServiceRegistry: Record<string, ServiceRegistryEntry> = {
     status: 'active',
     dependencies: ['auth', 'user', 'question-bank'],
   },
+  admin: {
+    name: 'interview-service',
+    host: process.env.INTERVIEW_SERVICE_HOST || 'localhost',
+    port: parseInt(process.env.INTERVIEW_SERVICE_PORT || '3004', 10),
+    version: '1.0.0',
+    status: 'active',
+    dependencies: ['auth', 'user', 'interview'],
+  },
 };

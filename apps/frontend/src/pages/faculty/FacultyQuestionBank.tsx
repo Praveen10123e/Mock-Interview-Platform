@@ -2,24 +2,18 @@ import React, { useState } from 'react';
 import {
   BookOpen,
   Search,
-  Filter,
   Plus,
   RefreshCw,
   Edit2,
   Trash2,
   Eye,
   AlertCircle,
-  CheckCircle2,
-  Code2,
-  Layers,
-  Sparkles,
   Archive,
 } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Skeleton } from '../../components/ui/skeleton';
-import { EmptyState } from '../../components/shared/EmptyState';
 import {
   useQuestions,
   useCategories,

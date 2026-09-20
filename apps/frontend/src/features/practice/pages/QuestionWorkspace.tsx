@@ -21,7 +21,7 @@ export const QuestionWorkspace = () => {
   const [isCopied, setIsCopied] = useState(false);
 
   const { 
-    code, setCode, languageId, setLanguageId, setLanguageName, setTheme, theme, setFontSize, fontSize, wordWrap, setWordWrap, setIsRunning, setOutput, setError, setExecutionMetrics, resetWorkspace, customInput
+    code, setCode, languageId, setLanguageId, setLanguageName, setTheme, theme, setFontSize, fontSize, wordWrap, setWordWrap, setIsRunning, setOutput, setError, setExecutionMetrics, resetWorkspace, customInput, setJudgeResponse, setLastRunMode, setActiveConsoleTab
   } = useWorkspaceStore();
 
   useEffect(() => {
@@ -45,17 +45,24 @@ export const QuestionWorkspace = () => {
   const handleRun = async () => {
     if (!code.trim()) return;
     
+    const isCustomRun = customInput && customInput.trim().length > 0;
+    const effectiveRunMode = isCustomRun ? 'CUSTOM' : 'RUN';
+
     setIsRunning(true);
+    setActiveConsoleTab('results');
+    setLastRunMode(effectiveRunMode as any);
     setOutput(null);
     setError(null);
     setExecutionMetrics(null);
+    setJudgeResponse(null);
 
     try {
       const res = await executeCodeMutation.mutateAsync({
         executionMode: 'PRACTICE',
+        runMode: effectiveRunMode as any,
         sourceCode: code,
         languageId,
-        customInput,
+        customInput: isCustomRun ? customInput : undefined,
         questionRefId: question?.id,
       });
 
@@ -63,6 +70,8 @@ export const QuestionWorkspace = () => {
       const data: any = (res as any)?.data !== undefined && (res as any)?.status === undefined && (res as any)?.results === undefined
         ? (res as any).data
         : res;
+
+      setJudgeResponse(data);
 
       if (data.success === false) {
         const errorType: string = data.errorType || '';

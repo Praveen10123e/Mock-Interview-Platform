@@ -5,6 +5,15 @@ import { CodingEvidenceService } from '../services/CodingEvidenceService';
 import { HRInterviewService } from '../services/HRInterviewService';
 import { ReportService } from '../services/ReportService';
 import { ReportChatService } from '../services/ReportChatService';
+import { PrismaClient } from '../generated/client';
+
+let _prisma: PrismaClient;
+const prisma = new Proxy({} as PrismaClient, {
+  get(target, prop) {
+    if (!_prisma) _prisma = new PrismaClient();
+    return (_prisma as any)[prop];
+  },
+});
 
 export const interviewSessionRouter = express.Router();
 
@@ -67,6 +76,110 @@ interviewSessionRouter.get('/:id/questions', async (req, res) => {
   } catch (err: any) {
     console.error('Failed to get session questions:', err);
     res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── 2.5 TAB SWITCH & FOCUS INTEGRITY MONITORING ────────────────────────────
+interviewSessionRouter.post('/:id/tab-switch', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const { eventType, leftAt, returnedAt, durationSeconds } = req.body;
+    const interview = await InterviewSessionService.requireActiveSession(req.params.id, identityId);
+    const sessionId = interview.session?.id || interview.id;
+
+    if (eventType === 'SWITCH_AWAY') {
+      const awayTime = leftAt ? new Date(leftAt) : new Date();
+      // Throttle: avoid duplicate open switch-away event if one exists within 2 seconds
+      const recent = await (prisma as any).interviewTabSwitchEvent.findFirst({
+        where: {
+          sessionId,
+          returnedAt: null,
+          leftAt: { gte: new Date(awayTime.getTime() - 2000) },
+        },
+      });
+
+      if (!recent) {
+        await (prisma as any).interviewTabSwitchEvent.create({
+          data: {
+            sessionId,
+            interviewId: req.params.id,
+            leftAt: awayTime,
+          },
+        });
+      }
+    } else if (eventType === 'RETURN') {
+      const returnTime = returnedAt ? new Date(returnedAt) : new Date();
+      // Find latest unclosed event for this session
+      const openEvent = await (prisma as any).interviewTabSwitchEvent.findFirst({
+        where: {
+          sessionId,
+          returnedAt: null,
+        },
+        orderBy: { leftAt: 'desc' },
+      });
+
+      if (openEvent) {
+        const calculatedDuration = Math.max(
+          1,
+          Math.round((returnTime.getTime() - new Date(openEvent.leftAt).getTime()) / 1000)
+        );
+        const dur =
+          typeof durationSeconds === 'number' && durationSeconds > 0
+            ? durationSeconds
+            : calculatedDuration;
+
+        await (prisma as any).interviewTabSwitchEvent.update({
+          where: { id: openEvent.id },
+          data: {
+            returnedAt: returnTime,
+            durationSeconds: dur,
+          },
+        });
+      } else if (leftAt) {
+        const awayTime = new Date(leftAt);
+        const dur =
+          typeof durationSeconds === 'number' && durationSeconds > 0
+            ? durationSeconds
+            : Math.max(1, Math.round((returnTime.getTime() - awayTime.getTime()) / 1000));
+        await (prisma as any).interviewTabSwitchEvent.create({
+          data: {
+            sessionId,
+            interviewId: req.params.id,
+            leftAt: awayTime,
+            returnedAt: returnTime,
+            durationSeconds: dur,
+          },
+        });
+      }
+    }
+
+    const allSwitches = await (prisma as any).interviewTabSwitchEvent.findMany({
+      where: {
+        OR: [
+          { interviewId: req.params.id },
+          { sessionId },
+        ],
+        returnedAt: { not: null },
+      },
+    });
+    const tabSwitchesCount = allSwitches.length;
+    const totalTimeAwaySeconds = allSwitches.reduce(
+      (sum: number, ev: any) => sum + (ev.durationSeconds || 0),
+      0
+    );
+
+    res.json({
+      success: true,
+      tabSwitchesCount,
+      totalTimeAwaySeconds,
+    });
+  } catch (err: any) {
+    console.error('Failed to record tab switch event:', err);
+    res.status(err.statusCode || 500).json({
+      success: false,
+      errorType: err.errorType || 'ERROR',
+      error: err.message,
+    });
   }
 });
 
@@ -195,9 +308,101 @@ interviewSessionRouter.post('/:id/coding/complete', async (req, res) => {
   }
 });
 
-// ─── 5. STAGE 3: HR CONVERSATIONAL ROUND ─────────────────────────────────────
+// ─── 5. STAGE 3: HR BEHAVIORAL AI INTERVIEW ROUND ────────────────────────────
 
-// Get HR conversation history
+// Initialize or resume HR session (returns questions pre-populated)
+interviewSessionRouter.post('/:id/hr/session', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const { role } = req.body;
+    const result = await HRInterviewService.initSession(req.params.id, identityId, role);
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    console.error('Failed to init HR session:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+// Get HR session details (status, questions, evaluation)
+interviewSessionRouter.get('/:id/hr/session', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const result = await HRInterviewService.getReport(req.params.id, identityId);
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    console.error('Failed to get HR session:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+// Start the HR interview session
+interviewSessionRouter.post('/:id/hr/start', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const result = await HRInterviewService.startSession(req.params.id, identityId);
+    res.json(result);
+  } catch (err: any) {
+    console.error('Failed to start HR session:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+// Submit a candidate answer transcript for a specific question
+interviewSessionRouter.post('/:id/hr/response', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const { questionId, transcript, durationSeconds } = req.body;
+    if (!questionId || !transcript) {
+      return res.status(400).json({ success: false, error: 'questionId and transcript are required.' });
+    }
+    const result = await HRInterviewService.submitResponse(
+      req.params.id,
+      identityId,
+      questionId,
+      transcript,
+      durationSeconds || 0
+    );
+    res.json(result);
+  } catch (err: any) {
+    console.error('Failed to submit HR response:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+// Upload audio/video recording blob — stored to disk
+interviewSessionRouter.post('/:id/hr/recording', async (req, res) => {
+  try {
+    // multer is set up in server.ts if needed; this records path only
+    const identityId = getIdentityId(req);
+    const { questionId, hrSessionId, relativePath } = req.body;
+    if (!questionId || !relativePath) {
+      return res.status(400).json({ success: false, error: 'questionId and relativePath required.' });
+    }
+    await HRInterviewService.saveRecordingPath(hrSessionId, questionId, relativePath);
+    res.json({ success: true });
+  } catch (err: any) {
+    console.error('Failed to save recording path:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+// Delete a candidate recording
+interviewSessionRouter.delete('/:id/hr/recording/:responseId', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const result = await HRInterviewService.deleteRecording(
+      req.params.id,
+      identityId,
+      req.params.responseId
+    );
+    res.json(result);
+  } catch (err: any) {
+    console.error('Failed to delete HR recording:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+// Get HR conversation history (backward compat with old frontend)
 interviewSessionRouter.get('/:id/hr/conversation', async (req, res) => {
   try {
     const identityId = getIdentityId(req);
@@ -209,7 +414,7 @@ interviewSessionRouter.get('/:id/hr/conversation', async (req, res) => {
   }
 });
 
-// Process candidate response in multi-turn conversation
+// Legacy: Process candidate response in multi-turn conversation
 interviewSessionRouter.post('/:id/hr/message', async (req, res) => {
   try {
     const identityId = getIdentityId(req);
@@ -231,11 +436,39 @@ interviewSessionRouter.post('/:id/hr/message', async (req, res) => {
   }
 });
 
-// Complete HR Stage
+// Get detailed HR report with all question-wise scores
+interviewSessionRouter.get('/:id/hr/report', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const result = await HRInterviewService.getReport(req.params.id, identityId);
+    res.json({ success: true, data: result });
+  } catch (err: any) {
+    console.error('Failed to get HR report:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+// Complete HR Round & trigger full AI evaluation
+interviewSessionRouter.post('/:id/hr/complete', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const result = await HRInterviewService.completeHR(req.params.id, identityId);
+    res.json(result);
+  } catch (err: any) {
+    console.error('Failed to complete HR round:', err);
+    res.status(err.statusCode || 500).json({
+      success: false,
+      errorType: err.errorType || 'ERROR',
+      error: err.message,
+    });
+  }
+});
+
+// Legacy: Complete HR Stage (POST /:id/hr)
 interviewSessionRouter.post('/:id/hr', async (req, res) => {
   try {
     const identityId = getIdentityId(req);
-    const result = await HRInterviewService.completeHRStage(req.params.id, identityId);
+    const result = await HRInterviewService.completeHR(req.params.id, identityId);
     res.json(result);
   } catch (err: any) {
     console.error('Failed to complete HR stage:', err);
@@ -253,10 +486,15 @@ interviewSessionRouter.post('/:id/hr', async (req, res) => {
 interviewSessionRouter.post('/:id/finalize', async (req, res) => {
   try {
     const identityId = getIdentityId(req);
+    const completionReason =
+      req.body?.completionReason ||
+      (req.body?.reason === 'TIME_EXPIRED' ? 'TIME_EXPIRED' : undefined);
+
     const report = await ReportService.finalizeSession(
       req.params.id,
       identityId,
-      req.body?.telemetry
+      req.body?.telemetry,
+      completionReason
     );
     res.json(report);
   } catch (err: any) {

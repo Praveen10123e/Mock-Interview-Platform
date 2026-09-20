@@ -35,10 +35,9 @@ import {
 
 export const StudentSettings: React.FC = () => {
   const { user, clearAuth } = useAuthStore();
-  const { theme, setTheme, resolvedTheme } = useTheme();
+  const { theme, setTheme } = useTheme();
   const workspaceStore = useWorkspaceStore();
 
-  const [mounted, setMounted] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{
     type: 'success' | 'error';
     text: string;
@@ -74,7 +73,6 @@ export const StudentSettings: React.FC = () => {
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
   useEffect(() => {
-    setMounted(true);
     // Load preferred language from profile API
     profileApi
       .getProfile()
@@ -92,9 +90,6 @@ export const StudentSettings: React.FC = () => {
   };
 
   // ── Appearance Toggle ──────────────────────────────
-  const currentTheme = theme === 'system' ? resolvedTheme : theme;
-  const isDark = currentTheme === 'dark';
-
   const handleSelectTheme = (mode: string) => {
     setTheme(mode);
     showNotice(`Theme set to ${mode} mode.`);

@@ -1,6 +1,6 @@
 import { PrismaClient } from '../generated/client';
-import { ReportEvidenceService } from './ReportEvidenceService';
-import { ReportAnalysisService, SynthesizedReport, DetailedAptitudeAnalysis } from './ReportAnalysisService';
+import { ReportEvidenceService, CompleteSessionEvidence } from './ReportEvidenceService';
+import { ReportAnalysisService, SynthesizedReport, DetailedAptitudeAnalysis, DetailedCodingAnalysis } from './ReportAnalysisService';
 import axios from 'axios';
 import crypto from 'crypto';
 
@@ -27,6 +27,16 @@ export interface ChatMessage {
   };
 }
 
+export interface ChatRouteResponse {
+  answer: string;
+  suggestedFollowups: string[];
+  relatedQuestionId?: string;
+  mode?: string;
+  practiceQuestion?: any;
+  contextQuestionIndex?: number;
+  contextAttemptNumber?: number;
+}
+
 export class ReportChatService {
   /**
    * Process interactive chat query grounded strictly in student's interview evidence
@@ -45,8 +55,19 @@ export class ReportChatService {
     const evidence = await ReportEvidenceService.collectEvidence(interviewId, identityId);
     const synthesis = await ReportAnalysisService.synthesizeReport(evidence);
 
-    // 2. Route request to appropriate handler
-    const response = await this.routeRequest(userMessage.trim(), evidence, synthesis, interviewId, identityId);
+    // 2. Fetch previous chat interaction context for multi-turn coherence
+    const recentChat = await prisma.interviewHistory.findFirst({
+      where: { interviewId, event: 'REPORT_CHAT_MESSAGE' },
+      orderBy: { timestamp: 'desc' },
+    });
+    const prevDetails = (recentChat?.details as any) || {};
+    const previousContext = {
+      questionIndex: typeof prevDetails.contextQuestionIndex === 'number' ? prevDetails.contextQuestionIndex : undefined,
+      attemptNumber: typeof prevDetails.contextAttemptNumber === 'number' ? prevDetails.contextAttemptNumber : undefined,
+    };
+
+    // 3. Route request to appropriate handler
+    const response = await this.routeRequest(userMessage.trim(), evidence, synthesis, interviewId, identityId, previousContext);
 
     // Build human-readable display content for the user message
     const humanReadableQuery = displayContent || this.toDisplayContent(userMessage);
@@ -60,7 +81,7 @@ export class ReportChatService {
       practiceQuestion: response.practiceQuestion,
     };
 
-    // 3. Persist chat interaction in InterviewHistory
+    // 4. Persist chat interaction in InterviewHistory with conversational context
     await prisma.interviewHistory.create({
       data: {
         interviewId,
@@ -72,6 +93,8 @@ export class ReportChatService {
           relatedQuestionId: response.relatedQuestionId || null,
           mode: response.mode || null,
           practiceQuestion: response.practiceQuestion || null,
+          contextQuestionIndex: response.contextQuestionIndex !== undefined ? response.contextQuestionIndex : null,
+          contextAttemptNumber: response.contextAttemptNumber !== undefined ? response.contextAttemptNumber : null,
           timestamp: new Date().toISOString(),
         } as any,
       },
@@ -90,6 +113,19 @@ export class ReportChatService {
         const parsed = JSON.parse(userMessage);
         if (parsed.type === 'QUESTION_CONTEXT') {
           return `💬 Asking AI about Q${parsed.questionNumber}: ${parsed.question}`;
+        }
+        if (parsed.type === 'CODING_CONTEXT') {
+          return `💻 Discussing Coding Problem #${parsed.problemNumber || 1}: ${parsed.title}`;
+        }
+        if (parsed.type === 'CODING_MODE') {
+          const codingModeLabels: Record<string, string> = {
+            WHAT_IS_WRONG: `🧐 What exactly is wrong in my code for Problem #${parsed.problemNumber || 1}?`,
+            WHICH_TEST_FAILED: `❌ Which test case failed for Problem #${parsed.problemNumber || 1}?`,
+            COMPLEXITY: `⚡ Why is my solution ${parsed.candidateComplexity || 'suboptimal'} for Problem #${parsed.problemNumber || 1}?`,
+            CORRECT_APPROACH: `💡 Show me the optimal approach for Problem #${parsed.problemNumber || 1}`,
+            TEACH_PATTERN: `🎓 Teach me the algorithmic pattern for Problem #${parsed.problemNumber || 1}`,
+          };
+          return codingModeLabels[parsed.mode] || `Coding Query: ${parsed.mode} for Problem #${parsed.problemNumber || 1}`;
         }
         if (parsed.type === 'TEACHING_MODE') {
           const modeLabels: Record<string, string> = {
@@ -247,14 +283,9 @@ export class ReportChatService {
     evidence: any,
     synthesis: SynthesizedReport,
     interviewId: string,
-    identityId: string
-  ): Promise<{
-    answer: string;
-    suggestedFollowups: string[];
-    relatedQuestionId?: string;
-    mode?: string;
-    practiceQuestion?: any;
-  }> {
+    identityId: string,
+    previousContext?: { questionIndex?: number; attemptNumber?: number }
+  ): Promise<ChatRouteResponse> {
     // 1. Check for JSON structured payload from frontend (Ask AI button / Teaching pills)
     try {
       if (userMessage.startsWith('{') && userMessage.endsWith('}')) {
@@ -266,6 +297,10 @@ export class ReportChatService {
 
         if (payload.type === 'TEACHING_MODE') {
           return this.handleTeachingMode(payload, synthesis, interviewId, identityId);
+        }
+
+        if (payload.type === 'CODING_CONTEXT' || payload.type === 'CODING_MODE') {
+          return this.handleCodingChat(userMessage, synthesis, evidence, interviewId, identityId, payload, previousContext);
         }
       }
     } catch {
@@ -293,7 +328,44 @@ export class ReportChatService {
       }
     }
 
-    // 3. Check for specific question queries (e.g. "Q1", "Question 2", "Explain question 3")
+    // 3. Check for CODING queries (PRIORITY: check coding before generic question numbers to prevent routing "2nd coding question" to aptitude)
+    const isCodingQuery =
+      qLower.includes('coding') ||
+      qLower.includes('code') ||
+      qLower.includes('test case') ||
+      qLower.includes('test #') ||
+      /\btest\s*(?:case\s*)?#?\s*\d+\b/i.test(userMessage) ||
+      qLower.includes('tests passed') ||
+      qLower.includes('tests failed') ||
+      qLower.includes('o(n') ||
+      qLower.includes('complexity') ||
+      qLower.includes('two pointer') ||
+      qLower.includes('nested loop') ||
+      qLower.includes('brute force') ||
+      qLower.includes('algorithm') ||
+      qLower.includes('tle') ||
+      qLower.includes('time limit') ||
+      qLower.includes('wrong in my') ||
+      qLower.includes('what is wrong') ||
+      qLower.includes('why did my') ||
+      qLower.includes('how to optimize') ||
+      qLower.includes('how can i optimize') ||
+      qLower.includes('correct approach') ||
+      qLower.includes('boundary condition') ||
+      qLower.includes('failed test') ||
+      qLower.includes('attempt') ||
+      qLower.includes('submission') ||
+      qLower.includes('progression') ||
+      qLower.includes('improve') ||
+      /\b(?:problem|coding\s*question)\s*\d+\b/i.test(userMessage) ||
+      /\b(?:1st|2nd|3rd|first|second|third)\s*(?:coding\s*)?(?:question|problem)/i.test(userMessage) ||
+      (previousContext?.questionIndex !== undefined && (qLower.includes('why') || qLower.includes('fix') || qLower.includes('what about') || qLower.includes('how')));
+
+    if (isCodingQuery) {
+      return this.handleCodingChat(userMessage, synthesis, evidence, interviewId, identityId, undefined, previousContext);
+    }
+
+    // 4. Check for specific aptitude question queries (e.g. "Q1", "Question 2", "Explain question 3")
     const qNumMatch = userMessage.match(/\b(?:q|question)\s*(\d+)\b/i);
     if (qNumMatch) {
       const qIdx = parseInt(qNumMatch[1], 10) - 1;
@@ -315,7 +387,7 @@ export class ReportChatService {
       }
     }
 
-    // 4. Teaching modes on current context if mentioned
+    // 5. Teaching modes on current context if mentioned
     if (qLower.includes('hint')) {
       const firstWrong = synthesis.aptitudeAnalysis.find(a => !a.isCorrect) || synthesis.aptitudeAnalysis[0];
       if (firstWrong) return this.generateHint(firstWrong);
@@ -331,7 +403,7 @@ export class ReportChatService {
       if (target) return this.generateSimilarQuestion(target, interviewId, identityId);
     }
 
-    // 5. APTITUDE OVERVIEW / MISTAKES
+    // 6. APTITUDE OVERVIEW / MISTAKES
     if (qLower.includes('aptitude') || qLower.includes('mcq') || qLower.includes('math') || qLower.includes('reasoning')) {
       const incorrectQuestions = synthesis.aptitudeAnalysis.filter((a) => !a.isCorrect);
 
@@ -358,67 +430,6 @@ export class ReportChatService {
           'Give me a similar question to practice',
           'Was my coding approach optimal?'
         ],
-      };
-    }
-
-    // 6. CODING PROBLEM ANALYSIS
-    if (qLower.includes('coding') || qLower.includes('code') || qLower.includes('complexity') || qLower.includes('brute force') || qLower.includes('optimal') || qLower.includes('algorithm')) {
-      const prob = synthesis.codingAnalysis[0];
-      if (!prob) {
-        return {
-          answer: 'No coding problem evidence was recorded for this session.',
-          suggestedFollowups: ['Explain my aptitude score', 'How was my HR interview?'],
-        };
-      }
-
-      if (qLower.includes('error') || qLower.includes('fail') || qLower.includes('runtime') || qLower.includes('compil')) {
-        if (prob.errorExplanation) {
-          return {
-            answer: `### Error Diagnostics: ${prob.title}\n\n` +
-              `* **Category**: \`${prob.errorExplanation.errorType}\`\n` +
-              `* **Message**: \`\`\`${prob.errorExplanation.rawMessage}\`\`\`\n\n` +
-              `**Diagnostic Explanation**:\n${prob.errorExplanation.explanation}\n\n` +
-              `**Recommended Fix**:\n${prob.errorExplanation.suggestedFix}`,
-            suggestedFollowups: ['Show me a better approach', 'What is the time complexity of my code?'],
-          };
-        } else {
-          return {
-            answer: `For **${prob.title}**, your solution achieved verdict **\`${prob.finalVerdict}\`** passing **${prob.testsPassed}/${prob.testsTotal}** test cases without unhandled compiler or runtime crashes.`,
-            suggestedFollowups: ['Was my approach optimal?', 'What is the time complexity?'],
-          };
-        }
-      }
-
-      if (qLower.includes('better') || qLower.includes('optimal') || qLower.includes('optimize')) {
-        if (prob.approachClassification === 'Optimal') {
-          return {
-            answer: `### Complexity & Approach: ${prob.title}\n\n` +
-              `✨ **Your approach is OPTIMAL!**\n\n` +
-              `* **Time Complexity**: \`${prob.candidateTimeComplexity}\` (Target: \`${prob.expectedComplexity}\`)\n` +
-              `* **Space Complexity**: \`${prob.candidateSpaceComplexity}\`\n\n` +
-              `**Approach Summary**: ${prob.approachSummary}\n\n` +
-              `${prob.optimalGuidance}`,
-            suggestedFollowups: ['What can I improve in my HR interview?', 'Explain my aptitude mistakes'],
-          };
-        } else {
-          return {
-            answer: `### Approach Optimization: ${prob.title}\n\n` +
-              `* **Current Implementation**: \`${prob.approachClassification}\` (\`${prob.candidateTimeComplexity}\`)\n` +
-              `* **Target Optimal Complexity**: \`${prob.expectedComplexity}\`\n\n` +
-              `**Why it can be optimized**:\n${prob.betterApproach?.whyBetter || 'Avoid nested loops by maintaining rolling state or using hash lookups.'}\n\n` +
-              `**Recommended Algorithm**:\n${prob.betterApproach?.description || prob.optimalGuidance}`,
-            suggestedFollowups: ['What mistakes did I make in my code?', 'Give me a similar question'],
-          };
-        }
-      }
-
-      return {
-        answer: `### Coding Performance Overview\n\n` +
-          `* **Problems Solved**: **${synthesis.summary.codingAccepted}/${synthesis.summary.codingTotal}** accepted\n` +
-          `* **Test Pass Ratio**: **${synthesis.summary.testsPassed}/${synthesis.summary.totalTests}** tests passed\n` +
-          `* **Execution Runs**: **${synthesis.summary.totalCodingAttempts}** runs recorded\n\n` +
-          `For **${prob.title}**, your solution achieved \`${prob.candidateTimeComplexity}\` time complexity with verdict **\`${prob.finalVerdict}\`**.`,
-        suggestedFollowups: ['Was my coding approach optimal?', 'Show me a better approach'],
       };
     }
 
@@ -856,6 +867,461 @@ Return ONLY a JSON object with this exact schema:
         optionLabels,
         relatedQuestionId: q.questionId,
       },
+    };
+  }
+
+  /**
+   * Master Coding Query Handler
+   * Grounds all answers strictly in actual candidate submission data and real test execution facts.
+   * Answers "What is wrong in my 2nd coding question?" in the required structure with zero hallucination.
+   */
+  private static async handleCodingChat(
+    userMessage: string,
+    synthesis: SynthesizedReport,
+    evidence: CompleteSessionEvidence,
+    interviewId: string,
+    identityId: string,
+    parsedPayload?: any,
+    previousContext?: { questionIndex?: number; attemptNumber?: number }
+  ): Promise<ChatRouteResponse> {
+    const codingProblems = synthesis.codingAnalysis || [];
+    if (codingProblems.length === 0) {
+      return {
+        answer: 'No coding problem evidence was recorded for this session.',
+        suggestedFollowups: ['Explain my aptitude score', 'How was my HR interview?'],
+      };
+    }
+
+    const msg = userMessage.toLowerCase();
+
+    // 1. Resolve Target Problem Index (0-based)
+    let targetIndex: number | null = null;
+
+    if (parsedPayload?.problemNumber) {
+      targetIndex = Math.max(0, Math.min(codingProblems.length - 1, parsedPayload.problemNumber - 1));
+    } else if (parsedPayload?.questionId) {
+      const foundIdx = codingProblems.findIndex((p) => p.questionId === parsedPayload.questionId);
+      if (foundIdx !== -1) targetIndex = foundIdx;
+    } else if (
+      /\b(?:2nd|second)\s+(?:coding\s+)?(?:question|problem)\b/i.test(msg) ||
+      /\bproblem\s*2\b/i.test(msg) ||
+      /\bcoding\s*2\b/i.test(msg)
+    ) {
+      targetIndex = codingProblems.length > 1 ? 1 : 0;
+    } else if (
+      /\b(?:3rd|third)\s+(?:coding\s+)?(?:question|problem)\b/i.test(msg) ||
+      /\bproblem\s*3\b/i.test(msg) ||
+      /\bcoding\s*3\b/i.test(msg)
+    ) {
+      targetIndex = codingProblems.length > 2 ? 2 : 0;
+    } else if (
+      /\b(?:1st|first)\s+(?:coding\s+)?(?:question|problem)\b/i.test(msg) ||
+      /\bproblem\s*1\b/i.test(msg) ||
+      /\bcoding\s*1\b/i.test(msg)
+    ) {
+      targetIndex = 0;
+    } else {
+      // Check if title or keyword mentioned
+      const titleMatch = codingProblems.findIndex((p) => p.title && msg.includes(p.title.toLowerCase()));
+      if (titleMatch !== -1) {
+        targetIndex = titleMatch;
+      }
+    }
+
+    // If no explicit question was mentioned, check conversational context from previous turn
+    if (targetIndex === null) {
+      if (previousContext?.questionIndex !== undefined && previousContext.questionIndex >= 0 && previousContext.questionIndex < codingProblems.length) {
+        targetIndex = previousContext.questionIndex;
+      } else if (codingProblems.length === 1) {
+        targetIndex = 0;
+      } else {
+        // Disambiguation Prompt: Candidate asked a general coding question without specifying problem
+        const optionsList = codingProblems.map((cp, idx) => {
+          const best = cp.bestResult || { passedCount: cp.testsPassed || 0, totalCount: cp.testsTotal || 0, status: cp.finalVerdict };
+          const symbol = best.status === 'ACCEPTED' ? '✅' : best.passedCount > 0 ? '⚠️' : '❌';
+          return `${idx + 1}. **Problem #${idx + 1}: ${cp.title}** (${symbol} ${best.passedCount}/${best.totalCount} tests passed · ${best.status || 'UNSOLVED'})`;
+        }).join('\n');
+
+        return {
+          answer: `I'd be glad to help analyze your code! You attempted **${codingProblems.length} coding problems** in this assessment. Which one would you like to investigate?\n\n${optionsList}\n\nPlease reply with **"Problem 1"** or **"Problem 2"**, or click one of the suggestions below.`,
+          suggestedFollowups: codingProblems.map((_, idx) => `What is wrong in Problem #${idx + 1}?`),
+        };
+      }
+    }
+
+    const prob: DetailedCodingAnalysis = codingProblems[targetIndex];
+    const problemNum = targetIndex + 1;
+    const isAccepted = prob.finalVerdict === 'ACCEPTED' || prob.finalVerdict === 'PASSED';
+    const failedTests = prob.failedTests || [];
+    const testResults = prob.testResults || [];
+    const firstFailure = failedTests[0] || null;
+    const attempts = prob.attempts || [];
+
+    // Check for Missing Submission/Execution Evidence
+    const hasAttempts = attempts.length > 0;
+    const hasCode = !!prob.submittedCode || hasAttempts;
+    const hasTests = (testResults.length > 0) || hasAttempts;
+
+    if (!hasCode || !hasTests) {
+      return {
+        answer: `I can identify Question ${problemNum} (${prob.title}), but I don't have the submission and test evidence required to determine the exact reason for failure. No code submissions were recorded for this problem in your session.`,
+        suggestedFollowups: codingProblems.length > 1 ? [`What is wrong in Problem #${targetIndex === 0 ? 2 : 1}?`] : ['Explain my aptitude score'],
+        relatedQuestionId: prob.questionId,
+        contextQuestionIndex: targetIndex,
+      };
+    }
+
+    // 2. Attempt Progression Query ("Did I improve between attempts?", "Progression")
+    if (
+      msg.includes('progression') ||
+      msg.includes('improve') ||
+      msg.includes('between attempt') ||
+      msg.includes('from attempt') ||
+      msg.includes('compare attempt') ||
+      msg.includes('how did my attempt')
+    ) {
+      const steps = prob.progression?.steps || attempts.map((a) => ({
+        attemptNumber: a.attemptNumber,
+        passedCount: a.passedCount,
+        totalCount: a.totalTests,
+        status: a.status,
+        symbol: a.status === 'ACCEPTED' ? '✅' : a.passedCount > 0 ? '⚠️' : '❌',
+      }));
+
+      const stepsText = steps.length > 0
+        ? steps.map((s) => `* **Attempt ${s.attemptNumber}**: ${s.passedCount}/${s.totalCount} tests passed ${s.symbol} (${s.status})`).join('\n')
+        : 'Single attempt submitted.';
+
+      const progressionExplanation = prob.progression?.explanation || (steps.length > 1
+        ? `Across ${steps.length} attempts, you progressed from ${steps[0].passedCount}/${steps[0].totalCount} to ${steps[steps.length - 1].passedCount}/${steps[steps.length - 1].totalCount} tests passing.`
+        : 'One attempt was submitted for this problem.');
+
+      return {
+        answer: `### 📈 Attempt Progression: ${prob.title} (Problem #${problemNum})\n\n` +
+          `**Attempt History**:\n${stepsText}\n\n` +
+          `**Progression Summary**:\n${progressionExplanation}\n\n` +
+          `Would you like to examine a specific attempt? Ask "What happened in Attempt 1?" or click below.`,
+        suggestedFollowups: attempts.slice(0, 3).map((a) => `What happened in Attempt #${a.attemptNumber}?`),
+        relatedQuestionId: prob.questionId,
+        contextQuestionIndex: targetIndex,
+      };
+    }
+
+    // 3. Specific Attempt Query ("What about my first attempt?", "Why did attempt 2 pass?", "Attempt 1")
+    const attemptMatch = msg.match(/\b(?:attempt|submission)\s*#?\s*(\d+)\b/i) ||
+      (msg.includes('first attempt') || msg.includes('1st attempt') ? [null, '1'] :
+       msg.includes('second attempt') || msg.includes('2nd attempt') ? [null, '2'] :
+       msg.includes('third attempt') || msg.includes('3rd attempt') ? [null, '3'] :
+       msg.includes('last attempt') || msg.includes('latest attempt') ? [null, String(attempts.length || 1)] : null);
+
+    const reqAttemptNum = parsedPayload?.attemptNumber || (attemptMatch ? parseInt(attemptMatch[1], 10) : undefined);
+
+    if (reqAttemptNum !== undefined) {
+      const specificAttempt = attempts.find((a) => a.attemptNumber === reqAttemptNum);
+      if (!specificAttempt) {
+        return {
+          answer: `I couldn't find Attempt #${reqAttemptNum} for Problem #${problemNum} (${prob.title}). Recorded attempts: ${attempts.map((a) => '#' + a.attemptNumber).join(', ') || 'None'}.`,
+          suggestedFollowups: attempts.map((a) => `What happened in Attempt #${a.attemptNumber}?`),
+          relatedQuestionId: prob.questionId,
+          contextQuestionIndex: targetIndex,
+        };
+      }
+
+      const attAi = specificAttempt.aiAnalysis;
+      const isAttAccepted = specificAttempt.status === 'ACCEPTED' || specificAttempt.passedCount === specificAttempt.totalTests;
+      const attFailed = specificAttempt.testResults?.filter((t: any) => !t.passed) || [];
+
+      if (isAttAccepted) {
+        return {
+          answer: `### Code Analysis: Attempt #${reqAttemptNum} — ${prob.title} (Problem #${problemNum})\n\n` +
+            `✅ **Attempt #${reqAttemptNum} is ACCEPTED!** (${specificAttempt.passedCount}/${specificAttempt.totalTests} tests passed)\n\n` +
+            `* **Why It Works**: ${attAi?.whyItWorks || 'All test case constraints, edge cases, and runtime boundaries passed successfully.'}\n` +
+            `* **Algorithm**: ${attAi?.algorithmApproach || prob.approachClassification}\n` +
+            `* **Key Invariants**: ${attAi?.keyInvariants?.join(', ') || 'Invariant conditions held across all test iterations.'}\n` +
+            `* **Complexity (Source: AI)**: \`${attAi?.timeComplexity || prob.candidateTimeComplexity}\` time, \`${attAi?.spaceComplexity || prob.candidateSpaceComplexity}\` space\n\n` +
+            (attAi?.optimizedCode ? `**Optimization Opportunity**:\n\`\`\`${specificAttempt.language?.toLowerCase() || 'python'}\n${attAi.optimizedCode}\n\`\`\`\n` : 'Your solution is asymptotically optimal.'),
+          suggestedFollowups: [
+            `Did I improve between attempts?`,
+            `How can I optimize Problem #${problemNum}?`,
+          ],
+          relatedQuestionId: prob.questionId,
+          contextQuestionIndex: targetIndex,
+          contextAttemptNumber: reqAttemptNum,
+        };
+      } else {
+        const firstFail = attFailed[0] || (attAi?.failedTestCases && attAi.failedTestCases[0]);
+        const cat = firstFail?.failureCategory || (specificAttempt.compileError ? 'COMPILATION_ERROR' : 'LOGICAL_ERROR');
+        const why = attAi?.whyItFailed || firstFail?.whyItFails || 'Execution did not produce the expected output.';
+        const fix = Array.isArray(attAi?.howToFix) ? attAi.howToFix.join('\n') : (firstFail?.howToFix || 'Correct the loop bounds and logic conditions.');
+
+        return {
+          answer: `### Diagnostic Report: Attempt #${reqAttemptNum} — ${prob.title} (Problem #${problemNum})\n\n` +
+            `* **Status**: **FAILED** (${specificAttempt.passedCount}/${specificAttempt.totalTests} tests passed)\n` +
+            `* **Category**: \`${cat}\`\n\n` +
+            (firstFail ? `**Failed Test Case #${firstFail.testCaseNumber || 1}**:\n` +
+              `* **Input**: \`\`\`\n${firstFail.input || 'N/A'}\n\`\`\`\n` +
+              `* **Expected Output**: \`\`\`\n${firstFail.expectedOutput || 'N/A'}\n\`\`\`\n` +
+              `* **Your Output**: \`\`\`\n${firstFail.actualOutput || 'N/A'}\n\`\`\`\n\n` : '') +
+            `**Why It Failed**:\n${why}\n\n` +
+            `**How to Fix**:\n${fix}\n\n` +
+            (attAi?.correctedCode ? `**AI Corrected Code**:\n\`\`\`${specificAttempt.language?.toLowerCase() || 'python'}\n${attAi.correctedCode}\n\`\`\`\n\n` : '') +
+            `> ⚠️ **Note**: This change is expected to address the observed failure, but it has not been verified against the test suite.`,
+          suggestedFollowups: [
+            `Did I improve between attempts?`,
+            `How can I optimize Problem #${problemNum}?`,
+            `Show me the correct approach for Problem #${problemNum}`,
+          ],
+          relatedQuestionId: prob.questionId,
+          contextQuestionIndex: targetIndex,
+          contextAttemptNumber: reqAttemptNum,
+        };
+      }
+    }
+
+    // 4. Specific Test Case Failure Query ("Why did test case 4 fail?", "Test case 3")
+    const specificTCMatch = msg.match(/\btest\s*(?:case\s*)?#?\s*(\d+)\b/i);
+    if (specificTCMatch) {
+      const reqTCNum = parseInt(specificTCMatch[1], 10);
+      const foundFailed = failedTests.find((f) => f.testCaseNumber === reqTCNum);
+      const foundTC = testResults.find((t) => t.testCaseNumber === reqTCNum);
+
+      if (foundFailed) {
+        const answer = `### Test Case #${reqTCNum} Failure Diagnostics: ${prob.title}\n\n` +
+          `* **Status**: **FAILED**\n` +
+          `* **Failure Category**: \`${foundFailed.failureCategory}\`\n\n` +
+          `**Input**:\n\`\`\`\n${foundFailed.input}\n\`\`\`\n\n` +
+          `**Expected Output**:\n\`\`\`\n${foundFailed.expectedOutput}\n\`\`\`\n\n` +
+          `**Your Output**:\n\`\`\`\n${foundFailed.actualOutput}\n\`\`\`\n\n` +
+          `**Why It Failed**:\n${foundFailed.whyItFails}\n\n` +
+          `**Problematic Logic in Your Code**:\n` +
+          `* **Location**: ${foundFailed.lineLocation}\n` +
+          `\`\`\`${prob.language?.toLowerCase() || 'text'}\n${foundFailed.problematicLogic}\n\`\`\`\n\n` +
+          `**How to Fix**:\n${foundFailed.howToFix}\n\n` +
+          `> ⚠️ **Note**: This change is expected to address the observed failure, but it has not been verified against the test suite.`;
+
+        return {
+          answer,
+          suggestedFollowups: [
+            `How can I optimize Problem #${problemNum}?`,
+            `Show me the correct approach for Problem #${problemNum}`,
+            `Did I make a boundary condition mistake?`,
+          ],
+          relatedQuestionId: prob.questionId,
+          contextQuestionIndex: targetIndex,
+        };
+      } else if (foundTC && foundTC.passed) {
+        return {
+          answer: `### Test Case #${reqTCNum} Result: ${prob.title}\n\n` +
+            `✓ **Test Case #${reqTCNum} PASSED!**\n\n` +
+            `* **Input**: \`\`\`\n${foundTC.input}\n\`\`\`\n` +
+            `* **Expected Output**: \`\`\`\n${foundTC.expectedOutput}\n\`\`\`\n` +
+            `* **Your Output**: \`\`\`\n${foundTC.actualOutput}\n\`\`\`\n\n` +
+            `Your code handled this case correctly. The issues in your submission occurred on other test cases (${failedTests.map((f) => `#${f.testCaseNumber}`).join(', ') || 'remaining tests'}).`,
+          suggestedFollowups: [
+            failedTests[0] ? `Why did test case ${failedTests[0].testCaseNumber} fail?` : `What is wrong in my code?`,
+            `How can I optimize Problem #${problemNum}?`,
+          ],
+          relatedQuestionId: prob.questionId,
+          contextQuestionIndex: targetIndex,
+        };
+      } else {
+        return {
+          answer: `I don't have enough execution evidence to determine the exact reason for Test Case #${reqTCNum}. ` +
+            `The recorded test cases for **${prob.title}** are: ${testResults.map((t) => `#${t.testCaseNumber}`).join(', ') || 'none'}.`,
+          suggestedFollowups: [
+            `What is wrong in my ${problemNum === 1 ? '1st' : '2nd'} coding question?`,
+            `Show me the correct approach`,
+          ],
+          relatedQuestionId: prob.questionId,
+          contextQuestionIndex: targetIndex,
+        };
+      }
+    }
+
+    // 5. Complexity / Optimization Query ("Why is my solution O(n²)?", "How can I optimize it?")
+    if (
+      msg.includes('complexity') ||
+      msg.includes('o(n') ||
+      msg.includes('optimize') ||
+      msg.includes('better approach') ||
+      parsedPayload?.mode === 'COMPLEXITY'
+    ) {
+      const comp = prob.complexityAnalysis;
+      const answer = `### Algorithmic Complexity & Optimization: ${prob.title}\n\n` +
+        `* **Your Approach**: **${comp?.candidateApproach || prob.approachClassification}**\n` +
+        `* **Current Time Complexity**: \`${prob.candidateTimeComplexity}\`\n` +
+        `* **Current Space Complexity**: \`${prob.candidateSpaceComplexity}\`\n` +
+        `* **Target Optimal Complexity**: \`${prob.expectedComplexity}\` (${prob.expectedSpaceComplexity || 'O(1)'} space)\n\n` +
+        `**Complexity Analysis & Constraint Impact**:\n` +
+        `${comp?.reason || 'Avoid nested loops by maintaining state during a single pass.'}\n\n` +
+        `**Optimal Algorithm Strategy**:\n` +
+        `Use **${comp?.optimalApproach || 'Optimal Pattern'}**.\n\n` +
+        `**Key Idea**:\n` +
+        `${prob.keyLearning}`;
+
+      return {
+        answer,
+        suggestedFollowups: [
+          `What is wrong in my code?`,
+          `Show me the correct approach for Problem #${problemNum}`,
+          `Which concept did I misunderstand?`,
+        ],
+        relatedQuestionId: prob.questionId,
+        contextQuestionIndex: targetIndex,
+      };
+    }
+
+    // 6. Boundary Condition Query ("Did I make a boundary condition mistake?")
+    if (msg.includes('boundary') || msg.includes('edge case')) {
+      const boundaryFailures = failedTests.filter((f) => f.failureCategory === 'BOUNDARY_ERROR');
+      if (boundaryFailures.length > 0) {
+        const bf = boundaryFailures[0];
+        const answer = `### Boundary Condition Analysis: ${prob.title}\n\n` +
+          `⚠️ **Yes, your solution failed on a boundary condition (Test Case #${bf.testCaseNumber}).**\n\n` +
+          `* **Input**: \`\`\`\n${bf.input}\n\`\`\`\n` +
+          `* **Expected**: \`\`\`\n${bf.expectedOutput}\n\`\`\`\n` +
+          `* **Your Output**: \`\`\`\n${bf.actualOutput}\n\`\`\`\n\n` +
+          `**Why it failed**:\n${bf.whyItFails}\n\n` +
+          `**How to fix**:\n${bf.howToFix}\n\n` +
+          `> ⚠️ **Note**: This change is expected to address the observed failure, but it has not been verified against the test suite.`;
+
+        return {
+          answer,
+          suggestedFollowups: [
+            `What else is wrong in my code?`,
+            `Show me the correct approach`,
+          ],
+          relatedQuestionId: prob.questionId,
+          contextQuestionIndex: targetIndex,
+        };
+      } else if (failedTests.length > 0) {
+        return {
+          answer: `### Boundary Condition Analysis: ${prob.title}\n\n` +
+            `Your code did not fail on a standard boundary/edge condition; instead, the failure is categorized as **\`${failedTests[0].failureCategory}\`** on Test Case #${failedTests[0].testCaseNumber}.\n\n` +
+            `**Root cause**:\n${failedTests[0].whyItFails}`,
+          suggestedFollowups: [
+            `Why did test case ${failedTests[0].testCaseNumber} fail?`,
+            `How can I fix it?`,
+          ],
+          relatedQuestionId: prob.questionId,
+          contextQuestionIndex: targetIndex,
+        };
+      } else {
+        return {
+          answer: `### Boundary Condition Analysis: ${prob.title}\n\n` +
+            `🎉 Your solution passed all tested boundary conditions and normal test cases without boundary errors!`,
+          suggestedFollowups: [
+            `How can I optimize Problem #${problemNum}?`,
+            `Explain my aptitude mistakes`,
+          ],
+          relatedQuestionId: prob.questionId,
+          contextQuestionIndex: targetIndex,
+        };
+      }
+    }
+
+    // 7. Accepted Solution Analysis
+    if (isAccepted) {
+      const answer = `### Code Analysis: ${prob.title} (Problem #${problemNum})\n\n` +
+        `🎉 **Outstanding work! Your solution is ACCEPTED.**\n\n` +
+        `1. **Problem**: ${prob.title} (${prob.pattern || prob.topic} · ${prob.difficulty})\n` +
+        `2. **Your Approach**: ${prob.complexityAnalysis?.candidateApproach || prob.approachClassification}\n` +
+        `3. **Tests Passed**: **${prob.testsPassed} / ${prob.testsTotal}** passed (100%)\n` +
+        `4. **Tests Failed**: None — all test cases passed successfully.\n` +
+        `5. **Time Complexity**: \`${prob.candidateTimeComplexity}\` (Optimal: \`${prob.expectedComplexity}\`)\n` +
+        `6. **Space Complexity**: \`${prob.candidateSpaceComplexity}\`\n` +
+        `7. **Constraint Suitability**: ${prob.complexityAnalysis?.reason || 'Executes well within runtime constraints.'}\n` +
+        `8. **What You Did Well**:\n${prob.whatYouDidCorrectly?.map((w) => `• ${w}`).join('\n') || '• Clean logical structure'}\n` +
+        `9. **Clean Code Recommendation**: Ensure variable names are self-documenting and keep modularity high.\n` +
+        `10. **Key Learning**: ${prob.keyLearning}`;
+
+      return {
+        answer,
+        suggestedFollowups: [
+          `How was my HR interview?`,
+          `Explain my aptitude mistakes`,
+          `What should I practice next?`,
+        ],
+        relatedQuestionId: prob.questionId,
+        contextQuestionIndex: targetIndex,
+        contextAttemptNumber: prob.bestResult?.attemptNumber || attempts.length,
+      };
+    }
+
+    // 8. Compilation Failure
+    if (!firstFailure && prob.compileOutput) {
+      const answer = `### Compilation Failure Diagnostics: ${prob.title} (Problem #${problemNum})\n\n` +
+        `1. **Problem**: ${prob.title} (${prob.pattern || prob.topic} · ${prob.difficulty})\n` +
+        `2. **Your Approach**: Code submission in ${prob.language}\n` +
+        `3. **Tests Passed**: 0 / ${prob.testsTotal}\n` +
+        `4. **Tests Failed**: All (Code did not compile)\n` +
+        `5. **Exact Failure**: \`COMPILATION_ERROR\`\n` +
+        `\`\`\`\n${prob.compileOutput}\n\`\`\`\n` +
+        `6. **Why It Failed**: The compiler encountered syntax, type mismatch, or missing import errors before runtime.\n` +
+        `7. **Problem in Your Code**: Review header declarations and syntax delimiters in your submitted code.\n` +
+        `8. **How to Fix It**: Fix the syntax error indicated in the compiler output above and resubmit.\n` +
+        `9. **Complexity**: Invalid until compilation succeeds.\n` +
+        `10. **What to Learn**: Always verify compilation locally and ensure bracket pairs match.`;
+
+      return {
+        answer,
+        suggestedFollowups: [
+          `Show me the correct approach for Problem #${problemNum}`,
+          `Teach me the pattern for Problem #${problemNum}`,
+        ],
+        relatedQuestionId: prob.questionId,
+        contextQuestionIndex: targetIndex,
+      };
+    }
+
+    // 9. General / Failure Query ("What is wrong in my 2nd coding question?") — 10-POINT EXACT SPECIFICATION
+    const ft = firstFailure || {
+      testCaseNumber: 1,
+      input: 'N/A',
+      expectedOutput: 'N/A',
+      actualOutput: 'N/A',
+      failureCategory: 'LOGICAL_ERROR',
+      whyItFails: 'Execution did not produce the expected result.',
+      lineLocation: 'Main function block',
+      problematicLogic: prob.submittedCode?.slice(0, 120) || 'N/A',
+      howToFix: 'Review the condition logic and algorithm approach.',
+    };
+
+    const answer = `### Diagnostic Report: ${prob.title} (Problem #${problemNum})\n\n` +
+      `1. **Problem**: **${prob.title}** (${prob.pattern || prob.topic} · ${prob.difficulty})\n\n` +
+      `2. **Your Approach**: **${prob.complexityAnalysis?.candidateApproach || prob.approachClassification}**\n\n` +
+      `3. **Tests Passed**: **${prob.testsPassed} / ${prob.testsTotal}** passed\n\n` +
+      `4. **Tests Failed**: **${failedTests.map((f) => `Test Case #${f.testCaseNumber}`).join(', ') || 'Test Case #' + ft.testCaseNumber}**\n\n` +
+      `5. **Exact Failure** (Test Case #${ft.testCaseNumber}):\n` +
+      `* **Status**: FAILED\n` +
+      `* **Failure Category**: \`${ft.failureCategory}\`\n` +
+      `* **Input**:\n\`\`\`\n${ft.input}\n\`\`\`\n` +
+      `* **Expected Output**:\n\`\`\`\n${ft.expectedOutput}\n\`\`\`\n` +
+      `* **Your Output**:\n\`\`\`\n${ft.actualOutput}\n\`\`\`\n\n` +
+      `6. **Why It Failed**:\n${ft.whyItFails}\n\n` +
+      `7. **Problem in Your Code**:\n` +
+      `* **Location**: ${ft.lineLocation}\n` +
+      `\`\`\`${prob.language?.toLowerCase() || 'text'}\n${ft.problematicLogic}\n\`\`\`\n\n` +
+      `8. **How to Fix It**:\n` +
+      `${prob.howToFix?.map((step, idx) => `${idx + 1}. ${step}`).join('\n') || ft.howToFix}\n\n` +
+      `9. **Complexity**:\n` +
+      `* **Current**: \`${prob.candidateTimeComplexity}\` time, \`${prob.candidateSpaceComplexity}\` space (${prob.complexityAnalysis?.candidateApproach})\n` +
+      `* **Optimal**: \`${prob.expectedComplexity}\` time, \`${prob.expectedSpaceComplexity || 'O(1)'}\` space (${prob.complexityAnalysis?.optimalApproach})\n` +
+      `* **Impact**: ${prob.complexityAnalysis?.reason || 'Switching to optimal approach avoids excessive operations.'}\n\n` +
+      `10. **What to Learn**:\n${prob.keyLearning}\n\n` +
+      `> ⚠️ **Note**: This change is expected to address the observed failure, but it has not been verified against the test suite.`;
+
+    return {
+      answer,
+      suggestedFollowups: [
+        `Why did test case ${ft.testCaseNumber} fail?`,
+        `Why is my solution ${prob.candidateTimeComplexity}?`,
+        `How can I optimize Problem #${problemNum}?`,
+        `Show me the correct approach for Problem #${problemNum}`,
+      ],
+      relatedQuestionId: prob.questionId,
+      contextQuestionIndex: targetIndex,
+      contextAttemptNumber: prob.bestResult?.attemptNumber || attempts.length,
     };
   }
 }

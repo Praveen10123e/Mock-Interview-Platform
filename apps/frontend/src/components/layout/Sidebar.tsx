@@ -21,7 +21,6 @@ import {
   Users
 } from 'lucide-react';
 import { useAuthStore } from '../../store/AuthStore';
-import { ThemeToggle } from '../ui/theme-toggle';
 
 interface NavItem {
   name: string;
@@ -48,12 +47,13 @@ const roleConfigs: Record<string, NavItem[]> = {
     { name: 'Question Bank', path: '/faculty/questions', icon: BookOpen },
     { name: 'Templates', path: '/faculty/templates', icon: FileText },
     { name: 'Interviews', path: '/faculty/interviews', icon: Calendar },
-    { name: 'Analytics', path: '/faculty/analytics', icon: Activity, disabled: true },
-    { name: 'Reports', path: '/faculty/reports', icon: BarChart3, disabled: true },
+    { name: 'Analytics', path: '/faculty/analytics', icon: Activity },
+    { name: 'Reports', path: '/faculty/reports', icon: BarChart3 },
+    { name: 'Profile', path: '/faculty/profile', icon: User },
   ],
   ADMINISTRATOR: [
     { name: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
-    { name: 'Users', path: '/admin/users', icon: Users, disabled: true },
+    { name: 'Users', path: '/admin/users', icon: Users },
     { name: 'Datasets', path: '/admin/datasets', icon: Database, disabled: true },
     { name: 'Question Bank', path: '/admin/questions', icon: BookOpen, badge: '5' },
     { name: 'System', path: '/admin/system', icon: Server, disabled: true },
@@ -187,9 +187,9 @@ export const Sidebar: FC<SidebarProps> = ({ isOpen = false, onClose }) => {
 
         {/* Separated Bottom Secondary Actions */}
         <div className="border-t border-border p-3 space-y-1 bg-sidebar-bg shrink-0">
-          <div className="flex items-center justify-between px-3 py-1.5">
-            <span className="text-[11px] font-medium text-text-muted">Theme</span>
-            <ThemeToggle />
+          <div className="flex items-center justify-between px-3 py-1.5 text-[11px] font-medium text-text-muted">
+            <span>Interface</span>
+            <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">Light</span>
           </div>
 
           <NavLink

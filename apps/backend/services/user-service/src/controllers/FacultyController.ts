@@ -94,4 +94,52 @@ export class FacultyController extends BaseController {
       next(error);
     }
   };
+
+  public getProfile = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<any> => {
+    try {
+      const identityId = req.headers['x-identity-id'] as string;
+      if (!identityId) {
+        throw ErrorFactory.unauthenticated('Authentication required');
+      }
+
+      const roleHeader = (req.headers['x-user-role'] as string) || '';
+      const roles = roleHeader.split(',').map((r) => r.trim());
+      if (!roles.includes('FACULTY') && !roles.includes('ADMINISTRATOR')) {
+        throw ErrorFactory.unauthorized('Forbidden: Faculty access required');
+      }
+
+      const result = await this.facultyService.getFacultyProfile(identityId);
+      return (this as any).sendSuccess(res, result, 'Faculty profile loaded successfully');
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public updateProfile = async (
+    req: Request,
+    res: Response,
+    next: NextFunction,
+  ): Promise<any> => {
+    try {
+      const identityId = req.headers['x-identity-id'] as string;
+      if (!identityId) {
+        throw ErrorFactory.unauthenticated('Authentication required');
+      }
+
+      const roleHeader = (req.headers['x-user-role'] as string) || '';
+      const roles = roleHeader.split(',').map((r) => r.trim());
+      if (!roles.includes('FACULTY') && !roles.includes('ADMINISTRATOR')) {
+        throw ErrorFactory.unauthorized('Forbidden: Faculty access required');
+      }
+
+      const result = await this.facultyService.updateFacultyProfile(identityId, req.body);
+      return (this as any).sendSuccess(res, result, 'Faculty profile updated successfully');
+    } catch (error) {
+      next(error);
+    }
+  };
 }

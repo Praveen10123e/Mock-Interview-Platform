@@ -1,18 +1,15 @@
 import React, { useState } from 'react';
 import {
   X,
-  Code2,
   Terminal,
   CheckCircle2,
   AlertCircle,
   Clock,
-  Cpu,
   Layers,
   FileCode,
   Copy,
   Check,
   ShieldCheck,
-  Eye,
   AlertTriangle,
   Play,
   Send,
@@ -53,10 +50,6 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
     submission.primaryErrorType === 'COMPILATION_ERROR' ||
     submission.status === 'COMPILATION_ERROR' ||
     !!submission.compileOutput;
-
-  const isRuntimeError =
-    submission.primaryErrorType === 'RUNTIME_ERROR' ||
-    submission.status === 'RUNTIME_ERROR';
 
   const isTimeout =
     submission.primaryErrorType === 'TIME_LIMIT_EXCEEDED' ||
@@ -202,12 +195,12 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
               </div>
 
               {submission.sourceCode ? (
-                <div className="relative rounded-xl border border-border bg-[#0d1117] overflow-hidden font-mono text-[11px]">
-                  <div className="flex items-center justify-between px-3.5 py-1.5 bg-[#161b22] border-b border-border/60 text-text-muted text-[10px]">
+                <div className="relative rounded-xl border border-slate-200 bg-slate-50 overflow-hidden font-mono text-[11px]">
+                  <div className="flex items-center justify-between px-3.5 py-1.5 bg-slate-100 border-b border-slate-200 text-slate-600 text-[10px]">
                     <span>source_code.{submission.language.toLowerCase() === 'python' ? 'py' : submission.language.toLowerCase() === 'java' ? 'java' : submission.language.toLowerCase() === 'cpp' ? 'cpp' : 'js'}</span>
                     <span className="uppercase">{submission.language}</span>
                   </div>
-                  <pre className="p-4 text-slate-200 overflow-x-auto leading-relaxed whitespace-pre font-mono selection:bg-accent/30 max-h-[420px]">
+                  <pre className="p-4 text-slate-800 overflow-x-auto leading-relaxed whitespace-pre font-mono selection:bg-accent/30 max-h-[420px]">
                     <code>{submission.sourceCode}</code>
                   </pre>
                 </div>
@@ -300,7 +293,7 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                     <Terminal className="h-3.5 w-3.5" />
                     Standard Output (stdout):
                   </span>
-                  <div className="p-3.5 rounded-xl border border-border bg-[#0d1117] font-mono text-[11px] text-slate-200 overflow-x-auto whitespace-pre-wrap leading-relaxed">
+                  <div className="p-3.5 rounded-xl border border-slate-200 bg-slate-50 font-mono text-[11px] text-slate-800 overflow-x-auto whitespace-pre-wrap leading-relaxed">
                     {submission.stdout}
                   </div>
                 </div>

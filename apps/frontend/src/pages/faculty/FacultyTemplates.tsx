@@ -2,7 +2,6 @@ import React, { useState } from 'react';
 import {
   FileText,
   Search,
-  Filter,
   Plus,
   RefreshCw,
   Edit2,
@@ -10,12 +9,6 @@ import {
   Copy,
   Eye,
   AlertCircle,
-  CheckCircle2,
-  Clock,
-  Shuffle,
-  BookOpen,
-  Layers,
-  Sparkles,
   Brain,
   Code2,
   MessageSquare,
@@ -26,7 +19,6 @@ import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Input } from '../../components/ui/input';
 import { Skeleton } from '../../components/ui/skeleton';
-import { EmptyState } from '../../components/shared/EmptyState';
 import {
   useTemplates,
   useDuplicateTemplate,

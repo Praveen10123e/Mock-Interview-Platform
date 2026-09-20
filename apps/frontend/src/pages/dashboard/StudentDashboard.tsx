@@ -154,7 +154,7 @@ export const StudentDashboard: React.FC = () => {
               {recentInterviews.length > 0 && (
                 <button 
                   onClick={() => navigate('/student/interviews')}
-                  className="text-xs text-accent hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                  className="text-xs text-slate-700 hover:text-slate-900 font-semibold flex items-center gap-1 cursor-pointer transition-colors"
                 >
                   <span>View all</span>
                   <ArrowRight className="h-3.5 w-3.5" />
@@ -187,7 +187,7 @@ export const StudentDashboard: React.FC = () => {
                       onClick={() => navigate(interview.state === 'COMPLETED' ? `/student/interviews/summary/${interview.id}` : `/student/interviews/session/${interview.id}`)}
                       className="shrink-0 w-full sm:w-auto"
                     >
-                      {interview.state === 'COMPLETED' ? 'View Report' : 'Resume Session'}
+                      {interview.state === 'COMPLETED' ? 'View Report' : 'Enter Assessment'}
                     </Button>
                   </div>
                 ))}
@@ -212,10 +212,10 @@ export const StudentDashboard: React.FC = () => {
               </h3>
               <button
                 onClick={() => navigate('/student/practice/categories')}
-                className="text-xs text-accent hover:underline font-semibold flex items-center gap-1 cursor-pointer"
+                className="text-xs text-slate-700 hover:text-slate-900 font-semibold flex items-center gap-1 cursor-pointer transition-colors"
               >
                 <span>All domains</span>
-                <ArrowRight className="h-3 w-3" />
+                <ArrowRight className="h-3.5 w-3.5" />
               </button>
             </div>
 

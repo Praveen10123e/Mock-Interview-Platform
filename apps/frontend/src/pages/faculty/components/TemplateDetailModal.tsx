@@ -1,15 +1,8 @@
 import React from 'react';
 import {
   X,
-  FileText,
-  Clock,
-  Shuffle,
   Copy,
   Edit2,
-  Trash2,
-  BookOpen,
-  Layers,
-  Award,
   Brain,
   Code2,
   MessageSquare,

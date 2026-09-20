@@ -6,17 +6,17 @@ This directory contains the **three manually verified** curated question dataset
 
 | File | Dataset Name | Type | Count | Verified By |
 |---|---|---|---|---|
-| `coding.json` | Curated Coding Set v1 | CODING (Python) | 20 questions | Team Praveen / Dhanush M / Angesh Karthik |
+| `full_program_coding_interview_dataset_40(3).json` | Curated - Full-Program Coding Interview Dataset | CODING (Full-Program stdin/stdout) | 40 questions | Team Praveen / Dhanush M / Angesh Karthik |
 | `aptitude.json` | Curated Aptitude Set v1 | APTITUDE (MCQ) | 15 questions | Team Praveen / Dhanush M / Angesh Karthik |
 | `hr.json` | Curated HR Set v1 | HR (Descriptive) | 10 questions | Team Praveen / Dhanush M / Angesh Karthik |
 
-**Total verified questions: 45**
+**Total verified questions: 65**
 
 ## Purpose
 
 These datasets are the **canonical source** for the currently working and demo-ready student practice experience.
 
-- **coding.json** — 20 Python algorithm challenges (Easy to Hard) with examples, constraints, test cases, and hints. Executed live via Monaco Editor + Judge Service.
+- **full_program_coding_interview_dataset_40(3).json** — 40 competitive-programming algorithmic challenges (13 Easy, 13 Medium, 14 Hard across 13 DSA patterns) with stdin/stdout execution, input/output formats, constraints, public examples, and hidden test cases. Executed live via Monaco Editor + Judge Service.
 - **aptitude.json** — 15 MCQ questions covering Quantitative, Logical Reasoning, and Verbal Ability. Each question has 4 options, a correct option index, and an explanation.
 - **hr.json** — 10 descriptive HR/behavioral questions with evaluation criteria for each.
 

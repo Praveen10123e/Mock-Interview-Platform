@@ -1,30 +1,21 @@
 import React, { useState, useMemo } from 'react';
 import {
   ArrowLeft,
-  User,
   Calendar,
   Clock,
-  Award,
-  CheckCircle2,
-  AlertCircle,
   Brain,
   Code2,
   MessageSquare,
   Eye,
-  RefreshCw,
   Search,
-  Filter,
   Dices,
   Hand,
-  TrendingUp,
   Layers,
-  ChevronDown,
-  ChevronUp,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { Card } from '../../../components/ui/card';
 import { Input } from '../../../components/ui/input';
-import type { FacultyStudentInterviewSummary, FacultyInterviewSessionItem } from '../../../api/faculty';
+import type { FacultyStudentInterviewSummary } from '../../../api/faculty';
 import { FacultySessionDetailModal } from './FacultySessionDetailModal';
 
 interface StudentInterviewHistoryViewProps {
@@ -294,7 +285,9 @@ export const StudentInterviewHistoryView: React.FC<StudentInterviewHistoryViewPr
                       <Brain className="h-3 w-3" /> Stage 1
                     </span>
                     <div className="text-xs font-mono font-bold text-text-primary">
-                      {session.stages.aptitude.score !== null
+                      {session.stages.aptitude.correctCount !== undefined && session.stages.aptitude.correctCount !== null
+                        ? `${session.stages.aptitude.correctCount} / ${session.stages.aptitude.totalQuestions} Correct`
+                        : session.stages.aptitude.score !== null
                         ? `${session.stages.aptitude.score}%`
                         : `${session.stages.aptitude.totalQuestions} Qs`}
                     </div>

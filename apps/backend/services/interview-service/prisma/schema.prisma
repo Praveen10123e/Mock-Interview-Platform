@@ -111,11 +111,14 @@ model InterviewSession {
   reportSnapshot      Json?
   reportVersion       Int                @default(1)
   finalizedAt         DateTime?
+  expiresAt           DateTime?
+  completionReason    String?
 
   timer               InterviewTimer?
   progress            InterviewProgress?
   lock                InterviewLock?
   focusViolations     InterviewFocusViolation[]
+  tabSwitches         InterviewTabSwitchEvent[]
 }
 
 model InterviewTimer {
@@ -301,6 +304,7 @@ model InterviewExecutionRecord {
   questionDifficulty  String
 
   timestamp           DateTime @default(now())
+  aiAnalysis          Json?
 
   @@index([sessionId])
   @@index([sessionId, questionRefId])
@@ -337,3 +341,101 @@ model InterviewFocusViolation {
   
   @@index([sessionId])
 }
+
+model InterviewTabSwitchEvent {
+  id              String           @id @default(uuid())
+  sessionId       String
+  session         InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  interviewId     String
+  leftAt          DateTime
+  returnedAt      DateTime?
+  durationSeconds Int              @default(0)
+  createdAt       DateTime         @default(now())
+
+  @@index([sessionId])
+  @@index([interviewId])
+}
+
+// ─── HR Module — Behavioral Interview Models ───────────────────────────────────
+
+model HRInterviewSession {
+  id            String   @id @default(uuid())
+  interviewId   String   @unique          // Links to Interview.id
+  position      String   @default("Software Engineer")
+  interviewType String   @default("Behavioral / HR")
+  status        String   @default("READY") // READY | IN_PROGRESS | ANALYZING | COMPLETED
+  startedAt     DateTime?
+  completedAt   DateTime?
+  overallScore  Float?
+
+  questions  HRInterviewQuestion[]
+  evaluation HRInterviewEvaluation?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([interviewId])
+}
+
+model HRInterviewQuestion {
+  id              String   @id @default(uuid())
+  hrSessionId     String
+  hrSession       HRInterviewSession @relation(fields: [hrSessionId], references: [id], onDelete: Cascade)
+
+  question        String
+  category        String   // "Self Introduction" | "Project Challenge" | "Teamwork" | "Conflict Resolution" | "Ownership" | "Leadership" | "Adaptability" | "Situational"
+  questionType    String   @default("MAIN") // MAIN | FOLLOW_UP
+  sequence        Int
+  isFollowUpToId  String?  // references another HRInterviewQuestion.id
+
+  response        HRInterviewResponse?
+
+  createdAt DateTime @default(now())
+
+  @@index([hrSessionId])
+  @@index([hrSessionId, sequence])
+}
+
+model HRInterviewResponse {
+  id              String   @id @default(uuid())
+  hrSessionId     String
+  questionId      String   @unique
+  question        HRInterviewQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  transcript      String?  @db.Text
+  recordingPath   String?  // relative path on disk e.g. uploads/recordings/{sessionId}/{filename}
+  durationSeconds Int      @default(0)
+  wordCount       Int      @default(0)
+  submittedAt     DateTime @default(now())
+
+  @@index([hrSessionId])
+}
+
+model HRInterviewEvaluation {
+  id            String   @id @default(uuid())
+  hrSessionId   String   @unique
+  hrSession     HRInterviewSession @relation(fields: [hrSessionId], references: [id], onDelete: Cascade)
+
+  // 10 Behavioral Scoring Dimensions
+  communicationScore   Float @default(0)  // weight: 20%
+  problemSolvingScore  Float @default(0)  // weight: 15%
+  teamworkScore        Float @default(0)  // weight: 15%
+  professionalismScore Float @default(0)  // weight: 15%
+  relevanceScore       Float @default(0)  // weight: 15%
+  clarityScore         Float @default(0)  // weight: 10%
+  ownershipScore       Float @default(0)  // weight: 5%
+  leadershipScore      Float @default(0)  // weight: 5%
+  confidenceScore      Float @default(0)
+  structureScore       Float @default(0)
+
+  overallScore  Float  @default(0)
+  feedback      String? @db.Text
+  strengths     Json    @default("[]")   // string[]
+  improvements  Json    @default("[]")   // string[]
+  starGuidance  String? @db.Text
+  aiSummary     String? @db.Text
+  evaluatedAt   DateTime @default(now())
+
+  @@index([hrSessionId])
+}
+

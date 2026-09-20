@@ -88,6 +88,12 @@ export interface SessionRuntimeState {
   startedAt: string | null;
   finishedAt: string | null;
   timeRemainingSeconds: number;
+  expiresAt?: string | null;
+  durationMinutes?: number;
+  tabSwitchesCount?: number;
+  totalTimeAwaySeconds?: number;
+  completionReason?: string | null;
+  serverTime?: string;
   aptitude: AptitudeStageTelemetry;
   coding: CodingStageTelemetry;
   hr: HRStageTelemetry;

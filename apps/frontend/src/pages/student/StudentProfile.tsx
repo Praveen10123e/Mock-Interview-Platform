@@ -218,7 +218,7 @@ export const StudentProfile: React.FC = () => {
   const formattedEmailName = emailPrefixName
     .split(' ')
     .filter(Boolean)
-    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+    .map((s: string) => s.charAt(0).toUpperCase() + s.slice(1))
     .join(' ');
 
   const displayName = combinedName || user?.firstName || formattedEmailName || 'Candidate';

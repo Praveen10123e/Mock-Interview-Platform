@@ -36,6 +36,11 @@ export const normalizeInterviewQuestion = (question: any) => {
     examples: payload.examples || question?.examples || [],
     constraints: (payload.constraints || question?.constraints || []).map((c: any) => typeof c === 'string' ? c : (c.constraint || JSON.stringify(c))),
     hints: (payload.hints || question?.hints || []).map((h: any) => typeof h === 'string' ? h : (h.hint || JSON.stringify(h))),
-    evaluationCriteria: payload.evaluationCriteria || []
+    evaluationCriteria: payload.evaluationCriteria || [],
+    testCases: Array.isArray(payload.testCases) ? payload.testCases : (Array.isArray(question?.testCases) ? question.testCases : []),
+    inputFormat: payload.inputFormat || payload.input_format || question?.inputFormat || question?.input_format || '',
+    outputFormat: payload.outputFormat || payload.output_format || question?.outputFormat || question?.output_format || '',
+    candidateStarterCode: payload.candidateStarterCode || payload.candidate_starter_code || question?.candidateStarterCode || question?.candidate_starter_code || '',
+    metadata: question?.metadata || { jsonPayload: payload },
   };
 };

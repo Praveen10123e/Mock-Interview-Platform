@@ -18,7 +18,8 @@ export class ReportService {
   static async finalizeSession(
     interviewId: string,
     identityId: string,
-    telemetryOverride?: any
+    telemetryOverride?: any,
+    completionReasonOverride?: 'MANUAL_SUBMISSION' | 'TIME_EXPIRED'
   ) {
     const interview = await InterviewSessionService.getInterviewScoped(interviewId, identityId);
 
@@ -35,6 +36,16 @@ export class ReportService {
         return interview.session.reportSnapshot;
       }
     }
+
+    // Determine completion reason
+    const now = new Date();
+    const expiresAt = interview.session.expiresAt;
+    const isExpired = expiresAt ? now >= expiresAt : false;
+    const reason = completionReasonOverride || (isExpired ? 'TIME_EXPIRED' : 'MANUAL_SUBMISSION');
+    const completionReasonDisplay =
+      reason === 'TIME_EXPIRED'
+        ? 'Automatically Submitted — Time Expired'
+        : 'Manually Submitted';
 
     // 1. Collect exact session evidence
     const evidence = await ReportEvidenceService.collectEvidence(
@@ -53,6 +64,20 @@ export class ReportService {
       candidateIdentityId: identityId,
       overallScore: synthesized.overallProficiencyScore,
       scoreDisplay: `${synthesized.overallProficiencyScore}%`,
+      completionDetails: {
+        reason: completionReasonDisplay,
+        rawReason: reason,
+        finalizedAt: new Date().toISOString(),
+      },
+      monitoring: {
+        status: evidence.monitoring?.status || evidence.monitoring?.monitoringStatus || 'Integrity Verified',
+        monitoringStatus: evidence.monitoring?.status || evidence.monitoring?.monitoringStatus || 'Integrity Verified',
+        totalSwitches: evidence.monitoring?.totalSwitches ?? evidence.monitoring?.tabSwitches ?? (evidence.monitoring?.events ? evidence.monitoring.events.length : 0),
+        tabSwitches: evidence.monitoring?.totalSwitches ?? evidence.monitoring?.tabSwitches ?? (evidence.monitoring?.events ? evidence.monitoring.events.length : 0),
+        totalAwaySeconds: evidence.monitoring?.totalAwaySeconds ?? evidence.monitoring?.totalTimeAwaySeconds ?? (evidence.monitoring?.events ? evidence.monitoring.events.reduce((s: number, e: any) => s + (e.durationSeconds || 0), 0) : 0),
+        totalTimeAwaySeconds: evidence.monitoring?.totalAwaySeconds ?? evidence.monitoring?.totalTimeAwaySeconds ?? (evidence.monitoring?.events ? evidence.monitoring.events.reduce((s: number, e: any) => s + (e.durationSeconds || 0), 0) : 0),
+        events: evidence.monitoring?.events || [],
+      },
       stages: {
         aptitude: {
           totalQuestions: evidence.aptitude.totalQuestions,
@@ -100,6 +125,7 @@ export class ReportService {
       data: {
         finalizedAt: new Date(),
         finishedAt: new Date(),
+        completionReason: reason,
         reportSnapshot: finalReportSnapshot as any,
         reportVersion: 3,
       },
@@ -116,7 +142,7 @@ export class ReportService {
   }
 
   /**
-   * Get Report for session (returns snapshot if finalized, or live preview)
+   * Get Report for session (returns snapshot if finalized, denies if active/running)
    */
   static async getReport(interviewId: string, identityId: string) {
     const interview = await InterviewSessionService.getInterviewScoped(interviewId, identityId);
@@ -130,7 +156,23 @@ export class ReportService {
       }
     }
 
-    // Live preview or self-healing upgrade
+    const now = new Date();
+    const durationMin = interview.configuration?.duration || 60;
+    const started = interview.session?.startedAt || interview.createdAt;
+    const expiresAt = interview.session?.expiresAt || new Date(started.getTime() + durationMin * 60 * 1000);
+
+    if (interview.state === 'RUNNING' && !interview.session?.finalizedAt) {
+      if (now < expiresAt) {
+        const err: any = new Error('Assessment report unavailable: Interview session is currently active.');
+        err.statusCode = 403;
+        err.code = 'SESSION_RUNNING';
+        throw err;
+      }
+      // Dead/expired session: finalize with TIME_EXPIRED
+      return this.finalizeSession(interviewId, identityId, undefined, 'TIME_EXPIRED');
+    }
+
+    // Fallback finalization for completed session missing snapshot
     return this.finalizeSession(interviewId, identityId);
   }
 }

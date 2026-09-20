@@ -3,16 +3,11 @@ import {
   Users,
   Search,
   RefreshCw,
-  Eye,
   AlertCircle,
   Clock,
   CheckCircle2,
-  Calendar,
   Layers,
   ChevronRight,
-  TrendingUp,
-  Activity,
-  GraduationCap,
 } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';

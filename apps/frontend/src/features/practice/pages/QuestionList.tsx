@@ -14,6 +14,53 @@ import { EmptyState } from '../../../components/shared/EmptyState';
 import { getDisplayName, getTagNames } from '../../../utils/display';
 import { getProcessedStudentCategories, mapToStudentCategory } from '../../../utils/categoryMapping';
 
+export const normalizeTopic = (topic: string | null | undefined): string => {
+  if (!topic) return '';
+  return topic
+    .toLowerCase()
+    .trim()
+    .replace(/\s*\/\s*/g, ' / ')
+    .replace(/\bdp\b/g, 'dynamic programming');
+};
+
+export const matchesSelectedTopic = (q: any, selectedTopic: string): boolean => {
+  if (!selectedTopic || selectedTopic === 'ALL') return true;
+
+  const targetNorm = normalizeTopic(selectedTopic);
+
+  // 1. Match by topicId (UUID)
+  if (q.topicId && (q.topicId === selectedTopic || q.topic?.id === selectedTopic)) {
+    return true;
+  }
+
+  // 2. Match by topic name (normalized)
+  const qTopicName = getDisplayName(q.topic) || q.topic?.name || '';
+  if (qTopicName && normalizeTopic(qTopicName) === targetNorm) {
+    return true;
+  }
+
+  // 3. Match by tags
+  if (Array.isArray(q.tags)) {
+    for (const tag of q.tags) {
+      const tagName = typeof tag === 'string' ? tag : (tag?.name || '');
+      if (tagName && normalizeTopic(tagName) === targetNorm) {
+        return true;
+      }
+    }
+  }
+
+  // 4. Match by metadata pattern or topic
+  const meta = q.metadata?.jsonPayload || q.metadata || {};
+  if (meta.pattern && normalizeTopic(meta.pattern) === targetNorm) {
+    return true;
+  }
+  if (meta.topic && normalizeTopic(meta.topic) === targetNorm) {
+    return true;
+  }
+
+  return false;
+};
+
 export const QuestionList = () => {
   const navigate = useNavigate();
   const [searchParams, setSearchParams] = useSearchParams();
@@ -74,15 +121,53 @@ export const QuestionList = () => {
     return () => clearTimeout(timer);
   }, [searchTerm, searchParam]);
 
-  // Filter questions based on selected canonical category
+  // Filter questions based on selected canonical category, topic, difficulty, type, and search
   const questions = useMemo(() => {
     const rawList = questionsData?.data || [];
-    if (!selectedCategory) return rawList;
     return rawList.filter((q: any) => {
-      const qCategory = mapToStudentCategory(getDisplayName(q.category) || q.category);
-      return qCategory.toLowerCase() === selectedCategory.toLowerCase();
+      // 1. Category filter
+      if (selectedCategory) {
+        const qCategory = mapToStudentCategory(getDisplayName(q.category) || q.category);
+        if (qCategory.toLowerCase() !== selectedCategory.toLowerCase()) {
+          return false;
+        }
+      }
+
+      // 2. Topic filter
+      if (selectedTopic) {
+        if (!matchesSelectedTopic(q, selectedTopic)) {
+          return false;
+        }
+      }
+
+      // 3. Difficulty filter
+      if (selectedDifficulty && selectedDifficulty !== 'ALL') {
+        if (q.difficulty?.toUpperCase() !== selectedDifficulty.toUpperCase()) {
+          return false;
+        }
+      }
+
+      // 4. Question Type filter
+      if (selectedType && selectedType !== 'ALL') {
+        if (q.questionType?.toUpperCase() !== selectedType.toUpperCase()) {
+          return false;
+        }
+      }
+
+      // 5. Client search term filter (immediate consistency)
+      if (debouncedSearch && debouncedSearch.trim()) {
+        const term = debouncedSearch.trim().toLowerCase();
+        const title = (q.title || '').toLowerCase();
+        const desc = (q.description || '').toLowerCase();
+        const topicName = (getDisplayName(q.topic) || q.topic?.name || '').toLowerCase();
+        if (!title.includes(term) && !desc.includes(term) && !topicName.includes(term)) {
+          return false;
+        }
+      }
+
+      return true;
     });
-  }, [questionsData?.data, selectedCategory]);
+  }, [questionsData?.data, selectedCategory, selectedTopic, selectedDifficulty, selectedType, debouncedSearch]);
 
   const pagination = questionsData?.pagination || { totalPages: 1, page: 1, limit: 10, total: questions.length };
 
@@ -93,12 +178,40 @@ export const QuestionList = () => {
     }
   };
 
-  const activeTopics = selectedCategory 
-    ? (topicsData || []).filter((t: any) => {
-        const catName = getDisplayName(t.category);
-        return mapToStudentCategory(catName) === selectedCategory;
-      })
-    : (topicsData || []);
+  const activeTopics = useMemo(() => {
+    const raw = topicsData || [];
+    if (!selectedCategory) return raw;
+    return raw.filter((t: any) => {
+      const catName = getDisplayName(t.category) || t.category?.name || '';
+      return mapToStudentCategory(catName).toLowerCase() === selectedCategory.toLowerCase();
+    });
+  }, [topicsData, selectedCategory]);
+
+  // Accurate topic question count calculation
+  const dynamicTopicCountMap = useMemo(() => {
+    const map: Record<string, number> = {};
+    const rawList = questionsData?.data || [];
+    if (!selectedTopic && rawList.length > 0) {
+      for (const q of rawList) {
+        if (selectedCategory) {
+          const qCat = mapToStudentCategory(getDisplayName(q.category) || q.category);
+          if (qCat.toLowerCase() !== selectedCategory.toLowerCase()) continue;
+        }
+        const tName = getDisplayName(q.topic) || q.topic?.name;
+        if (tName) {
+          map[tName] = (map[tName] || 0) + 1;
+        }
+      }
+    }
+    return map;
+  }, [questionsData?.data, selectedCategory, selectedTopic]);
+
+  const getTopicCount = (topic: any): number => {
+    if (!selectedTopic && dynamicTopicCountMap[topic.name] != null) {
+      return dynamicTopicCountMap[topic.name];
+    }
+    return topic._count?.questions ?? 0;
+  };
 
   const handleResetFilters = () => {
     setSelectedCategory('');
@@ -227,9 +340,9 @@ export const QuestionList = () => {
                     }`}
                   >
                     <span className="truncate">{topic.name}</span>
-                    {topic._count?.questions != null && (
-                      <span className="text-[10px] text-text-muted shrink-0 ml-1 font-mono font-semibold">{topic._count.questions}</span>
-                    )}
+                    <span className="text-[10px] text-text-muted shrink-0 ml-1 font-mono font-semibold">
+                      {getTopicCount(topic)}
+                    </span>
                   </button>
                 ))
               )}
@@ -291,7 +404,12 @@ export const QuestionList = () => {
           {/* Results Counter */}
           <div className="flex justify-between items-center text-xs text-text-muted px-1">
             <span>
-              Showing <strong className="text-text-primary font-semibold">{questions.length}</strong> {selectedCategory ? `in ${selectedCategory}` : 'questions'}
+              Showing <strong className="text-text-primary font-semibold">{questions.length}</strong>{' '}
+              {selectedTopic
+                ? `in "${selectedTopic}"`
+                : selectedCategory
+                ? `in ${selectedCategory}`
+                : 'questions'}
             </span>
             {isFetching && <span className="animate-pulse text-accent font-semibold">Updating...</span>}
           </div>
@@ -376,13 +494,15 @@ export const QuestionList = () => {
               ) : (
                 <EmptyState
                   icon={<Code2 className="h-6 w-6" />}
-                  title={selectedCategory ? `No questions in ${selectedCategory}` : "No Questions Found"}
+                  title="No questions found"
                   description={
-                    selectedCategory 
-                      ? `Questions for ${selectedCategory} are being prepared in the curriculum repository.`
-                      : hasActiveFilters 
-                        ? "No questions match your selected filters. Try broadening your criteria." 
-                        : "Questions will appear once loaded from the curriculum dataset."
+                    selectedTopic
+                      ? `No coding questions match "${selectedTopic}".`
+                      : selectedCategory 
+                        ? `Questions for ${selectedCategory} are being prepared in the curriculum repository.`
+                        : hasActiveFilters 
+                          ? "No questions match your selected filters. Try broadening your criteria." 
+                          : "Questions will appear once loaded from the curriculum dataset."
                   }
                   actionLabel={hasActiveFilters ? "Reset Filters" : undefined}
                   onAction={hasActiveFilters ? handleResetFilters : undefined}

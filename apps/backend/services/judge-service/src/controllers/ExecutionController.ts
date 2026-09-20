@@ -6,7 +6,10 @@ import { z } from 'zod';
 
 const ExecuteSchema = z.object({
   executionMode: z.enum(['INTERVIEW', 'PRACTICE']).optional().default('PRACTICE'),
-  runMode: z.enum(['RUN', 'SUBMIT']).optional().default('SUBMIT'),
+  runMode: z.enum(['RUN', 'SUBMIT', 'SAMPLE', 'CUSTOM', 'CUSTOM_RUN']).optional().default('SUBMIT'),
+  // STDIN_PROGRAM: student writes a complete standalone program (default, only supported mode).
+  // FUNCTION_CALL: legacy adapter mode — rejected by ExecutionEngine.
+  executionType: z.enum(['STDIN_PROGRAM', 'FUNCTION_CALL']).optional().default('STDIN_PROGRAM'),
   interviewId: z.string().uuid().optional(),
   questionRefId: z.string().optional(),
   questionId: z.string().optional(),

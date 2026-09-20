@@ -3,15 +3,15 @@
   "version": "v1",
   "description": "Manually verified demo questions for the NM Mock Interview Platform Student Practice module.",
   "verifiedBy": "Team Praveen / Dhanush M / Angesh Karthik",
-  "totalQuestions": 45,
+  "totalQuestions": 65,
   "datasets": [
     {
-      "file": "coding.json",
+      "file": "full_program_coding_interview_dataset_40(3).json",
       "questionType": "CODING",
-      "language": "Python",
-      "count": 20,
-      "idPrefix": "COD",
-      "datasetName": "Curated Coding Set v1"
+      "language": "Multi-Language",
+      "count": 40,
+      "idPrefix": "FULL_PROGRAM",
+      "datasetName": "Curated - Full-Program Coding Interview Dataset"
     },
     {
       "file": "aptitude.json",

@@ -23,14 +23,14 @@ export const InterviewSummary: React.FC = () => {
     >
       <PageHeader
         title="Assessment Report"
-        description={`Detailed competency breakdown for session ${id.substring(0, 8)}...`}
+        description="Detailed competency breakdown and skill evidence across all assessment rounds."
         breadcrumbs={[
           { label: 'Dashboard', href: '/student/dashboard' }, 
           { label: 'Interviews', href: '/student/interviews' },
           { label: 'Report' }
         ]}
         actions={
-          <Button variant="outline" onClick={() => navigate('/student/interviews')} className="gap-2">
+          <Button variant="outline" onClick={() => navigate('/student/interviews')} className="gap-2 cursor-pointer">
             <ChevronLeft className="h-4 w-4" /> Return to Interviews
           </Button>
         }

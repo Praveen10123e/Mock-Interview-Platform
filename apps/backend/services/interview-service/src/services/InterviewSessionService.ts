@@ -154,6 +154,24 @@ export class InterviewSessionService {
       throw err;
     }
 
+    // Deadline check: server-side authority
+    if (interview.session?.expiresAt && new Date() >= interview.session.expiresAt) {
+      if (!interview.session.finalizedAt) {
+        try {
+          const { ReportService } = require('./ReportService');
+          await ReportService.finalizeSession(interviewId, identityId, undefined, 'TIME_EXPIRED');
+        } catch (fErr: any) {
+          console.warn('[InterviewSessionService] Auto-finalize on deadline error:', fErr.message);
+        }
+      }
+      const err: any = new Error(
+        'Assessment time has expired. The assessment has been automatically submitted.'
+      );
+      err.statusCode = 403;
+      err.errorType = 'TIME_EXPIRED';
+      throw err;
+    }
+
     return interview;
   }
 
@@ -197,6 +215,13 @@ export class InterviewSessionService {
       throw err;
     }
 
+    const durationMinutes = 60;
+    if (!durationMinutes || durationMinutes <= 0) {
+      throw new Error('Invalid assessment duration configuration');
+    }
+
+    const now = new Date();
+
     // Check if an active IN_PROGRESS practice session already exists
     const existing = await prisma.interview.findFirst({
       where: {
@@ -205,12 +230,30 @@ export class InterviewSessionService {
         state: 'RUNNING',
         session: { finalizedAt: null },
       },
-      include: { session: true },
+      include: { session: true, configuration: true },
+      orderBy: { createdAt: 'desc' },
     });
 
     if (existing) {
-      return { id: existing.id, isResumed: true };
+      const startedAt = existing.session?.startedAt || existing.createdAt;
+      const configDuration = existing.configuration?.duration || durationMinutes;
+      const expiresAt = existing.session?.expiresAt || new Date(startedAt.getTime() + configDuration * 60 * 1000);
+
+      if (now >= expiresAt) {
+        // Stale session expired in the past: auto-finalize and do NOT resume!
+        try {
+          const { ReportService } = require('./ReportService');
+          await ReportService.finalizeSession(existing.id, identityId, undefined, 'TIME_EXPIRED');
+        } catch (fErr: any) {
+          console.warn('[startPracticeSession] Finalize stale session error:', fErr.message);
+        }
+      } else {
+        // Genuine unexpired active session: recover it
+        return { id: existing.id, isResumed: true, state: 'RUNNING' };
+      }
     }
+
+    const expiresAt = new Date(now.getTime() + durationMinutes * 60 * 1000);
 
     // Create fresh interview
     const interview = await prisma.interview.create({
@@ -222,24 +265,31 @@ export class InterviewSessionService {
         state: 'RUNNING',
         configuration: {
           create: {
-            duration: 60,
+            duration: durationMinutes,
             questionCount: 8,
             strictMode: false,
           },
         },
         session: {
           create: {
-            startedAt: new Date(),
+            startedAt: now,
+            expiresAt,
+            completionReason: null,
           },
         },
       },
       include: { session: true },
     });
 
+    // Validate newly created session
+    if (interview.state !== 'RUNNING' || !interview.session?.startedAt || !interview.session?.expiresAt || interview.session.expiresAt <= interview.session.startedAt) {
+      throw new Error('Assertion failed: Newly created assessment session is invalid.');
+    }
+
     // Pre-lock questions
     await this.lockSessionQuestions(interview.id, null);
 
-    return { id: interview.id, isResumed: false };
+    return { id: interview.id, isResumed: false, state: 'RUNNING' };
   }
 
   /**
@@ -263,6 +313,13 @@ export class InterviewSessionService {
       throw err;
     }
 
+    const durationMinutes = template.duration || 60;
+    if (!durationMinutes || durationMinutes <= 0) {
+      throw new Error('Invalid assessment template duration configuration.');
+    }
+
+    const now = new Date();
+
     // Check for existing active session for this template
     const existing = await prisma.interview.findFirst({
       where: {
@@ -271,12 +328,30 @@ export class InterviewSessionService {
         state: 'RUNNING',
         session: { finalizedAt: null },
       },
-      include: { session: true },
+      include: { session: true, configuration: true },
+      orderBy: { createdAt: 'desc' },
     });
 
     if (existing) {
-      return { id: existing.id, isResumed: true };
+      const startedAt = existing.session?.startedAt || existing.createdAt;
+      const configDuration = existing.configuration?.duration || durationMinutes;
+      const expiresAt = existing.session?.expiresAt || new Date(startedAt.getTime() + configDuration * 60 * 1000);
+
+      if (now >= expiresAt) {
+        // Stale session expired in the past: auto-finalize and do NOT resume!
+        try {
+          const { ReportService } = require('./ReportService');
+          await ReportService.finalizeSession(existing.id, identityId, undefined, 'TIME_EXPIRED');
+        } catch (fErr: any) {
+          console.warn('[startTemplateSession] Finalize stale session error:', fErr.message);
+        }
+      } else {
+        // Genuine unexpired active session: recover it
+        return { id: existing.id, isResumed: true, state: 'RUNNING' };
+      }
     }
+
+    const expiresAt = new Date(now.getTime() + durationMinutes * 60 * 1000);
 
     const interview = await prisma.interview.create({
       data: {
@@ -288,24 +363,31 @@ export class InterviewSessionService {
         state: 'RUNNING',
         configuration: {
           create: {
-            duration: template.duration || 60,
+            duration: durationMinutes,
             questionCount: template.questionCount || 0,
             strictMode: false,
           },
         },
         session: {
           create: {
-            startedAt: new Date(),
+            startedAt: now,
+            expiresAt,
+            completionReason: null,
           },
         },
       },
       include: { session: true },
     });
 
+    // Validate newly created session
+    if (interview.state !== 'RUNNING' || !interview.session?.startedAt || !interview.session?.expiresAt || interview.session.expiresAt <= interview.session.startedAt) {
+      throw new Error('Assertion failed: Newly created assessment session is invalid.');
+    }
+
     // Lock questions based on template configuration
     await this.lockSessionQuestions(interview.id, template);
 
-    return { id: interview.id, isResumed: false };
+    return { id: interview.id, isResumed: false, state: 'RUNNING' };
   }
 
   /**
@@ -468,7 +550,52 @@ export class InterviewSessionService {
    * Get Complete Session Runtime State for frontend reconstruction on load / refresh
    */
   static async getSessionState(interviewId: string, identityId: string): Promise<SessionRuntimeState> {
-    const interview = await this.getInterviewScoped(interviewId, identityId);
+    let interview = await this.getInterviewScoped(interviewId, identityId);
+
+    // Authoritative Server Timing & Deadline Calculation
+    const durationMinutes = interview.configuration?.duration || 60;
+    let startedAt = interview.session?.startedAt || interview.createdAt;
+    let expiresAt = interview.session?.expiresAt;
+
+    if (!expiresAt) {
+      expiresAt = new Date(startedAt.getTime() + durationMinutes * 60 * 1000);
+      if (interview.session?.id) {
+        await prisma.interviewSession.update({
+          where: { id: interview.session.id },
+          data: { expiresAt },
+        }).catch(() => {});
+      }
+    }
+
+    const now = new Date();
+    // Auto-finalization on deadline expiration
+    if (now >= expiresAt && interview.state === 'RUNNING' && !interview.session?.finalizedAt) {
+      try {
+        const { ReportService } = require('./ReportService');
+        await ReportService.finalizeSession(interviewId, identityId, undefined, 'TIME_EXPIRED');
+        interview = await this.getInterviewScoped(interviewId, identityId);
+      } catch (fErr: any) {
+        console.warn('[InterviewSessionService] Auto-finalize on getSessionState error:', fErr.message);
+      }
+    }
+
+    // Tab-switch monitoring statistics
+    const sessionId = interview.session?.id || interview.id;
+    const tabSwitches = await (prisma as any).interviewTabSwitchEvent.findMany({
+      where: {
+        OR: [
+          { interviewId },
+          { sessionId },
+        ],
+        returnedAt: { not: null },
+      },
+      orderBy: { leftAt: 'asc' },
+    });
+    const tabSwitchesCount = tabSwitches.length;
+    const totalTimeAwaySeconds = tabSwitches.reduce(
+      (acc: number, item: any) => acc + (item.durationSeconds || 0),
+      0
+    );
 
     // 1. Fetch locked questions
     const { aptitude, coding, hr } = await this.getSessionQuestions(interviewId, identityId);
@@ -647,6 +774,10 @@ export class InterviewSessionService {
       roundState.report = 'LOCKED';
     }
 
+    const timeRemainingSeconds = isFinalized
+      ? 0
+      : Math.max(0, Math.floor((expiresAt.getTime() - now.getTime()) / 1000));
+
     return {
       id: interview.id,
       interviewId: interview.id,
@@ -658,9 +789,15 @@ export class InterviewSessionService {
       activeRound,
       roundState,
       isFinalized,
-      startedAt: interview.session?.startedAt?.toISOString() || null,
+      startedAt: startedAt ? startedAt.toISOString() : null,
       finishedAt: interview.session?.finishedAt?.toISOString() || null,
-      timeRemainingSeconds: 3600,
+      expiresAt: expiresAt ? expiresAt.toISOString() : null,
+      durationMinutes,
+      timeRemainingSeconds,
+      tabSwitchesCount,
+      totalTimeAwaySeconds,
+      completionReason: interview.session?.completionReason || null,
+      serverTime: new Date().toISOString(),
       aptitude: aptTelemetry,
       coding: codingTelemetry,
       hr: hrTelemetry,

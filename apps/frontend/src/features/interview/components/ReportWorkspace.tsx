@@ -22,19 +22,20 @@ import {
   Send,
   Bot,
   User,
-  HelpCircle,
   ChevronDown,
   ChevronUp,
   ChevronLeft,
   ChevronRight,
   Terminal,
   Calculator,
-  RefreshCw,
-  Info
+  Info,
+  Copy,
+  Check
 } from 'lucide-react';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 import api from '../../../api/axios/instance';
 import { Button } from '../../../components/ui/button';
+import { HRReportTab } from './hr/HRReportTab';
 
 const formatCategory = (cat: any): string => {
   if (!cat) return 'Quantitative';
@@ -66,17 +67,17 @@ interface ChatMessage {
 }
 
 /** Lightweight safe Markdown → HTML renderer (no external deps) */
-function renderMarkdown(text: string): JSX.Element {
+function renderMarkdown(text: string): React.JSX.Element {
   const lines = text.split('\n');
-  const elements: JSX.Element[] = [];
+  const elements: React.ReactNode[] = [];
   let i = 0;
   let keyIdx = 0;
 
   const nextKey = () => `md-${keyIdx++}`;
 
   // Inline formatter: **bold**, `code`, *italic*
-  const formatInline = (s: string): (string | JSX.Element)[] => {
-    const parts: (string | JSX.Element)[] = [];
+  const formatInline = (s: string): (string | React.ReactNode)[] => {
+    const parts: (string | React.ReactNode)[] = [];
     // Split on bold (**...**), code (`...`), italic (*...*)  in order
     const regex = /\*\*([^*]+)\*\*|`([^`]+)`|\*([^*]+)\*/g;
     let last = 0;
@@ -84,11 +85,11 @@ function renderMarkdown(text: string): JSX.Element {
     while ((match = regex.exec(s)) !== null) {
       if (match.index > last) parts.push(s.slice(last, match.index));
       if (match[1] !== undefined) {
-        parts.push(<strong key={nextKey()} className="text-white font-semibold">{match[1]}</strong>);
+        parts.push(<strong key={nextKey()} className="text-slate-900 font-bold">{match[1]}</strong>);
       } else if (match[2] !== undefined) {
-        parts.push(<code key={nextKey()} className="px-1.5 py-0.5 rounded bg-black/40 text-emerald-300 font-mono text-[11px]">{match[2]}</code>);
+        parts.push(<code key={nextKey()} className="px-1.5 py-0.5 rounded bg-slate-100 text-blue-700 border border-slate-200 font-mono text-[11px]">{match[2]}</code>);
       } else if (match[3] !== undefined) {
-        parts.push(<em key={nextKey()} className="text-gray-300 italic">{match[3]}</em>);
+        parts.push(<em key={nextKey()} className="text-slate-600 italic">{match[3]}</em>);
       }
       last = regex.lastIndex;
     }
@@ -108,7 +109,7 @@ function renderMarkdown(text: string): JSX.Element {
     // H3 ###
     if (line.startsWith('### ')) {
       elements.push(
-        <h3 key={nextKey()} className="text-sm font-bold text-white mt-3 mb-1 leading-tight">
+        <h3 key={nextKey()} className="text-sm font-bold text-slate-900 mt-3 mb-1 leading-tight">
           {formatInline(line.slice(4))}
         </h3>
       );
@@ -119,7 +120,7 @@ function renderMarkdown(text: string): JSX.Element {
     // H2 ##
     if (line.startsWith('## ')) {
       elements.push(
-        <h2 key={nextKey()} className="text-base font-bold text-white mt-3 mb-1 leading-tight">
+        <h2 key={nextKey()} className="text-base font-bold text-slate-900 mt-3 mb-1 leading-tight">
           {formatInline(line.slice(3))}
         </h2>
       );
@@ -130,7 +131,7 @@ function renderMarkdown(text: string): JSX.Element {
     // H1 #
     if (line.startsWith('# ')) {
       elements.push(
-        <h1 key={nextKey()} className="text-lg font-bold text-white mt-3 mb-1 leading-tight">
+        <h1 key={nextKey()} className="text-lg font-bold text-slate-900 mt-3 mb-1 leading-tight">
           {formatInline(line.slice(2))}
         </h1>
       );
@@ -140,12 +141,12 @@ function renderMarkdown(text: string): JSX.Element {
 
     // Numbered list (1. 2. ...)
     if (/^\d+\.\s/.test(line)) {
-      const listItems: JSX.Element[] = [];
+      const listItems: React.ReactNode[] = [];
       while (i < lines.length && /^\d+\.\s/.test(lines[i])) {
         const content = lines[i].replace(/^\d+\.\s/, '');
         listItems.push(
           <li key={nextKey()} className="flex gap-2 items-start">
-            <span className="w-5 h-5 rounded-full bg-indigo-500/20 border border-indigo-500/30 text-indigo-300 flex items-center justify-center font-mono text-[10px] shrink-0 mt-0.5 font-bold">
+            <span className="w-5 h-5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center font-mono text-[10px] shrink-0 mt-0.5 font-bold">
               {listItems.length + 1}
             </span>
             <span className="flex-1">{formatInline(content)}</span>
@@ -159,12 +160,12 @@ function renderMarkdown(text: string): JSX.Element {
 
     // Unordered list (• - *)
     if (/^[\-*•]\s/.test(line)) {
-      const listItems: JSX.Element[] = [];
+      const listItems: React.ReactNode[] = [];
       while (i < lines.length && /^[\-*•]\s/.test(lines[i])) {
         const content = lines[i].replace(/^[\-*•]\s/, '');
         listItems.push(
           <li key={nextKey()} className="flex gap-2 items-start">
-            <span className="text-purple-400 mt-0.5 shrink-0">•</span>
+            <span className="text-blue-600 mt-0.5 shrink-0 font-bold">•</span>
             <span className="flex-1">{formatInline(content)}</span>
           </li>
         );
@@ -176,7 +177,7 @@ function renderMarkdown(text: string): JSX.Element {
 
     // Horizontal rule
     if (/^---+$/.test(line.trim())) {
-      elements.push(<hr key={nextKey()} className="border-white/10 my-2" />);
+      elements.push(<hr key={nextKey()} className="border-slate-200 my-2" />);
       i++;
       continue;
     }
@@ -190,7 +191,7 @@ function renderMarkdown(text: string): JSX.Element {
     i++;
   }
 
-  return <div className="space-y-1 text-xs text-gray-200">{elements}</div>;
+  return <div className="space-y-1.5 text-xs text-slate-800 leading-relaxed">{elements}</div>;
 }
 
 export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: any, interviewId: string }) => {
@@ -202,6 +203,12 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
   const [activeTab, setActiveTab] = useState<'overview' | 'aptitude' | 'coding' | 'hr' | 'chat'>('overview');
   const [selectedAptIndex, setSelectedAptIndex] = useState(0);
   const [aptViewMode, setAptViewMode] = useState<'single' | 'all'>('single');
+  const [selectedCodingIndex, setSelectedCodingIndex] = useState(0);
+  const [codingViewMode, setCodingViewMode] = useState<'single' | 'all'>('single');
+  const [copiedCodeIdx, setCopiedCodeIdx] = useState<number | null>(null);
+  const [selectedAttempts, setSelectedAttempts] = useState<Record<number, number>>({});
+  const [copiedCorrectedIdx, setCopiedCorrectedIdx] = useState<number | null>(null);
+  const [copiedOptimizedIdx, setCopiedOptimizedIdx] = useState<number | null>(null);
 
   // Chat State
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -209,6 +216,7 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
   const [isSending, setIsSending] = useState(false);
   const [chatLoading, setChatLoading] = useState(false);
   const [askAiQuestion, setAskAiQuestion] = useState<any>(null);
+  const [askAiCodingProblem, setAskAiCodingProblem] = useState<any>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const sendingRef = useRef(false); // Prevent double-submit in StrictMode
 
@@ -219,6 +227,7 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
       setLoading(false);
       return;
     }
+    if (report) return;
     
     setLoading(true);
     api.get(`/interviews/${interviewId}/report`)
@@ -325,6 +334,7 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
   // Launch Ask AI from a specific question card
   const handleAskAI = (q: any) => {
     if (sendingRef.current) return;
+    setAskAiCodingProblem(null);
     setAskAiQuestion(q);
     setActiveTab('chat');
     const correctIdx = typeof q.correctOptionIndex === 'number' ? q.correctOptionIndex : 0;
@@ -369,6 +379,69 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
     handleSendMessage(payload, modeLabels[mode]);
   };
 
+  // Launch Ask AI from a specific coding problem
+  const handleAskAICoding = (p: any, probNumber: number) => {
+    if (sendingRef.current) return;
+    setAskAiQuestion(null);
+    setAskAiCodingProblem({ ...p, problemNumber: probNumber });
+    setActiveTab('chat');
+
+    const payload = JSON.stringify({
+      type: 'CODING_CONTEXT',
+      questionId: p.questionId,
+      problemNumber: probNumber,
+      title: p.title,
+      pattern: p.pattern,
+      difficulty: p.difficulty,
+      finalVerdict: p.finalVerdict,
+      testsPassed: p.testsPassed,
+      testsTotal: p.testsTotal,
+      candidateComplexity: p.candidateTimeComplexity,
+      expectedComplexity: p.expectedComplexity,
+    });
+    const displayText = `💻 Asking AI about Coding Problem #${probNumber}: ${p.title}`;
+    handleSendMessage(payload, displayText);
+  };
+
+  // Launch Ask AI for a specific attempt of a coding problem
+  const handleAskAIAttempt = (p: any, probNumber: number, attemptNumber: number) => {
+    if (sendingRef.current) return;
+    setAskAiQuestion(null);
+    setAskAiCodingProblem({ ...p, problemNumber: probNumber, selectedAttemptNumber: attemptNumber });
+    setActiveTab('chat');
+
+    const payload = JSON.stringify({
+      type: 'CODING_CONTEXT',
+      questionId: p.questionId,
+      problemNumber: probNumber,
+      attemptNumber,
+      title: p.title,
+    });
+    const displayText = `💻 Asking AI about Attempt #${attemptNumber} for Problem #${probNumber}: ${p.title}`;
+    handleSendMessage(payload, displayText);
+  };
+
+  // Trigger coding mode pill from chat
+  const handleCodingPill = (mode: string) => {
+    if (!askAiCodingProblem || sendingRef.current) return;
+    const probNumber = askAiCodingProblem.problemNumber || 1;
+    const payload = JSON.stringify({
+      type: 'CODING_MODE',
+      mode,
+      problemNumber: probNumber,
+      questionId: askAiCodingProblem.questionId,
+      candidateComplexity: askAiCodingProblem.candidateTimeComplexity || askAiCodingProblem.candidateComplexity,
+    });
+    const modeLabels: Record<string, string> = {
+      WHAT_IS_WRONG: `🧐 What exactly is wrong in my code for Problem #${probNumber}?`,
+      WHICH_TEST_FAILED: `❌ Which test case failed for Problem #${probNumber}?`,
+      COMPLEXITY: `⚡ Why is my solution ${askAiCodingProblem.candidateTimeComplexity || 'suboptimal'} for Problem #${probNumber}?`,
+      CORRECT_APPROACH: `💡 Show me the optimal approach for Problem #${probNumber}`,
+      TEACH_PATTERN: `🎓 Teach me the algorithmic pattern for Problem #${probNumber}`,
+    };
+    handleSendMessage(payload, modeLabels[mode] || `Problem #${probNumber} Query`);
+  };
+
   // Answer practice question
   const handleAnswerPractice = async (practiceQuestionId: string, answerLetter: string) => {
     if (sendingRef.current) return;
@@ -410,10 +483,10 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
 
   if (loading) {
     return (
-      <div className="flex-1 flex items-center justify-center p-12 bg-[#0d1117]">
+      <div className="flex-1 flex items-center justify-center p-12 bg-slate-50 min-h-[400px]">
         <div className="flex flex-col items-center gap-3">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-500" />
-          <p className="text-xs text-gray-400 font-mono">Aggregating session evidence & computing 7-dimension metrics...</p>
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-indigo-600" />
+          <p className="text-xs text-slate-500 font-mono">Aggregating session evidence & computing 7-dimension metrics...</p>
         </div>
       </div>
     );
@@ -421,12 +494,12 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
 
   if (error || !report) {
     return (
-      <div className="flex-1 flex items-center justify-center p-8 bg-[#0d1117]">
+      <div className="flex-1 flex items-center justify-center p-8 bg-slate-50 min-h-[400px]">
         <div className="text-center max-w-md space-y-4">
-          <AlertCircle className="w-12 h-12 text-rose-400 mx-auto" />
+          <AlertCircle className="w-12 h-12 text-rose-500 mx-auto" />
           <div>
-            <h2 className="text-lg font-semibold text-white">Error Loading Report</h2>
-            <p className="text-xs text-gray-400 mt-1">{error || 'Interview not found or could not be loaded.'}</p>
+            <h2 className="text-lg font-semibold text-slate-900">Error Loading Report</h2>
+            <p className="text-xs text-slate-500 mt-1">{error || 'Interview not found or could not be loaded.'}</p>
           </div>
           <Button onClick={() => navigate('/student/interviews')} size="sm">
             Back to Interviews Hub
@@ -443,7 +516,11 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
     report.scores?.normalizedCompositeScore ??
     0;
 
-  const sessionDuration = report.sessionDuration || '45 min';
+  const rawDuration = report.sessionDuration || '';
+  const parsedMins = parseInt(rawDuration, 10);
+  const sessionDuration = (!rawDuration || isNaN(parsedMins) || parsedMins > 300 || parsedMins <= 0)
+    ? '60 min'
+    : (rawDuration.includes('min') || rawDuration.includes('hr') ? rawDuration : `${parsedMins} min`);
   const assessmentDate = report.assessmentDate || report.finalizedAt;
   const percentileBenchmark =
     report.percentileBenchmark || 'Benchmark unavailable — more completed assessments are required.';
@@ -566,80 +643,102 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
           'Review optimal time complexity patterns.',
         ];
 
-  const suggestedQuickQuestions = [
-    'Explain my biggest mistake',
-    'Was my coding approach optimal?',
-    'Show me a better approach',
-    'Explain my aptitude mistakes',
-    'How can I improve my HR answers?',
-    'What should I practice next?',
-  ];
+  const rawMonitoring = report.monitoring;
+  const monitoringEvents = rawMonitoring?.events || [];
+  const monitoringTotalSwitches = typeof rawMonitoring?.totalSwitches === 'number'
+    ? rawMonitoring.totalSwitches
+    : typeof rawMonitoring?.tabSwitches === 'number'
+    ? rawMonitoring.tabSwitches
+    : monitoringEvents.length;
+  const monitoringTotalAwaySeconds = typeof rawMonitoring?.totalAwaySeconds === 'number'
+    ? rawMonitoring.totalAwaySeconds
+    : typeof rawMonitoring?.totalTimeAwaySeconds === 'number'
+    ? rawMonitoring.totalTimeAwaySeconds
+    : monitoringEvents.reduce((sum: number, ev: any) => sum + (ev.durationSeconds || 0), 0);
+  const monitoringStatus = rawMonitoring?.status || rawMonitoring?.monitoringStatus || (
+    monitoringTotalSwitches > 2 || monitoringTotalAwaySeconds > 30 ? 'Review Recommended' : 'Integrity Verified'
+  );
+
+  const monitoring = {
+    status: monitoringStatus,
+    totalSwitches: monitoringTotalSwitches,
+    totalAwaySeconds: monitoringTotalAwaySeconds,
+    tabSwitches: monitoringTotalSwitches,
+    totalTimeAwaySeconds: monitoringTotalAwaySeconds,
+    events: monitoringEvents,
+    explanation: rawMonitoring?.explanation || (
+      monitoringTotalSwitches === 0 ? 'Assessment completed with continuous focus.' : `${monitoringTotalSwitches} focus change events recorded.`
+    ),
+  };
+  const completionReason =
+    report.completionDetails?.completionReason ||
+    report.completionReason ||
+    'Manually Submitted';
 
   return (
-    <div className="flex-1 flex flex-col bg-[#0d1117] text-gray-200 overflow-hidden">
+    <div className="flex-1 flex flex-col bg-slate-50 text-slate-900 overflow-hidden">
       
       {/* ── SUB-HEADER NAVIGATION BAR ── */}
-      <div className="h-12 shrink-0 flex items-center justify-between px-6 bg-[#161b22] border-b border-white/10">
+      <div className="h-13 shrink-0 flex items-center justify-between px-6 bg-white border-b border-slate-200 shadow-2xs">
         <div className="flex items-center gap-2">
           <button
             onClick={() => setActiveTab('overview')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
               activeTab === 'overview'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+                ? 'bg-[#111827] text-white border border-[#111827] shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
             📊 Executive Overview
           </button>
           <button
             onClick={() => setActiveTab('aptitude')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
               activeTab === 'aptitude'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+                ? 'bg-[#111827] text-white border border-[#111827] shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
             🧠 Aptitude Review ({summary.aptitudePassed}/{summary.aptitudeTotal})
           </button>
           <button
             onClick={() => setActiveTab('coding')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
               activeTab === 'coding'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+                ? 'bg-[#111827] text-white border border-[#111827] shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
             💻 Coding Deep-Dive ({summary.codingAccepted}/{summary.codingTotal} Solved)
           </button>
           <button
             onClick={() => setActiveTab('hr')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all cursor-pointer ${
               activeTab === 'hr'
-                ? 'bg-indigo-600 text-white shadow-sm'
-                : 'text-gray-400 hover:text-gray-200 hover:bg-white/5'
+                ? 'bg-[#111827] text-white border border-[#111827] shadow-xs'
+                : 'text-slate-600 hover:text-slate-900 hover:bg-slate-100'
             }`}
           >
             💬 HR Behavioral Review
           </button>
           <button
             onClick={() => setActiveTab('chat')}
-            className={`px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5 ${
+            className={`px-3.5 py-1.5 rounded-xl text-xs font-semibold transition-all flex items-center gap-1.5 cursor-pointer ${
               activeTab === 'chat'
-                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 text-white shadow-sm'
-                : 'text-purple-300 bg-purple-500/10 border border-purple-500/20 hover:bg-purple-500/20'
+                ? 'bg-[#7C3AED] text-white border border-[#7C3AED] shadow-xs'
+                : 'text-purple-700 bg-purple-50/70 border border-purple-200 hover:bg-purple-100/70'
             }`}
           >
-            <Bot className="h-3.5 w-3.5" />
+            <Bot className="h-3.5 w-3.5 text-current" />
             Ask About My Interview
-            <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
           </button>
         </div>
 
         <Button
           onClick={() => navigate('/student/interviews')}
-          variant="outline"
+          variant="secondary"
           size="sm"
-          className="text-xs border-white/10 bg-transparent hover:bg-white/5"
         >
           Exit to Hub
         </Button>
@@ -655,53 +754,53 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
           {activeTab === 'overview' && (
             <>
               {/* ── SECTION 1 — HEADER & SCORE HERO ── */}
-              <div className="relative overflow-hidden rounded-2xl bg-gradient-to-b from-[#161b22] to-[#0d1117] border border-white/10 p-6 md:p-8 shadow-md">
+              <div className="relative overflow-hidden rounded-2xl bg-white border border-slate-200 p-6 md:p-8 shadow-2xs">
                 <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
-                  <div className="space-y-2">
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-xs font-semibold text-indigo-400">
+                  <div className="space-y-2.5">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-blue-50 border border-blue-200 text-xs font-semibold text-blue-700">
                       <ShieldCheck className="h-4 w-4" />
                       <span>Evidence-Based Candidate Evaluation</span>
                     </div>
-                    <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white">
+                    <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-slate-900">
                       FINAL ASSESSMENT REPORT
                     </h1>
-                    <div className="flex flex-wrap items-center gap-4 text-xs text-gray-400 font-mono">
+                    <div className="flex flex-wrap items-center gap-4 text-xs text-slate-500 font-mono">
                       <span className="flex items-center gap-1.5">
-                        <Clock className="h-3.5 w-3.5 text-gray-500" /> Duration: {sessionDuration}
+                        <Clock className="h-3.5 w-3.5 text-slate-400" /> Duration: {sessionDuration}
                       </span>
                       <span>•</span>
                       <span>
                         Date: {assessmentDate ? new Date(assessmentDate).toLocaleDateString() : 'Today'}
                       </span>
                       <span>•</span>
-                      <span className="flex items-center gap-1.5 text-emerald-400 font-medium font-sans">
-                        <CheckCircle2 className="h-3.5 w-3.5" /> Evaluated from Session Evidence
+                      <span className="flex items-center gap-1.5 text-emerald-700 font-semibold font-sans">
+                        <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> Evaluated from Session Evidence
                       </span>
                     </div>
-                    <div className="pt-2 text-xs text-gray-400 font-mono flex items-center gap-2">
+                    <div className="pt-2 text-xs text-slate-600 font-mono flex items-center gap-2">
                       <span>Cohort Benchmark:</span>
-                      <span className="text-gray-200 font-semibold">{percentileBenchmark}</span>
+                      <span className="text-slate-900 font-bold">{percentileBenchmark}</span>
                     </div>
                   </div>
 
                   {/* Hero Proficiency Score Card */}
-                  <div className="flex flex-col items-center justify-center p-6 bg-[#090d13] rounded-2xl border border-white/10 min-w-[240px] text-center shadow-inner">
-                    <span className="text-[11px] font-bold uppercase tracking-widest text-gray-400 mb-1">
+                  <div className="flex flex-col items-center justify-center p-6 bg-slate-50 rounded-2xl border border-slate-200 min-w-[240px] text-center shadow-2xs">
+                    <span className="text-[11px] font-bold uppercase tracking-widest text-slate-500 mb-1">
                       Overall Proficiency
                     </span>
                     <div className="flex items-baseline gap-1">
-                      <span className="text-5xl md:text-6xl font-black tracking-tight text-transparent bg-clip-text bg-gradient-to-r from-indigo-400 to-purple-400">
+                      <span className="text-5xl md:text-6xl font-black tracking-tight text-slate-900">
                         {overallProficiencyScore}
                       </span>
-                      <span className="text-base text-gray-500 font-semibold">/ 100</span>
+                      <span className="text-base text-slate-400 font-bold">/ 100</span>
                     </div>
-                    <span className="text-xs font-medium text-gray-300 mt-1">
+                    <span className="text-xs font-semibold text-slate-700 mt-1">
                       {overallProficiencyScore >= 80 ? 'Proficient Ready' : overallProficiencyScore >= 60 ? 'Developing Competence' : 'Targeted Practice Required'}
                     </span>
                     
                     <button
                       onClick={() => setShowFormula(f => !f)}
-                      className="mt-3 inline-flex items-center gap-1 text-[11px] text-indigo-400 hover:text-indigo-300 transition-colors"
+                      className="mt-3 inline-flex items-center gap-1 text-[11px] text-blue-600 hover:text-blue-700 font-semibold transition-colors cursor-pointer"
                     >
                       <Calculator className="h-3 w-3" />
                       {showFormula ? 'Hide Calculation' : 'View Transparent Formula'}
@@ -712,22 +811,22 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
 
                 {/* Collapsible Transparent Formula Box */}
                 {showFormula && (
-                  <div className="mt-6 p-4 rounded-xl bg-black/40 border border-indigo-500/30 text-xs space-y-2 animate-in fade-in duration-200 font-mono">
-                    <div className="text-indigo-300 font-semibold flex items-center gap-2 font-sans">
+                  <div className="mt-6 p-4 rounded-xl bg-slate-50 border border-blue-200 text-xs space-y-2 animate-in fade-in duration-200 font-mono">
+                    <div className="text-blue-700 font-bold flex items-center gap-2 font-sans">
                       <Info className="h-4 w-4" /> Transparent Weighted Scoring Model:
                     </div>
-                    <div className="p-3 bg-white/5 rounded-lg text-gray-200">
+                    <div className="p-3 bg-white rounded-lg border border-slate-200 text-slate-800">
                       {scoreBreakdown.formula}
                     </div>
                     <div className="grid grid-cols-3 gap-2 text-center text-[11px] pt-1">
-                      <div className="p-2 rounded bg-white/3">
-                        <span className="text-gray-400">Aptitude:</span> <strong className="text-indigo-300">{scoreBreakdown.aptitudeScore}%</strong> × 40%
+                      <div className="p-2 rounded bg-white border border-slate-200">
+                        <span className="text-slate-500">Aptitude:</span> <strong className="text-blue-700">{scoreBreakdown.aptitudeScore}%</strong> × 40%
                       </div>
-                      <div className="p-2 rounded bg-white/3">
-                        <span className="text-gray-400">Coding:</span> <strong className="text-emerald-300">{scoreBreakdown.codingScore}%</strong> × 40%
+                      <div className="p-2 rounded bg-white border border-slate-200">
+                        <span className="text-slate-500">Coding:</span> <strong className="text-emerald-700">{scoreBreakdown.codingScore}%</strong> × 40%
                       </div>
-                      <div className="p-2 rounded bg-white/3">
-                        <span className="text-gray-400">HR:</span> <strong className="text-purple-300">{scoreBreakdown.hrScore}%</strong> × 20%
+                      <div className="p-2 rounded bg-white border border-slate-200">
+                        <span className="text-slate-500">HR:</span> <strong className="text-purple-700">{scoreBreakdown.hrScore}%</strong> × 20%
                       </div>
                     </div>
                   </div>
@@ -736,113 +835,228 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
 
               {/* ── SECTION 2 — 6 SUMMARY METRIC CARDS ── */}
               <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3 md:gap-4">
-                <Card className="p-4 bg-[#161b22] border border-white/10 space-y-1">
-                  <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <Brain className="h-3.5 w-3.5 text-indigo-400" /> Aptitude
+                <Card className="p-4 bg-white border border-slate-200 space-y-1 shadow-2xs">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <Brain className="h-3.5 w-3.5 text-blue-600" /> Aptitude
                   </div>
-                  <div className="text-xl font-bold text-white font-mono">
-                    {summary.aptitudePassed} <span className="text-xs text-gray-500">/ {summary.aptitudeTotal}</span>
+                  <div className="text-xl font-bold text-slate-900 font-mono">
+                    {summary.aptitudePassed} <span className="text-xs text-slate-400">/ {summary.aptitudeTotal}</span>
                   </div>
-                  <div className="text-[11px] text-gray-400">{summary.aptitudeScore}% correct</div>
+                  <div className="text-[11px] text-slate-500">{summary.aptitudeScore}% correct</div>
                 </Card>
 
-                <Card className="p-4 bg-[#161b22] border border-white/10 space-y-1">
-                  <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <Code2 className="h-3.5 w-3.5 text-emerald-400" /> Coding Accepted
+                <Card className="p-4 bg-white border border-slate-200 space-y-1 shadow-2xs">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <Code2 className="h-3.5 w-3.5 text-emerald-600" /> Coding Accepted
                   </div>
-                  <div className="text-xl font-bold text-white font-mono">
-                    {summary.codingAccepted} <span className="text-xs text-gray-500">/ {summary.codingTotal}</span>
+                  <div className="text-xl font-bold text-slate-900 font-mono">
+                    {summary.codingAccepted} <span className="text-xs text-slate-400">/ {summary.codingTotal}</span>
                   </div>
-                  <div className="text-[11px] text-gray-400">{summary.codingScore} pts earned</div>
+                  <div className="text-[11px] text-slate-500">{summary.codingScore} pts earned</div>
                 </Card>
 
-                <Card className="p-4 bg-[#161b22] border border-white/10 space-y-1">
-                  <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <Target className="h-3.5 w-3.5 text-blue-400" /> Tests Passed
+                <Card className="p-4 bg-white border border-slate-200 space-y-1 shadow-2xs">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <Target className="h-3.5 w-3.5 text-blue-600" /> Tests Passed
                   </div>
-                  <div className="text-xl font-bold text-white font-mono">
-                    {summary.testsPassed} <span className="text-xs text-gray-500">/ {summary.totalTests}</span>
+                  <div className="text-xl font-bold text-slate-900 font-mono">
+                    {summary.testsPassed} <span className="text-xs text-slate-400">/ {summary.totalTests}</span>
                   </div>
-                  <div className="text-[11px] text-gray-400">Across all problems</div>
+                  <div className="text-[11px] text-slate-500">Across all problems</div>
                 </Card>
 
-                <Card className="p-4 bg-[#161b22] border border-white/10 space-y-1">
-                  <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <Activity className="h-3.5 w-3.5 text-amber-400" /> Executions
+                <Card className="p-4 bg-white border border-slate-200 space-y-1 shadow-2xs">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <Activity className="h-3.5 w-3.5 text-amber-600" /> Executions
                   </div>
-                  <div className="text-xl font-bold text-white font-mono">
+                  <div className="text-xl font-bold text-slate-900 font-mono">
                     {summary.totalCodingAttempts}
                   </div>
-                  <div className="text-[11px] text-gray-400">Runs + Submissions</div>
+                  <div className="text-[11px] text-slate-500">Runs + Submissions</div>
                 </Card>
 
-                <Card className="p-4 bg-[#161b22] border border-white/10 space-y-1">
-                  <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <MessageSquare className="h-3.5 w-3.5 text-purple-400" /> HR Interview
+                <Card className="p-4 bg-white border border-slate-200 space-y-1 shadow-2xs">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <MessageSquare className="h-3.5 w-3.5 text-purple-600" /> HR Interview
                   </div>
-                  <div className="text-xl font-bold text-white">
+                  <div className="text-xl font-bold text-slate-900">
                     <StatusBadge status={summary.hrStatus || 'NOT_ATTEMPTED'} />
                   </div>
-                  <div className="text-[11px] text-gray-400">Behavioral round</div>
+                  <div className="text-[11px] text-slate-500">Behavioral round</div>
                 </Card>
 
-                <Card className="p-4 bg-[#161b22] border border-white/10 space-y-1">
-                  <div className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                    <Clock className="h-3.5 w-3.5 text-rose-400" /> Duration
+                <Card className="p-4 bg-white border border-slate-200 space-y-1 shadow-2xs">
+                  <div className="text-[10px] font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5">
+                    <Clock className="h-3.5 w-3.5 text-rose-600" /> Duration
                   </div>
-                  <div className="text-xl font-bold text-white font-mono">
+                  <div className="text-xl font-bold text-slate-900 font-mono">
                     {sessionDuration}
                   </div>
-                  <div className="text-[11px] text-gray-400">Total session time</div>
+                  <div className="text-[11px] text-slate-500">Total session time</div>
                 </Card>
               </div>
+
+              {/* ── ASSESSMENT INTEGRITY & MONITORING ── */}
+              <Card className="p-6 bg-white border border-slate-200 space-y-4 shadow-2xs">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+                  <div className="flex items-center gap-3">
+                    <div className={`p-2.5 rounded-xl border ${
+                      monitoring?.status === 'Review Recommended'
+                        ? 'bg-amber-50 border-amber-200 text-amber-700'
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-700'
+                    }`}>
+                      <ShieldCheck className="h-5 w-5" />
+                    </div>
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider">
+                          Assessment Integrity & Monitoring
+                        </h3>
+                        <span className="px-2 py-0.5 rounded text-[10px] font-bold bg-emerald-50 border border-emerald-200 text-emerald-700">
+                          Monitoring Active
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Integrity monitoring tracks window focus to ensure a fair assessment environment. Tab switches do not penalize test scores.
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-2">
+                    <span className={`px-3 py-1 rounded-full text-xs font-bold border flex items-center gap-1.5 ${
+                      monitoring?.status === 'Review Recommended'
+                        ? 'bg-amber-50 border-amber-200 text-amber-800'
+                        : 'bg-emerald-50 border-emerald-200 text-emerald-800'
+                    }`}>
+                      <span className={`w-2 h-2 rounded-full ${
+                        monitoring?.status === 'Review Recommended' ? 'bg-amber-500' : 'bg-emerald-500'
+                      }`} />
+                      {monitoring?.status || 'Integrity Verified'}
+                    </span>
+                    <span className={`px-2.5 py-1 rounded-full text-[11px] font-mono font-semibold border ${
+                      completionReason?.includes('Expired')
+                        ? 'bg-amber-50 border-amber-200 text-amber-800'
+                        : 'bg-blue-50 border-blue-200 text-blue-800'
+                    }`}>
+                      {completionReason}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Metric Badges */}
+                <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                    <span className="text-[10px] uppercase tracking-wider text-slate-500 block font-bold">Integrity Status</span>
+                    <span className={`text-sm font-bold ${
+                      monitoring?.status === 'Review Recommended' ? 'text-amber-700' : 'text-emerald-700'
+                    }`}>
+                      {monitoring?.status || 'Integrity Verified'}
+                    </span>
+                  </div>
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                    <span className="text-[10px] uppercase tracking-wider text-slate-500 block font-bold">Tab Switches Detected</span>
+                    <span className="text-base font-bold font-mono text-slate-900">
+                      {monitoringTotalSwitches}
+                    </span>
+                  </div>
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                    <span className="text-[10px] uppercase tracking-wider text-slate-500 block font-bold">Total Time Outside</span>
+                    <span className="text-base font-bold font-mono text-slate-900">
+                      {monitoringTotalAwaySeconds}s
+                    </span>
+                  </div>
+                  <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1">
+                    <span className="text-[10px] uppercase tracking-wider text-slate-500 block font-bold">Submission Reason</span>
+                    <span className="text-xs font-semibold text-slate-800 truncate block" title={completionReason}>
+                      {completionReason}
+                    </span>
+                  </div>
+                </div>
+
+                {/* Timeline of events */}
+                {monitoring?.events && monitoring.events.length > 0 ? (
+                  <div className="space-y-2.5 pt-2">
+                    <span className="text-xs font-bold text-slate-800 block">
+                      Chronological Window Visibility Events ({monitoring.events.length})
+                    </span>
+                    <div className="max-h-48 overflow-y-auto space-y-2 pr-1 scrollbar-thin">
+                      {monitoring.events.map((evt: any, idx: number) => (
+                        <div key={idx} className="p-3 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                          <div className="flex items-center gap-3">
+                            <span className="w-5 h-5 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-mono text-[10px] font-bold">
+                              {idx + 1}
+                            </span>
+                            <div className="text-slate-700">
+                              <span>
+                                Left Assessment: <strong className="text-slate-900 font-mono font-bold">{evt.leftAt ? new Date(evt.leftAt).toLocaleTimeString() : 'Unknown'}</strong>
+                              </span>
+                              <span className="mx-2 text-slate-400">→</span>
+                              <span>
+                                Returned: <strong className="text-slate-900 font-mono font-bold">{evt.returnedAt ? new Date(evt.returnedAt).toLocaleTimeString() : 'Session Finished'}</strong>
+                              </span>
+                            </div>
+                          </div>
+                          <span className="px-2.5 py-0.5 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 font-mono font-bold text-[11px]">
+                            {evt.durationSeconds ?? 0}s away
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="p-3.5 rounded-xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-800 flex items-center gap-2">
+                    <CheckCircle2 className="h-4 w-4 shrink-0 text-emerald-600" />
+                    <span>Integrity monitoring detected no visibility changes. Assessment was completed in continuous focus.</span>
+                  </div>
+                )}
+              </Card>
 
               {/* ── SECTION 3 — 7-DIMENSION RADAR & EVIDENCE BREAKDOWN ── */}
               <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
                 {/* Radar Chart Card */}
-                <Card className="p-6 bg-[#161b22] border border-white/10 lg:col-span-5 flex flex-col justify-between">
+                <Card className="p-6 bg-white border border-slate-200 shadow-2xs lg:col-span-5 flex flex-col justify-between">
                   <div>
-                    <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-1 flex items-center gap-2">
-                      <Layers className="h-4 w-4 text-indigo-400" /> 7-Axis Competency Profile
+                    <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider mb-1 flex items-center gap-2">
+                      <Layers className="h-4 w-4 text-blue-600" /> 7-Axis Competency Profile
                     </h3>
-                    <p className="text-xs text-gray-400">Multidimensional capability breakdown across technical and behavioral rounds</p>
+                    <p className="text-xs text-slate-500">Multidimensional capability breakdown across technical and behavioral rounds</p>
                   </div>
-                  <div className="h-[280px] w-full my-4">
-                    <ResponsiveContainer width="100%" height="100%">
+                  <div className="h-[280px] w-full my-4 min-h-[280px] overflow-hidden">
+                    <ResponsiveContainer width="100%" height={280} minWidth={0} debounce={50}>
                       <RadarChart data={radarData}>
-                        <PolarGrid stroke="rgba(255,255,255,0.08)" />
-                        <PolarAngleAxis dataKey="subject" tick={{ fill: '#94a3b8', fontSize: 11, fontWeight: 500 }} />
+                        <PolarGrid stroke="#e2e8f0" />
+                        <PolarAngleAxis dataKey="subject" tick={{ fill: '#475569', fontSize: 11, fontWeight: 600 }} />
                         <PolarRadiusAxis angle={30} domain={[0, 100]} tick={false} axisLine={false} />
-                        <Radar name="Proficiency" dataKey="A" stroke="#6366f1" fill="#6366f1" fillOpacity={0.3} />
+                        <Radar name="Proficiency" dataKey="A" stroke="#2563eb" fill="#3b82f6" fillOpacity={0.25} />
                       </RadarChart>
                     </ResponsiveContainer>
                   </div>
-                  <div className="text-[11px] text-center text-gray-500 italic border-t border-white/5 pt-3">
+                  <div className="text-[11px] text-center text-slate-400 italic border-t border-slate-100 pt-3">
                     Scores synthesized from stored execution records, test pass ratios, and HR transcripts.
                   </div>
                 </Card>
 
                 {/* 7-Dimension Explanations */}
-                <Card className="p-6 bg-[#161b22] border border-white/10 lg:col-span-7 space-y-4">
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                    <Award className="h-4 w-4 text-indigo-400" /> Dimension Scores & Evidence ("Why this score?")
+                <Card className="p-6 bg-white border border-slate-200 shadow-2xs lg:col-span-7 space-y-4">
+                  <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                    <Award className="h-4 w-4 text-blue-600" /> Dimension Scores & Evidence ("Why this score?")
                   </h3>
 
                   <div className="space-y-3 max-h-[340px] overflow-y-auto pr-1 scrollbar-thin">
                     {Object.entries(metrics).map(([key, metric]: [string, any]) => (
-                      <div key={key} className="p-3.5 rounded-xl bg-white/3 border border-white/6 space-y-1.5 hover:border-white/15 transition-all">
+                      <div key={key} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 space-y-1.5 hover:border-slate-300 transition-all">
                         <div className="flex items-center justify-between">
                           <div className="flex items-center gap-2">
-                            <span className="font-semibold text-xs text-gray-200">{metric.name}</span>
-                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-white/5 text-gray-400">
+                            <span className="font-semibold text-xs text-slate-900">{metric.name}</span>
+                            <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-200/70 text-slate-600">
                               Weight: {metric.weight}
                             </span>
                           </div>
-                          <span className="font-mono font-bold text-xs text-indigo-400 bg-indigo-500/10 px-2 py-0.5 rounded-md border border-indigo-500/20">
+                          <span className="font-mono font-bold text-xs text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-200">
                             {metric.score} / 100
                           </span>
                         </div>
-                        <p className="text-xs text-gray-400 leading-relaxed font-sans">
+                        <p className="text-xs text-slate-600 leading-relaxed font-sans">
                           {metric.explanation}
                         </p>
                       </div>
@@ -853,28 +1067,28 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
 
               {/* ── SECTION 4 — DEMONSTRATED STRENGTHS & IMPROVEMENTS ── */}
               <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-                <Card className="p-5 bg-[#161b22] border border-emerald-500/20 space-y-3">
-                  <h3 className="text-sm font-bold text-emerald-400 uppercase tracking-wider flex items-center gap-2">
-                    <Sparkles className="h-4 w-4" /> Demonstrated Strengths
+                <Card className="p-5 bg-white border border-emerald-200 shadow-2xs space-y-3">
+                  <h3 className="text-sm font-bold text-emerald-700 uppercase tracking-wider flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-emerald-600" /> Demonstrated Strengths
                   </h3>
-                  <ul className="space-y-2.5 text-xs text-gray-300">
+                  <ul className="space-y-2.5 text-xs text-slate-700">
                     {strengths.map((s: string, idx: number) => (
                       <li key={idx} className="flex items-start gap-2">
-                        <CheckCircle2 className="h-4 w-4 text-emerald-400 shrink-0 mt-0.5" />
+                        <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
                         <span>{s}</span>
                       </li>
                     ))}
                   </ul>
                 </Card>
 
-                <Card className="p-5 bg-[#161b22] border border-amber-500/20 space-y-3">
-                  <h3 className="text-sm font-bold text-amber-400 uppercase tracking-wider flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4" /> Targeted Areas to Improve
+                <Card className="p-5 bg-white border border-amber-200 shadow-2xs space-y-3">
+                  <h3 className="text-sm font-bold text-amber-800 uppercase tracking-wider flex items-center gap-2">
+                    <TrendingUp className="h-4 w-4 text-amber-600" /> Targeted Areas to Improve
                   </h3>
-                  <ul className="space-y-2.5 text-xs text-gray-300">
+                  <ul className="space-y-2.5 text-xs text-slate-700">
                     {areasToImprove.map((a: string, idx: number) => (
                       <li key={idx} className="flex items-start gap-2">
-                        <AlertCircle className="h-4 w-4 text-amber-400 shrink-0 mt-0.5" />
+                        <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
                         <span>{a}</span>
                       </li>
                     ))}
@@ -884,31 +1098,31 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
 
               {/* ── SECTION 5 — NAAN MUDHALVAN SKILL GAP MAP ── */}
               {skillGapMap.length > 0 && (
-                <Card className="p-6 bg-[#161b22] border border-white/10 space-y-4">
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                    <BookOpen className="h-4 w-4 text-indigo-400" /> Naan Mudhalvan Skill Gap & Curriculum Map
+                <Card className="p-6 bg-white border border-slate-200 shadow-2xs space-y-4">
+                  <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                    <BookOpen className="h-4 w-4 text-blue-600" /> Naan Mudhalvan Skill Gap & Curriculum Map
                   </h3>
                   <div className="overflow-x-auto">
                     <table className="w-full text-left border-collapse text-xs">
                       <thead>
-                        <tr className="border-b border-white/10 text-gray-400 uppercase text-[10px] tracking-wider bg-black/30">
+                        <tr className="border-b border-slate-200 text-slate-500 uppercase text-[10px] tracking-wider bg-slate-50">
                           <th className="py-2.5 px-4 font-semibold">Identified Skill Gap</th>
                           <th className="py-2.5 px-4 font-semibold">Assessment Evidence</th>
                           <th className="py-2.5 px-4 font-semibold">Recommended NM Module</th>
                           <th className="py-2.5 px-4 font-semibold">Action</th>
                         </tr>
                       </thead>
-                      <tbody className="divide-y divide-white/5 font-sans">
+                      <tbody className="divide-y divide-slate-100 font-sans">
                         {skillGapMap.map((gap: any, idx: number) => (
-                          <tr key={idx} className="hover:bg-white/5 transition-colors">
-                            <td className="py-3 px-4 font-semibold text-white">{gap.weakSkill}</td>
-                            <td className="py-3 px-4 text-gray-300">{gap.evidence}</td>
-                            <td className="py-3 px-4 font-medium text-indigo-400">{gap.recommendedNMModule}</td>
+                          <tr key={idx} className="hover:bg-slate-50 transition-colors">
+                            <td className="py-3 px-4 font-semibold text-slate-900">{gap.weakSkill}</td>
+                            <td className="py-3 px-4 text-slate-600">{gap.evidence}</td>
+                            <td className="py-3 px-4 font-medium text-blue-600">{gap.recommendedNMModule}</td>
                             <td className="py-3 px-4">
                               <Button
                                 size="sm"
                                 variant="outline"
-                                className="text-[11px] h-7 px-2.5 border-white/10"
+                                className="text-[11px] h-7 px-2.5 border-slate-200 text-slate-700 hover:bg-slate-100 rounded-lg"
                                 onClick={() => navigate('/student/interviews')}
                               >
                                 Practice Module <ArrowRight className="h-3 w-3 ml-1" />
@@ -923,17 +1137,17 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
               )}
 
               {/* ── SECTION 6 — NEXT ACTION PLAN ── */}
-              <Card className="p-6 bg-[#161b22] border border-white/10 space-y-4">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
+              <Card className="p-6 bg-white border border-slate-200 shadow-2xs space-y-4">
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
                   <Flame className="h-4 w-4 text-amber-500" /> Next Action Plan
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
                   {nextActionPlan.map((action: string, idx: number) => (
-                    <div key={idx} className="p-3.5 rounded-xl bg-white/3 border border-white/6 flex items-start gap-3">
-                      <div className="h-5 w-5 rounded-full bg-indigo-500/10 border border-indigo-500/30 text-indigo-400 flex items-center justify-center font-mono font-bold text-xs shrink-0">
+                    <div key={idx} className="p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-start gap-3">
+                      <div className="h-5 w-5 rounded-full bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center font-mono font-bold text-xs shrink-0">
                         {idx + 1}
                       </div>
-                      <span className="text-xs text-gray-300 leading-relaxed font-sans">{action}</span>
+                      <span className="text-xs text-slate-700 leading-relaxed font-sans">{action}</span>
                     </div>
                   ))}
                 </div>
@@ -952,33 +1166,33 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
               {/* Header & Controls */}
               <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
-                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    <Brain className="h-5 w-5 text-indigo-400" /> Aptitude Stage Review
+                  <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <Brain className="h-5 w-5 text-blue-600" /> Aptitude Stage Review
                   </h2>
-                  <p className="text-xs text-gray-400 mt-0.5">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     Evidence-based learning review: original options, visual mistake diagnostics, and step-by-step solutions.
                   </p>
                 </div>
                 <div className="flex items-center gap-2.5">
-                  <div className="flex rounded-lg bg-black/40 border border-white/10 p-0.5 text-[11px]">
+                  <div className="flex rounded-xl bg-slate-100 border border-slate-200 p-0.5 text-[11px]">
                     <button
                       onClick={() => setAptViewMode('single')}
-                      className={`px-3 py-1 rounded-md font-semibold transition-all ${
-                        aptViewMode === 'single' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-white'
+                      className={`px-3 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
+                        aptViewMode === 'single' ? 'bg-[#111827] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
                       Question by Question
                     </button>
                     <button
                       onClick={() => setAptViewMode('all')}
-                      className={`px-3 py-1 rounded-md font-semibold transition-all ${
-                        aptViewMode === 'all' ? 'bg-indigo-600 text-white' : 'text-gray-400 hover:text-white'
+                      className={`px-3 py-1 rounded-lg font-semibold transition-all cursor-pointer ${
+                        aptViewMode === 'all' ? 'bg-[#111827] text-white shadow-xs' : 'text-slate-600 hover:text-slate-900'
                       }`}
                     >
                       View All ({aptitudeAnalysis.length})
                     </button>
                   </div>
-                  <div className="px-3 py-1.5 rounded-lg bg-indigo-500/10 border border-indigo-500/20 text-xs font-mono font-bold text-indigo-400">
+                  <div className="px-3 py-1.5 rounded-xl bg-blue-50 border border-blue-200 text-xs font-mono font-bold text-blue-700">
                     {summary.aptitudePassed} / {summary.aptitudeTotal} Correct ({summary.aptitudeScore}%)
                   </div>
                 </div>
@@ -986,13 +1200,12 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
 
               {/* Navigation Bar (Shown in single question mode) */}
               {aptViewMode === 'single' && aptitudeAnalysis.length > 0 && (
-                <div className="p-3.5 rounded-xl bg-[#161b22] border border-white/10 flex items-center justify-between flex-wrap gap-3">
+                <div className="p-3.5 rounded-xl bg-white border border-slate-200 shadow-2xs flex items-center justify-between flex-wrap gap-3">
                   <Button
-                    variant="outline"
+                    variant="secondary"
                     size="sm"
                     disabled={selectedAptIndex <= 0}
                     onClick={() => setSelectedAptIndex(prev => Math.max(0, prev - 1))}
-                    className="text-xs h-8 border-white/10 text-gray-300 disabled:opacity-30"
                   >
                     <ChevronLeft className="h-3.5 w-3.5 mr-1" /> Previous Question
                   </Button>
@@ -1008,14 +1221,14 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                         <button
                           key={idx}
                           onClick={() => setSelectedAptIndex(idx)}
-                          className={`px-3 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition-all ${
+                          className={`px-3 py-1 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
                             isCur
-                              ? 'ring-2 ring-indigo-400 bg-indigo-600 text-white shadow-md'
+                              ? 'bg-[#111827] border border-[#111827] text-white shadow-xs'
                               : isCor
-                              ? 'bg-emerald-500/15 text-emerald-300 border border-emerald-500/30 hover:bg-emerald-500/25'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
                               : isUnattempted
-                              ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30 hover:bg-amber-500/25'
-                              : 'bg-rose-500/15 text-rose-300 border border-rose-500/30 hover:bg-rose-500/25'
+                              ? 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
+                              : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
                           }`}
                         >
                           <span>Q{idx + 1}</span>
@@ -1028,15 +1241,14 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                   </div>
 
                   <div className="flex items-center gap-3">
-                    <span className="text-xs font-mono text-gray-400">
+                    <span className="text-xs font-mono text-slate-500">
                       Question {selectedAptIndex + 1} of {aptitudeAnalysis.length}
                     </span>
                     <Button
-                      variant="outline"
+                      variant="secondary"
                       size="sm"
                       disabled={selectedAptIndex >= aptitudeAnalysis.length - 1}
                       onClick={() => setSelectedAptIndex(prev => Math.min(aptitudeAnalysis.length - 1, prev + 1))}
-                      className="text-xs h-8 border-white/10 text-gray-300 disabled:opacity-30"
                     >
                       Next Question <ChevronRight className="h-3.5 w-3.5 ml-1" />
                     </Button>
@@ -1057,24 +1269,24 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                   return (
                     <Card
                       key={q.questionId || idx}
-                      className={`p-6 bg-[#161b22] border transition-all space-y-6 ${
+                      className={`p-6 bg-white border rounded-2xl shadow-2xs transition-all space-y-6 ${
                         q.isCorrect
-                          ? 'border-emerald-500/30 bg-emerald-950/10'
+                          ? 'border-emerald-200'
                           : isNotAttempted
-                          ? 'border-amber-500/30 bg-amber-950/10'
-                          : 'border-rose-500/30 bg-rose-950/10'
+                          ? 'border-amber-200'
+                          : 'border-rose-200'
                       }`}
                     >
                       {/* Card Header: Q1 | Topic | Difficulty | Status */}
-                      <div className="flex items-start justify-between flex-wrap gap-3 pb-3 border-b border-white/5">
+                      <div className="flex items-start justify-between flex-wrap gap-3 pb-3 border-b border-slate-100">
                         <div className="flex items-center gap-2.5 flex-wrap">
-                          <span className="text-xs font-mono font-bold px-2.5 py-1 rounded bg-white/10 text-white border border-white/15">
+                          <span className="text-xs font-mono font-bold px-2.5 py-1 rounded-lg bg-slate-100 text-slate-800 border border-slate-200">
                             Q{q.questionNumber || idx + 1}
                           </span>
-                          <span className="text-xs font-semibold text-gray-200">
+                          <span className="text-xs font-bold text-slate-800">
                             {formatCategory(q.category)} – {formatTopic(q.topic)}
                           </span>
-                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-white/5 text-gray-400 uppercase">
+                          <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-500 uppercase">
                             [{(q.difficulty || 'Medium').toUpperCase()}]
                           </span>
                         </div>
@@ -1082,10 +1294,10 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                         <span
                           className={`px-3 py-1 rounded-full text-xs font-bold font-mono flex items-center gap-1.5 ${
                             q.isCorrect
-                              ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                               : isNotAttempted
-                              ? 'bg-amber-500/20 text-amber-400 border border-amber-500/30'
-                              : 'bg-rose-500/20 text-rose-400 border border-rose-500/30'
+                              ? 'bg-amber-50 text-amber-800 border border-amber-200'
+                              : 'bg-rose-50 text-rose-700 border border-rose-200'
                           }`}
                         >
                           {q.isCorrect ? '✓ Correct' : isNotAttempted ? '⏳ Not Attempted' : '✗ Incorrect'}
@@ -1094,19 +1306,19 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
 
                       {/* Question Text */}
                       <div className="space-y-1">
-                        <div className="text-[10px] font-mono uppercase tracking-wider text-gray-400 font-bold">
+                        <div className="text-[10px] font-mono uppercase tracking-wider text-slate-400 font-bold">
                           Question
                         </div>
-                        <h3 className="text-sm sm:text-base font-semibold text-white leading-relaxed font-sans">
+                        <h3 className="text-base font-bold text-slate-900 leading-relaxed font-sans">
                           {q.question || q.title}
                         </h3>
                       </div>
 
                       {/* OPTIONS LIST WITH VISUAL HIGHLIGHTING */}
                       <div className="space-y-2">
-                        <div className="text-[11px] font-mono font-bold uppercase tracking-wider text-gray-400 flex items-center justify-between">
+                        <div className="text-[11px] font-mono font-bold uppercase tracking-wider text-slate-500 flex items-center justify-between">
                           <span>OPTIONS</span>
-                          <span className="text-[10px] font-normal text-gray-500 lowercase">4 choices</span>
+                          <span className="text-[10px] font-normal text-slate-400 lowercase">4 choices</span>
                         </div>
                         <div className="grid grid-cols-1 gap-2.5">
                           {options.map((opt: string, optIdx: number) => {
@@ -1114,17 +1326,17 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                             const isCorrectOption = correctIdx === optIdx;
                             const optLetter = q.optionLabels?.[optIdx] || String.fromCharCode(65 + optIdx);
 
-                            let rowStyle = 'border-white/10 bg-white/3 text-gray-300 hover:border-white/20';
-                            let circleStyle = 'bg-white/10 text-gray-400 border-white/20';
+                            let rowStyle = 'border-slate-200 bg-white text-slate-800 hover:border-slate-300 hover:bg-slate-50';
+                            let circleStyle = 'bg-slate-100 text-slate-600 border-slate-200';
                             let badgeText = null;
 
                             if (isCorrectOption) {
-                              rowStyle = 'border-emerald-500/60 bg-emerald-500/15 text-emerald-100 font-semibold shadow-[0_0_12px_rgba(16,185,129,0.15)] ring-1 ring-emerald-500/30';
-                              circleStyle = 'bg-emerald-500 text-black border-emerald-400 font-bold';
+                              rowStyle = 'border-emerald-500 bg-emerald-50/70 text-emerald-950 font-bold shadow-2xs ring-1 ring-emerald-500/20';
+                              circleStyle = 'bg-emerald-600 text-white border-emerald-600 font-bold';
                               badgeText = isSelected ? 'Your Answer ✓ Correct' : '✓ Correct Answer';
                             } else if (isSelected && !q.isCorrect) {
-                              rowStyle = 'border-rose-500/60 bg-rose-500/15 text-rose-100 font-semibold shadow-[0_0_12px_rgba(244,63,94,0.15)] ring-1 ring-rose-500/30';
-                              circleStyle = 'bg-rose-500 text-white border-rose-400 font-bold';
+                              rowStyle = 'border-rose-500 bg-rose-50/70 text-rose-950 font-bold shadow-2xs ring-1 ring-rose-500/20';
+                              circleStyle = 'bg-rose-600 text-white border-rose-600 font-bold';
                               badgeText = '✗ Your Selected Answer';
                             }
 
@@ -1143,8 +1355,8 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                                 {badgeText && (
                                   <span className={`px-2.5 py-1 rounded-md text-[10px] font-mono font-bold shrink-0 flex items-center gap-1 ${
                                     isCorrectOption
-                                      ? 'bg-emerald-500/30 text-emerald-300 border border-emerald-500/40'
-                                      : 'bg-rose-500/30 text-rose-300 border border-rose-500/40'
+                                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                                      : 'bg-rose-100 text-rose-800 border border-rose-200'
                                   }`}>
                                     {badgeText}
                                   </span>
@@ -1156,18 +1368,18 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                       </div>
 
                       {/* ANSWER SUMMARY BANNER */}
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-xl bg-black/40 border border-white/10 text-xs font-mono">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono">
                         <div className="flex items-center gap-2">
-                          <span className="text-gray-400 font-semibold">Your Answer:</span>
+                          <span className="text-slate-500 font-semibold">Your Answer:</span>
                           {isNotAttempted ? (
-                            <span className="text-amber-400 font-bold px-2 py-0.5 rounded bg-amber-500/10 border border-amber-500/20">
+                            <span className="text-amber-800 font-bold px-2 py-0.5 rounded bg-amber-50 border border-amber-200">
                               Not Attempted
                             </span>
                           ) : (
                             <span className={`font-bold px-2 py-0.5 rounded ${
                               q.isCorrect
-                                ? 'text-emerald-400 bg-emerald-500/10 border border-emerald-500/20'
-                                : 'text-rose-400 bg-rose-500/10 border border-rose-500/20'
+                                ? 'text-emerald-800 bg-emerald-50 border border-emerald-200'
+                                : 'text-rose-800 bg-rose-50 border border-rose-200'
                             }`}>
                               {selectedLabel}) {q.selectedOptionText || options[selectedIdx]}
                             </span>
@@ -1175,21 +1387,21 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                         </div>
 
                         <div className="flex items-center gap-2">
-                          <span className="text-gray-400 font-semibold">Correct Answer:</span>
-                          <span className="text-emerald-400 font-bold px-2 py-0.5 rounded bg-emerald-500/10 border border-emerald-500/20">
+                          <span className="text-slate-500 font-semibold">Correct Answer:</span>
+                          <span className="text-emerald-800 font-bold px-2 py-0.5 rounded bg-emerald-50 border border-emerald-200">
                             {correctLabel}) {q.correctOptionText || options[correctIdx]}
                           </span>
                         </div>
                       </div>
 
                       {/* AI EXPLANATION & SOLUTION (4-STEP REAL RESOLUTION) */}
-                      <div className="p-5 rounded-xl bg-[#0d1117] border border-white/10 text-xs space-y-4">
-                        <div className="flex items-center justify-between pb-2 border-b border-white/5">
-                          <div className="flex items-center gap-2 text-indigo-400 font-bold text-sm uppercase tracking-wide">
-                            <Sparkles className="h-4 w-4" />
+                      <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 text-xs space-y-4">
+                        <div className="flex items-center justify-between pb-2 border-b border-slate-200">
+                          <div className="flex items-center gap-2 text-blue-700 font-bold text-sm uppercase tracking-wide">
+                            <Sparkles className="h-4 w-4 text-blue-600" />
                             <span>AI Explanation & Solution</span>
                           </div>
-                          <span className="px-2.5 py-0.5 rounded text-[10px] font-mono uppercase bg-indigo-500/10 text-indigo-300 border border-indigo-500/20">
+                          <span className="px-2.5 py-0.5 rounded text-[10px] font-mono uppercase bg-blue-50 text-blue-700 border border-blue-200 font-semibold">
                             {q.explanationSource || 'DETERMINISTIC_ANALYSIS'}
                           </span>
                         </div>
@@ -1199,33 +1411,33 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                             {q.stepByStepSolution.map((step: string, sIdx: number) => {
                               const cleaned = step.replace(/^Step\s*\d*:\s*/i, '');
                               return (
-                                <div key={sIdx} className="p-3 rounded-lg bg-white/3 border border-white/5 flex items-start gap-3 text-gray-200 leading-relaxed font-sans">
-                                  <span className="w-6 h-6 rounded-full bg-indigo-500/20 border border-indigo-500/40 text-indigo-300 flex items-center justify-center font-mono text-[11px] shrink-0 mt-0.5 font-bold">
+                                <div key={sIdx} className="p-3 rounded-xl bg-white border border-slate-200 flex items-start gap-3 text-slate-800 leading-relaxed font-sans shadow-2xs">
+                                  <span className="w-6 h-6 rounded-full bg-blue-50 border border-blue-200 text-blue-700 flex items-center justify-center font-mono text-[11px] shrink-0 mt-0.5 font-bold">
                                     {sIdx + 1}
                                   </span>
                                   <div className="flex-1 space-y-0.5">
-                                    <div className="text-[10px] font-mono font-bold uppercase text-indigo-300 tracking-wider">
+                                    <div className="text-[10px] font-mono font-bold uppercase text-blue-700 tracking-wider">
                                       Step {sIdx + 1}
                                     </div>
-                                    <div className="text-xs text-gray-200">{cleaned}</div>
+                                    <div className="text-xs text-slate-800">{cleaned}</div>
                                   </div>
                                 </div>
                               );
                             })}
                           </div>
                         ) : (
-                          <p className="text-gray-400 italic">Step-by-step resolution synthesized from problem parameters.</p>
+                          <p className="text-slate-500 italic">Step-by-step resolution synthesized from problem parameters.</p>
                         )}
                       </div>
 
                       {/* WHY YOUR ANSWER IS INCORRECT (FOR INCORRECT ANSWERS) */}
                       {(!q.isCorrect || isNotAttempted) && q.whyIncorrect && (
-                        <div className="p-4 rounded-xl bg-rose-950/25 border border-rose-500/30 text-xs space-y-2">
-                          <div className="flex items-center gap-2 text-rose-400 font-bold text-xs uppercase tracking-wide">
-                            <AlertCircle className="h-4 w-4" />
+                        <div className="p-4 rounded-xl bg-rose-50 border border-rose-200 text-xs space-y-2">
+                          <div className="flex items-center gap-2 text-rose-800 font-bold text-xs uppercase tracking-wide">
+                            <AlertCircle className="h-4 w-4 text-rose-600" />
                             <span>Why Your Answer Is Incorrect</span>
                           </div>
-                          <p className="text-rose-200 leading-relaxed font-sans pl-1">
+                          <p className="text-rose-900 leading-relaxed font-sans pl-1">
                             {q.whyIncorrect}
                           </p>
                         </div>
@@ -1234,28 +1446,28 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                       {/* CONCEPT TO REVISE & MISTAKE TYPE */}
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                         {/* Concept to Revise Card */}
-                        <div className="p-4 rounded-xl bg-indigo-950/20 border border-indigo-500/30 text-xs space-y-2">
-                          <div className="flex items-center gap-2 text-indigo-300 font-bold text-xs uppercase tracking-wide">
-                            <BookOpen className="h-4 w-4" />
+                        <div className="p-4 rounded-xl bg-blue-50/70 border border-blue-200 text-xs space-y-2">
+                          <div className="flex items-center gap-2 text-blue-800 font-bold text-xs uppercase tracking-wide">
+                            <BookOpen className="h-4 w-4 text-blue-600" />
                             <span>Concept to Revise</span>
                           </div>
-                          <div className="text-gray-200 leading-relaxed font-sans whitespace-pre-line text-xs pl-1">
+                          <div className="text-slate-800 leading-relaxed font-sans whitespace-pre-line text-xs pl-1">
                             {typeof q.conceptToRevise === 'string' ? q.conceptToRevise : `${formatTopic(q.topic)} – Core Principles & Formulas`}
                           </div>
                         </div>
 
                         {/* Mistake Type Card */}
-                        <div className="p-4 rounded-xl bg-purple-950/20 border border-purple-500/30 text-xs space-y-2">
+                        <div className="p-4 rounded-xl bg-purple-50/70 border border-purple-200 text-xs space-y-2">
                           <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-2 text-purple-300 font-bold text-xs uppercase tracking-wide">
-                              <Brain className="h-4 w-4" />
+                            <div className="flex items-center gap-2 text-purple-800 font-bold text-xs uppercase tracking-wide">
+                              <Brain className="h-4 w-4 text-purple-600" />
                               <span>Mistake Type</span>
                             </div>
-                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-purple-500/20 text-purple-300 border border-purple-500/30">
+                            <span className="px-2.5 py-0.5 rounded-full text-[10px] font-mono font-bold bg-purple-100 text-purple-800 border border-purple-200">
                               {q.mistakeType || (isNotAttempted ? 'Not Attempted' : q.isCorrect ? 'No Mistake' : 'Concept Misunderstanding')}
                             </span>
                           </div>
-                          <p className="text-gray-300 text-xs leading-relaxed pl-1">
+                          <p className="text-slate-700 text-xs leading-relaxed pl-1">
                             {q.mistakeType === 'Concept Misunderstanding'
                               ? 'Misinterpreted the underlying proportional or structural relationship of the problem.'
                               : q.mistakeType === 'Formula Error'
@@ -1274,12 +1486,12 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                       </div>
 
                       {/* HOW TO IMPROVE */}
-                      <div className="p-4 rounded-xl bg-emerald-950/15 border border-emerald-500/25 text-xs space-y-2.5">
-                        <div className="flex items-center gap-2 text-emerald-400 font-bold text-xs uppercase tracking-wide">
-                          <TrendingUp className="h-4 w-4" />
+                      <div className="p-4 rounded-xl bg-emerald-50/70 border border-emerald-200 text-xs space-y-2.5">
+                        <div className="flex items-center gap-2 text-emerald-800 font-bold text-xs uppercase tracking-wide">
+                          <TrendingUp className="h-4 w-4 text-emerald-600" />
                           <span>How to Improve</span>
                         </div>
-                        <ul className="space-y-1.5 text-xs text-gray-300 pl-1">
+                        <ul className="space-y-1.5 text-xs text-slate-700 pl-1">
                           {(q.howToImprove && q.howToImprove.length > 0 ? q.howToImprove : [
                             'Identify whether the relationship is direct or inverse before calculating.',
                             'Write down the governing formula and substitute given variables.',
@@ -1287,7 +1499,7 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                             'Verify intermediate unit conversions before finalizing the option.',
                           ]).map((tip: string, tIdx: number) => (
                             <li key={tIdx} className="flex items-start gap-2">
-                              <span className="text-emerald-400 font-bold shrink-0">✓</span>
+                              <span className="text-emerald-600 font-bold shrink-0">✓</span>
                               <span className="leading-relaxed">{tip.replace(/^✓\s*/, '')}</span>
                             </li>
                           ))}
@@ -1295,27 +1507,28 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                       </div>
 
                       {/* CORRECT ANSWER SUCCESS BOX */}
-                      <div className="p-4 rounded-xl bg-emerald-500/10 border border-emerald-500/30 text-xs flex items-start gap-3">
-                        <CheckCircle2 className="h-5 w-5 text-emerald-400 shrink-0 mt-0.5" />
+                      <div className="p-4 rounded-xl bg-emerald-50 border border-emerald-200 text-xs flex items-start gap-3">
+                        <CheckCircle2 className="h-5 w-5 text-emerald-600 shrink-0 mt-0.5" />
                         <div className="space-y-1 flex-1">
-                          <div className="font-bold text-emerald-300 text-xs">
+                          <div className="font-bold text-emerald-800 text-xs">
                             ✓ Correct Answer: {correctLabel}) {q.correctOptionText || options[correctIdx]}
                           </div>
-                          <p className="text-gray-300 text-xs leading-relaxed">
+                          <p className="text-slate-700 text-xs leading-relaxed">
                             {q.whyCorrect || `Option ${correctLabel} satisfies all mathematical and logical conditions.`}
                           </p>
                         </div>
                       </div>
 
                       {/* ASK AI BUTTON */}
-                      <div className="pt-2 flex items-center justify-between flex-wrap gap-3 border-t border-white/5">
-                        <div className="text-[11px] text-gray-500 italic">
+                      <div className="pt-2 flex items-center justify-between flex-wrap gap-3 border-t border-slate-100">
+                        <div className="text-[11px] text-slate-500 italic">
                           Need a deeper breakdown or want a similar practice question?
                         </div>
                         <Button
                           onClick={() => handleAskAI(q)}
                           size="sm"
-                          className="bg-indigo-600 hover:bg-indigo-500 text-white gap-2 text-xs font-semibold px-4 py-2 rounded-xl shadow-lg shadow-indigo-500/10"
+                          variant="ai"
+                          className="gap-2 text-xs font-semibold px-4 py-2"
                         >
                           <MessageSquare className="h-4 w-4" />
                           Ask AI About This Question
@@ -1327,7 +1540,7 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
 
                 if (aptitudeAnalysis.length === 0) {
                   return (
-                    <Card className="p-8 text-center bg-[#161b22] border border-white/10 text-gray-400 text-xs">
+                    <Card className="p-8 text-center bg-white border border-slate-200 text-slate-500 text-xs rounded-2xl shadow-2xs">
                       No aptitude questions found for this interview session.
                     </Card>
                   );
@@ -1342,31 +1555,29 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                       {/* Bottom Navigation */}
                       <div className="flex items-center justify-between pt-2">
                         <Button
-                          variant="outline"
+                          variant="secondary"
                           size="sm"
                           disabled={selectedAptIndex <= 0}
                           onClick={() => {
                             setSelectedAptIndex(prev => Math.max(0, prev - 1));
                             window.scrollTo({ top: 300, behavior: 'smooth' });
                           }}
-                          className="text-xs h-8 border-white/10 text-gray-300 disabled:opacity-30"
                         >
                           <ChevronLeft className="h-3.5 w-3.5 mr-1" /> Previous Question
                         </Button>
 
-                        <span className="text-xs font-mono text-gray-400">
+                        <span className="text-xs font-mono text-slate-500">
                           Question {selectedAptIndex + 1} of {aptitudeAnalysis.length}
                         </span>
 
                         <Button
-                          variant="outline"
+                          variant="secondary"
                           size="sm"
                           disabled={selectedAptIndex >= aptitudeAnalysis.length - 1}
                           onClick={() => {
                             setSelectedAptIndex(prev => Math.min(aptitudeAnalysis.length - 1, prev + 1));
                             window.scrollTo({ top: 300, behavior: 'smooth' });
                           }}
-                          className="text-xs h-8 border-white/10 text-gray-300 disabled:opacity-30"
                         >
                           Next Question <ChevronRight className="h-3.5 w-3.5 ml-1" />
                         </Button>
@@ -1389,108 +1600,804 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
           {/* ════════════════════════════════════════════════════════════════════ */}
           {activeTab === 'coding' && (
             <div className="space-y-6">
-              <div className="flex items-center justify-between">
+              <div className="flex items-center justify-between flex-wrap gap-3">
                 <div>
-                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    <Code2 className="h-5 w-5 text-emerald-400" /> Coding Problem Analysis
+                  <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <Code2 className="h-5 w-5 text-emerald-600" /> Coding Deep-Dive Analysis
                   </h2>
-                  <p className="text-xs text-gray-400 mt-0.5">
-                    Algorithm approach classification, algorithmic time & space complexity, and compiler/runtime logs.
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Evidence-based execution diagnostics, exact failed test inputs/outputs, actual submitted code analysis, and algorithmic complexity.
                   </p>
                 </div>
-                <div className="px-3 py-1.5 rounded-lg bg-emerald-500/10 border border-emerald-500/20 text-xs font-mono font-bold text-emerald-400">
-                  {summary.codingAccepted} / {summary.codingTotal} Solved ({summary.testsPassed}/{summary.totalTests} Tests)
+                <div className="flex items-center gap-3">
+                  <div className="px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-mono font-bold text-emerald-700">
+                    {summary.codingAccepted} / {summary.codingTotal} Solved ({summary.testsPassed}/{summary.totalTests} Tests)
+                  </div>
+                  {codingAnalysis.length > 1 && (
+                    <div className="flex rounded-lg border border-slate-200 bg-slate-50 p-0.5 text-xs font-semibold">
+                      <button
+                        onClick={() => setCodingViewMode('single')}
+                        className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
+                          codingViewMode === 'single'
+                            ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        Single Problem
+                      </button>
+                      <button
+                        onClick={() => setCodingViewMode('all')}
+                        className={`px-3 py-1 rounded-md transition-all cursor-pointer ${
+                          codingViewMode === 'all'
+                            ? 'bg-white text-slate-900 shadow-2xs font-bold'
+                            : 'text-slate-500 hover:text-slate-800'
+                        }`}
+                      >
+                        All Problems ({codingAnalysis.length})
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              <div className="space-y-6">
-                {codingAnalysis.map((p: any, idx: number) => (
-                  <Card key={p.questionId || idx} className="p-6 bg-[#161b22] border border-white/10 space-y-5">
-                    <div className="flex items-start justify-between flex-wrap gap-3">
-                      <div>
-                        <div className="text-xs font-mono text-gray-400 uppercase tracking-wider mb-1">
-                          Problem #{idx + 1} · {formatTopic(p.topic)} · {p.difficulty}
+              {/* Multi-Problem Selector Bar (Single Mode) */}
+              {codingViewMode === 'single' && codingAnalysis.length > 1 && (
+                <div className="flex items-center justify-between p-3 rounded-xl bg-white border border-slate-200 shadow-2xs flex-wrap gap-2">
+                  <div className="flex items-center gap-1.5 flex-wrap">
+                    {codingAnalysis.map((p: any, idx: number) => {
+                      const isCur = selectedCodingIndex === idx;
+                      const isAcc = p.finalVerdict === 'ACCEPTED' || p.finalVerdict === 'PASSED';
+                      const isPartial = !isAcc && (p.testsPassed || p.passedCount || 0) > 0;
+
+                      return (
+                        <button
+                          key={p.questionId || idx}
+                          onClick={() => setSelectedCodingIndex(idx)}
+                          className={`px-3.5 py-1.5 rounded-lg text-xs font-mono font-bold flex items-center gap-1.5 transition-all cursor-pointer ${
+                            isCur
+                              ? 'bg-slate-900 border border-slate-900 text-white shadow-xs'
+                              : isAcc
+                              ? 'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'
+                              : isPartial
+                              ? 'bg-amber-50 text-amber-800 border border-amber-200 hover:bg-amber-100'
+                              : 'bg-rose-50 text-rose-700 border border-rose-200 hover:bg-rose-100'
+                          }`}
+                        >
+                          <span>Problem #{idx + 1}</span>
+                          <span className="text-[10px]">
+                            {isAcc ? '✓' : isPartial ? '⚠️' : '✗'}
+                          </span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <span className="text-xs font-mono text-slate-500">
+                      Problem {selectedCodingIndex + 1} of {codingAnalysis.length}
+                    </span>
+                    <Button
+                      variant="secondary"
+                      size="sm"
+                      disabled={selectedCodingIndex >= codingAnalysis.length - 1}
+                      onClick={() => setSelectedCodingIndex(prev => Math.min(codingAnalysis.length - 1, prev + 1))}
+                    >
+                      Next Problem <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                    </Button>
+                  </div>
+                </div>
+              )}
+
+              {/* Helper to Render a Problem Card */}
+              {(() => {
+                const renderCodingCard = (p: any, idx: number) => {
+                  const probNumber = idx + 1;
+                  const bestResult = p.bestResult || {
+                    attemptNumber: 1,
+                    passedCount: p.testsPassed || 0,
+                    totalCount: p.testsTotal || 0,
+                    status: p.finalVerdict || 'FAILED',
+                    score: p.finalScore || 0,
+                    verdictText: p.finalVerdict || 'FAILED',
+                  };
+
+                  const rawAttempts: any[] = (p.attempts && p.attempts.length > 0) ? p.attempts : [{
+                    attemptNumber: 1,
+                    language: p.language || 'Python',
+                    sourceCode: p.submittedCode,
+                    status: p.finalVerdict || 'FAILED',
+                    passedCount: p.testsPassed || 0,
+                    totalTests: p.testsTotal || 0,
+                    executionTime: p.executionTime,
+                    compileError: p.compileOutput,
+                    runtimeError: p.runtimeError,
+                    testResults: p.testResults || [],
+                    aiAnalysis: p.aiAnalysis,
+                  }];
+
+                  const activeAttemptNum = selectedAttempts[idx] ?? bestResult.attemptNumber;
+                  const curAtt = rawAttempts.find((a: any) => a.attemptNumber === activeAttemptNum) || rawAttempts[rawAttempts.length - 1];
+                  const isCurAttAccepted = curAtt.status === 'ACCEPTED' || (curAtt.passedCount === curAtt.totalTests && curAtt.totalTests > 0);
+                  const attAi = curAtt.aiAnalysis;
+                  const attCode = curAtt.sourceCode || p.submittedCode || '';
+                  const attCodeLines = attCode ? attCode.split('\n') : [];
+                  const attFailedTests = curAtt.testResults
+                    ? curAtt.testResults.filter((t: any) => !t.passed)
+                    : (p.failedTests || []);
+                  const comp = p.complexityAnalysis;
+
+                  return (
+                    <Card key={p.questionId || idx} className="p-6 bg-white border border-slate-200 rounded-2xl shadow-sm space-y-6">
+                      {/* Top Header */}
+                      <div className="flex items-start justify-between flex-wrap gap-4 pb-4 border-b border-slate-100">
+                        <div className="space-y-1">
+                          <div className="flex items-center gap-2 flex-wrap text-xs">
+                            <span className="px-2.5 py-0.5 rounded-md font-mono font-bold bg-slate-100 text-slate-800 border border-slate-200">
+                              Problem #{probNumber}
+                            </span>
+                            <span className="font-bold text-slate-800">
+                              {p.pattern || formatTopic(p.topic)}
+                            </span>
+                            <span className="text-[10px] font-mono font-bold px-2 py-0.5 rounded bg-slate-100 text-slate-500 uppercase">
+                              [{(p.difficulty || 'Medium').toUpperCase()}]
+                            </span>
+                          </div>
+                          <h3 className="text-lg font-bold text-slate-900">{p.title}</h3>
                         </div>
-                        <h3 className="text-base font-bold text-white">{p.title}</h3>
-                      </div>
-                      <div className="flex items-center gap-2">
-                        <span className="text-xs px-2.5 py-1 rounded bg-white/5 font-mono text-gray-300">
-                          {p.language || 'Python'}
-                        </span>
-                        <StatusBadge status={p.finalVerdict || p.finalStatus || 'NOT_ATTEMPTED'} />
-                      </div>
-                    </div>
 
-                    {/* Metric Pills */}
-                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs font-mono">
-                      <div className="p-3 rounded-xl bg-black/40 border border-white/5 text-center">
-                        <div className="text-[10px] text-gray-500 uppercase">Tests Passed</div>
-                        <div className="text-sm font-bold text-white mt-0.5">{p.testsPassed || p.passedCount || 0} / {p.testsTotal || p.totalCount || 0}</div>
-                      </div>
-                      <div className="p-3 rounded-xl bg-black/40 border border-white/5 text-center">
-                        <div className="text-[10px] text-gray-500 uppercase">Your Complexity</div>
-                        <div className="text-sm font-bold text-indigo-400 mt-0.5">{p.candidateTimeComplexity || p.candidateComplexity || 'O(n)'}</div>
-                      </div>
-                      <div className="p-3 rounded-xl bg-black/40 border border-white/5 text-center">
-                        <div className="text-[10px] text-gray-500 uppercase">Optimal Complexity</div>
-                        <div className="text-sm font-bold text-emerald-400 mt-0.5">{p.expectedComplexity || 'O(n)'}</div>
-                      </div>
-                      <div className="p-3 rounded-xl bg-black/40 border border-white/5 text-center">
-                        <div className="text-[10px] text-gray-500 uppercase">Execution Time</div>
-                        <div className="text-sm font-bold text-gray-200 mt-0.5">{p.timeSpent || '0.05s'}</div>
-                      </div>
-                    </div>
+                        <div className="flex items-center gap-2.5 flex-wrap">
+                          {/* Deterministic Best Result Badge */}
+                          <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-mono font-bold text-emerald-800">
+                            <Award className="h-3.5 w-3.5 text-emerald-600" />
+                            <span>Best: Attempt #{bestResult.attemptNumber} · {bestResult.passedCount}/{bestResult.totalCount} Passed ({bestResult.score}%)</span>
+                          </div>
 
-                    {/* Approach Classification & Better Approach Guidance */}
-                    <div className="p-4 rounded-xl bg-white/3 border border-white/10 space-y-2 text-xs">
-                      <div className="flex items-center justify-between">
-                        <span className="font-semibold text-gray-300 font-sans">Approach Evaluation:</span>
-                        <span className="px-2 py-0.5 rounded text-[11px] font-bold bg-indigo-500/20 text-indigo-300 border border-indigo-500/30">
-                          {p.approachClassification || 'Standard Iteration'}
-                        </span>
+                          <span className="text-xs px-2.5 py-1 rounded-md bg-slate-100 font-mono text-slate-700 border border-slate-200 font-medium">
+                            {rawAttempts.length} {rawAttempts.length === 1 ? 'Attempt' : 'Attempts'}
+                          </span>
+                          <StatusBadge status={bestResult.status || p.finalVerdict || 'NOT_ATTEMPTED'} />
+                          <Button
+                            onClick={() => handleAskAICoding(p, probNumber)}
+                            size="sm"
+                            variant="ai"
+                            className="gap-2 text-xs font-semibold px-3 py-1.5"
+                          >
+                            <Sparkles className="h-3.5 w-3.5" />
+                            Ask AI About Problem
+                          </Button>
+                        </div>
                       </div>
-                      <p className="text-gray-300 leading-relaxed font-sans">
-                        {p.approachSummary || p.complexityReason}
-                      </p>
 
-                      {p.betterApproach && (
-                        <div className="pt-2 border-t border-white/5 space-y-1">
-                          <span className="font-semibold text-emerald-400">💡 Optimization Recommendation:</span>
-                          <p className="text-gray-300 leading-relaxed font-sans">{p.betterApproach.description}</p>
-                          <p className="text-gray-400 italic text-[11px]">{p.betterApproach.whyBetter}</p>
+                      {/* Attempt Progression History Bar (if multiple attempts or progression exists) */}
+                      {(rawAttempts.length > 1 || p.progression) && (
+                        <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2.5">
+                          <div className="flex items-center justify-between text-xs font-semibold text-slate-700">
+                            <div className="flex items-center gap-1.5">
+                              <TrendingUp className="h-4 w-4 text-blue-600" />
+                              <span className="uppercase text-[11px] font-bold tracking-wider">Attempt Progression History</span>
+                            </div>
+                            <span className="text-[10px] font-mono text-slate-500">{rawAttempts.length} iterative submissions</span>
+                          </div>
+
+                          <div className="flex items-center gap-2 flex-wrap pt-0.5">
+                            {(p.progression?.steps || rawAttempts.map((a: any) => ({
+                              attemptNumber: a.attemptNumber,
+                              passedCount: a.passedCount,
+                              totalCount: a.totalTests,
+                              status: a.status,
+                              symbol: a.status === 'ACCEPTED' ? '✅' : a.passedCount > 0 ? '⚠️' : '❌',
+                            }))).map((step: any, sIdx: number, arr: any[]) => {
+                              const isBest = step.attemptNumber === bestResult.attemptNumber;
+                              const isSelected = step.attemptNumber === activeAttemptNum;
+                              return (
+                                <div key={sIdx} className="flex items-center gap-2">
+                                  <button
+                                    onClick={() => setSelectedAttempts(prev => ({ ...prev, [idx]: step.attemptNumber }))}
+                                    className={`px-3 py-1.5 rounded-lg text-xs font-mono font-bold transition-all cursor-pointer flex items-center gap-1.5 border ${
+                                      isSelected
+                                        ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                                        : isBest
+                                        ? 'bg-emerald-50 text-emerald-800 border-emerald-300 hover:bg-emerald-100'
+                                        : step.status === 'ACCEPTED'
+                                        ? 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                                        : step.passedCount > 0
+                                        ? 'bg-amber-50 text-amber-800 border-amber-200 hover:bg-amber-100'
+                                        : 'bg-rose-50 text-rose-800 border-rose-200 hover:bg-rose-100'
+                                    }`}
+                                  >
+                                    <span>Attempt {step.attemptNumber}: {step.passedCount}/{step.totalCount} {step.symbol}</span>
+                                    {isBest && <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-200/80 text-emerald-950 uppercase font-sans font-bold">Best</span>}
+                                  </button>
+                                  {sIdx < arr.length - 1 && <span className="text-slate-400 font-bold">→</span>}
+                                </div>
+                              );
+                            })}
+                          </div>
+
+                          {p.progression?.explanation && (
+                            <p className="text-xs text-slate-600 pl-0.5 italic pt-0.5">
+                              💡 {p.progression.explanation}
+                            </p>
+                          )}
                         </div>
                       )}
+
+                      {/* Attempt Accordion / Selector Tabs */}
+                      <div className="space-y-2">
+                        <div className="flex items-center justify-between text-xs font-bold text-slate-700 uppercase tracking-wider">
+                          <span className="flex items-center gap-1.5">
+                            <Layers className="h-4 w-4 text-slate-500" /> Submissions & Attempt Breakdown
+                          </span>
+                          <span className="text-[10px] font-mono text-slate-400 font-normal">
+                            Viewing Attempt #{activeAttemptNum} {activeAttemptNum === bestResult.attemptNumber ? '★ (Best Result)' : ''}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-2 flex-wrap">
+                          {rawAttempts.map((att: any) => {
+                            const isSel = att.attemptNumber === activeAttemptNum;
+                            const isBest = att.attemptNumber === bestResult.attemptNumber;
+                            const isAcc = att.status === 'ACCEPTED';
+                            const isPart = !isAcc && att.passedCount > 0;
+                            return (
+                              <button
+                                key={att.attemptNumber}
+                                onClick={() => setSelectedAttempts(prev => ({ ...prev, [idx]: att.attemptNumber }))}
+                                className={`px-3.5 py-2 rounded-xl text-xs font-mono font-bold flex items-center gap-2 transition-all cursor-pointer border ${
+                                  isSel
+                                    ? 'bg-slate-900 text-white border-slate-900 shadow-md ring-2 ring-blue-500/20'
+                                    : 'bg-white text-slate-700 border-slate-200 hover:border-slate-300 hover:bg-slate-50'
+                                }`}
+                              >
+                                <span>Attempt #{att.attemptNumber}</span>
+                                <span className="text-[11px]">
+                                  {isAcc ? '✓ (All Passed)' : isPart ? `⚠️ (${att.passedCount}/${att.totalTests})` : `✗ (${att.passedCount}/${att.totalTests})`}
+                                </span>
+                                {isBest && (
+                                  <span className={`text-[9px] px-1.5 py-0.5 rounded font-sans uppercase font-bold ${
+                                    isSel ? 'bg-emerald-500 text-slate-900' : 'bg-emerald-100 text-emerald-800'
+                                  }`}>
+                                    Best
+                                  </span>
+                                )}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+
+                      {/* Active Attempt Detailed View */}
+                      <div className="space-y-6 pt-2 border-t border-slate-100">
+                        {/* Attempt Info & Metric Bar */}
+                        <div className="flex items-center justify-between flex-wrap gap-3 p-3.5 rounded-xl bg-slate-50 border border-slate-200 text-xs font-mono">
+                          <div className="flex items-center gap-3 flex-wrap">
+                            <span className="font-bold text-slate-900 text-sm">Attempt #{curAtt.attemptNumber}</span>
+                            <span className="px-2 py-0.5 rounded bg-white border border-slate-200 text-slate-600">
+                              {curAtt.language || 'Python'}
+                            </span>
+                            <span className={`font-bold px-2 py-0.5 rounded ${
+                              isCurAttAccepted ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
+                            }`}>
+                              {curAtt.passedCount} / {curAtt.totalTests} Tests Passed
+                            </span>
+                            <span className="text-slate-500">
+                              Runtime: {typeof curAtt.executionTime === 'number' ? `${curAtt.executionTime.toFixed(3)}s` : '0.05s'}
+                            </span>
+                          </div>
+
+                          <Button
+                            onClick={() => handleAskAIAttempt(p, probNumber, curAtt.attemptNumber)}
+                            size="sm"
+                            variant="secondary"
+                            className="gap-1.5 text-xs font-semibold px-3 py-1 bg-white border border-slate-200 hover:bg-slate-100"
+                          >
+                            <MessageSquare className="h-3.5 w-3.5 text-blue-600" />
+                            Ask AI About Attempt #{curAtt.attemptNumber}
+                          </Button>
+                        </div>
+
+                        {/* Candidate Submitted Code */}
+                        {attCode && (
+                          <div className="space-y-2">
+                            <div className="text-[11px] font-bold text-slate-700 uppercase tracking-wider flex items-center justify-between">
+                              <span className="flex items-center gap-1.5">
+                                <Terminal className="h-4 w-4 text-slate-600" /> Candidate Submitted Code (Attempt #{curAtt.attemptNumber})
+                              </span>
+                              <span className="text-[10px] font-mono text-slate-400 font-normal">
+                                {attCodeLines.length} lines of code
+                              </span>
+                            </div>
+
+                            <div className="rounded-xl border border-slate-800 bg-slate-900 text-slate-100 overflow-hidden font-mono text-xs shadow-md">
+                              <div className="flex items-center justify-between px-4 py-2 bg-slate-950/90 border-b border-slate-800 text-[11px] text-slate-400">
+                                <span className="flex items-center gap-2">
+                                  <span className={`w-2.5 h-2.5 rounded-full inline-block ${isCurAttAccepted ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+                                  <span className="font-semibold text-slate-300">{curAtt.language || 'Python'} Execution Source</span>
+                                </span>
+                                <button
+                                  onClick={() => {
+                                    navigator.clipboard.writeText(attCode);
+                                    setCopiedCodeIdx(curAtt.attemptNumber);
+                                    setTimeout(() => setCopiedCodeIdx(null), 2000);
+                                  }}
+                                  className="flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 text-slate-300 hover:text-white transition-colors cursor-pointer text-[10px]"
+                                >
+                                  {copiedCodeIdx === curAtt.attemptNumber ? <Check className="h-3 w-3 text-emerald-400" /> : <Copy className="h-3 w-3" />}
+                                  <span>{copiedCodeIdx === curAtt.attemptNumber ? 'Copied!' : 'Copy Code'}</span>
+                                </button>
+                              </div>
+                              <div className="p-3 max-h-[320px] overflow-auto scrollbar-thin">
+                                <table className="w-full border-collapse">
+                                  <tbody>
+                                    {attCodeLines.map((line: string, lIdx: number) => (
+                                      <tr key={lIdx} className="hover:bg-slate-800/40">
+                                        <td className="w-10 pr-3 text-right select-none text-slate-600 font-mono text-[11px] border-r border-slate-800">
+                                          {lIdx + 1}
+                                        </td>
+                                        <td className="pl-3 font-mono whitespace-pre text-slate-200 text-xs">
+                                          {line || ' '}
+                                        </td>
+                                      </tr>
+                                    ))}
+                                  </tbody>
+                                </table>
+                              </div>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Compiler or Runtime Crash Alert */}
+                        {(curAtt.compileError || curAtt.runtimeError) && (
+                          <div className="p-5 rounded-xl bg-rose-50 border border-rose-200 space-y-3 text-xs">
+                            <div className="flex items-center gap-2 text-rose-700 font-bold">
+                              <AlertCircle className="h-4 w-4" />
+                              <span>Execution Diagnostic Alert:</span>
+                            </div>
+                            <pre className="p-3 rounded-lg bg-rose-100/70 border border-rose-200 font-mono text-[11px] text-rose-900 overflow-x-auto whitespace-pre-wrap">
+                              {curAtt.compileError || curAtt.runtimeError}
+                            </pre>
+                          </div>
+                        )}
+
+                        {/* FAILED ATTEMPT VIEW */}
+                        {!isCurAttAccepted && (
+                          <div className="space-y-6">
+                            {/* Failed Test Cases Breakdown */}
+                            {attFailedTests.length > 0 && (
+                              <div className="space-y-4 pt-1">
+                                <div className="flex items-center justify-between pb-1 border-b border-slate-200">
+                                  <div className="flex items-center gap-2 text-rose-700 font-bold text-sm uppercase tracking-wide">
+                                    <AlertCircle className="h-4 w-4 text-rose-600" />
+                                    <span>Failed Test Cases Breakdown ({attFailedTests.length} Failed)</span>
+                                  </div>
+                                  <span className="text-[11px] font-mono text-slate-500">
+                                    Authoritative Sandbox Execution Facts
+                                  </span>
+                                </div>
+
+                                <div className="space-y-4">
+                                  {attFailedTests.map((ft: any, fIdx: number) => {
+                                    const category = ft.failureCategory || 'LOGICAL_ERROR';
+                                    const catLabel = category.replace(/_/g, ' ');
+
+                                    return (
+                                      <div
+                                        key={fIdx}
+                                        className="p-5 rounded-xl border border-rose-200 bg-rose-50/30 space-y-4 text-xs font-sans shadow-2xs"
+                                      >
+                                        <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-rose-100">
+                                          <div className="flex items-center gap-2">
+                                            <span className="px-2.5 py-0.5 rounded-md font-mono font-bold bg-rose-100 text-rose-800 border border-rose-200 text-[11px]">
+                                              Test Case #{ft.testCaseNumber || fIdx + 1}
+                                            </span>
+                                            <span className="px-2.5 py-0.5 rounded-full font-mono font-bold text-[10px] bg-rose-100 text-rose-700 border border-rose-200 uppercase">
+                                              FAILED
+                                            </span>
+                                            <span className="px-2.5 py-0.5 rounded-full font-mono font-bold text-[10px] bg-purple-50 text-purple-700 border border-purple-200 uppercase">
+                                              {catLabel}
+                                            </span>
+                                          </div>
+                                          {ft.lineLocation && (
+                                            <span className="text-[11px] font-mono text-slate-500">
+                                              Location: <strong className="text-slate-700">{ft.lineLocation}</strong>
+                                            </span>
+                                          )}
+                                        </div>
+
+                                        {/* Input, Expected vs Actual Output Side-by-Side */}
+                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 font-mono text-xs">
+                                          <div className="p-3 rounded-lg bg-white border border-slate-200 space-y-1">
+                                            <div className="text-[10px] uppercase font-bold text-slate-500">Test Input</div>
+                                            <pre className="text-slate-800 whitespace-pre-wrap break-all text-[11px]">
+                                              {ft.input || 'Standard test input'}
+                                            </pre>
+                                          </div>
+
+                                          <div className="p-3 rounded-lg bg-emerald-50/70 border border-emerald-200 space-y-1">
+                                            <div className="text-[10px] uppercase font-bold text-emerald-800">Expected Output</div>
+                                            <pre className="text-emerald-950 font-bold whitespace-pre-wrap break-all text-[11px]">
+                                              {ft.expectedOutput || 'N/A'}
+                                            </pre>
+                                          </div>
+
+                                          <div className="p-3 rounded-lg bg-rose-50/70 border border-rose-200 space-y-1">
+                                            <div className="text-[10px] uppercase font-bold text-rose-800">Your Output</div>
+                                            <pre className="text-rose-950 font-bold whitespace-pre-wrap break-all text-[11px]">
+                                              {ft.actualOutput || 'Wrong answer'}
+                                            </pre>
+                                          </div>
+                                        </div>
+
+                                        {/* Why It Fails */}
+                                        {(ft.whyItFails || ft.explanation) && (
+                                          <div className="p-3.5 rounded-lg bg-white border border-slate-200 space-y-1">
+                                            <div className="text-[10px] uppercase font-bold text-rose-700 tracking-wider">
+                                              Why It Fails (Root Cause)
+                                            </div>
+                                            <p className="text-slate-800 leading-relaxed">
+                                              {ft.whyItFails || ft.explanation}
+                                            </p>
+                                          </div>
+                                        )}
+
+                                        {/* Problematic Logic */}
+                                        {ft.problematicLogic && (
+                                          <div className="space-y-1">
+                                            <div className="text-[10px] uppercase font-bold text-slate-600 tracking-wider">
+                                              Problematic Logic in Your Code ({ft.lineLocation || 'Main block'})
+                                            </div>
+                                            <pre className="p-3 rounded-lg bg-slate-900 text-slate-100 font-mono text-[11px] overflow-x-auto whitespace-pre">
+                                              {ft.problematicLogic}
+                                            </pre>
+                                          </div>
+                                        )}
+
+                                        {/* How to Fix */}
+                                        {ft.howToFix && (
+                                          <div className="p-3.5 rounded-lg bg-emerald-50/60 border border-emerald-200 space-y-1">
+                                            <div className="text-[10px] uppercase font-bold text-emerald-800 tracking-wider flex items-center gap-1.5">
+                                              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> How to Fix
+                                            </div>
+                                            <p className="text-slate-800 leading-relaxed">
+                                              {ft.howToFix}
+                                            </p>
+                                          </div>
+                                        )}
+                                      </div>
+                                    );
+                                  })}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* AI CORRECTED CODE CARD */}
+                            {attAi ? (
+                              <div className="p-5 rounded-xl border-2 border-purple-300 bg-purple-50/40 space-y-4 text-xs font-sans shadow-sm">
+                                <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-purple-200">
+                                  <div className="flex items-center gap-2">
+                                    <Sparkles className="h-4 w-4 text-purple-600" />
+                                    <span className="font-bold text-purple-950 uppercase tracking-wider text-sm">
+                                      AI Corrected Code
+                                    </span>
+                                    <span className="px-2.5 py-0.5 rounded-full font-mono font-bold text-[10px] bg-purple-100 text-purple-800 border border-purple-200">
+                                      Suggested Correction
+                                    </span>
+                                  </div>
+                                  <span className="text-[10px] font-mono text-purple-700 font-semibold">
+                                    Version 2.0.0
+                                  </span>
+                                </div>
+
+                                {/* What Went Wrong / Why It Failed */}
+                                <div className="space-y-1">
+                                  <div className="text-[10px] uppercase font-bold text-purple-900 tracking-wider">
+                                    Root Cause & Explanation
+                                  </div>
+                                  <p className="text-slate-800 leading-relaxed pl-0.5">
+                                    {attAi.whyItFailed || attAi.whatWentWrong || 'The submission failed to satisfy constraint boundaries or expected logic.'}
+                                  </p>
+                                </div>
+
+                                {/* Corrected Code Container */}
+                                {attAi.correctedCode && (
+                                  <div className="space-y-2">
+                                    <div className="flex items-center justify-between text-[11px] font-bold text-purple-900 uppercase">
+                                      <span>Corrected Implementation ({curAtt.language || 'Python'})</span>
+                                      <button
+                                        onClick={() => {
+                                          navigator.clipboard.writeText(attAi.correctedCode);
+                                          setCopiedCorrectedIdx(curAtt.attemptNumber);
+                                          setTimeout(() => setCopiedCorrectedIdx(null), 2000);
+                                        }}
+                                        className="flex items-center gap-1 px-2.5 py-1 rounded bg-purple-100 hover:bg-purple-200 text-purple-800 transition-colors cursor-pointer text-[10px] font-mono font-semibold"
+                                      >
+                                        {copiedCorrectedIdx === curAtt.attemptNumber ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+                                        <span>{copiedCorrectedIdx === curAtt.attemptNumber ? 'Copied!' : 'Copy Corrected Code'}</span>
+                                      </button>
+                                    </div>
+                                    <pre className="p-4 rounded-xl bg-slate-900 text-purple-100 font-mono text-xs overflow-x-auto leading-relaxed border border-purple-950/40">
+                                      {attAi.correctedCode}
+                                    </pre>
+                                  </div>
+                                )}
+
+                                {/* How to Fix Action Steps */}
+                                {attAi.howToFix && Array.isArray(attAi.howToFix) && attAi.howToFix.length > 0 && (
+                                  <div className="p-3.5 rounded-lg bg-white border border-purple-200 space-y-1.5">
+                                    <div className="text-[10px] uppercase font-bold text-purple-900 tracking-wider">
+                                      Correction Steps
+                                    </div>
+                                    <ol className="space-y-1 pl-1">
+                                      {attAi.howToFix.map((step: string, sIdx: number) => (
+                                        <li key={sIdx} className="flex items-start gap-2 text-slate-800">
+                                          <span className="font-bold text-purple-600 shrink-0">{sIdx + 1}.</span>
+                                          <span>{step}</span>
+                                        </li>
+                                      ))}
+                                    </ol>
+                                  </div>
+                                )}
+
+                                {/* Concept & Bug Prevention */}
+                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
+                                  <div className="p-3 rounded-lg bg-white border border-purple-200 space-y-1">
+                                    <div className="text-[10px] uppercase font-bold text-purple-900">Key Concept</div>
+                                    <p className="text-slate-700">{attAi.concept || 'Algorithmic Invariants & Edge Handling'}</p>
+                                  </div>
+                                  <div className="p-3 rounded-lg bg-white border border-purple-200 space-y-1">
+                                    <div className="text-[10px] uppercase font-bold text-purple-900">Bug Prevention</div>
+                                    <p className="text-slate-700">{attAi.prevention || 'Validate boundary test inputs before nested loops.'}</p>
+                                  </div>
+                                </div>
+
+                                {/* Mandatory Safety Disclaimer */}
+                                <div className="p-3 rounded-lg bg-amber-50/80 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-2">
+                                  <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                                  <span>
+                                    <strong>Disclaimer:</strong> This change is expected to address the observed failure, but it has not been verified against the test suite.
+                                  </span>
+                                </div>
+                              </div>
+                            ) : (
+                              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-500 italic">
+                                AI analysis is currently unavailable for this submission.
+                              </div>
+                            )}
+                          </div>
+                        )}
+
+                        {/* ACCEPTED ATTEMPT VIEW */}
+                        {isCurAttAccepted && (
+                          <div className="space-y-6">
+                            {/* Accepted Banner */}
+                            <div className="p-5 rounded-xl bg-emerald-50 border border-emerald-200 space-y-3">
+                              <div className="flex items-center gap-2 text-emerald-800 font-bold text-sm uppercase tracking-wide">
+                                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
+                                <span>Accepted — All {curAtt.totalTests} Test Cases Passed Successfully</span>
+                              </div>
+
+                              <div className="space-y-2 text-xs text-slate-800 pl-1">
+                                <div>
+                                  <strong className="text-emerald-900">Why It Works:</strong> {attAi?.whyItWorks || 'Code correctly maintains invariants across all tested cases and meets runtime constraints.'}
+                                </div>
+                                {attAi?.algorithmApproach && (
+                                  <div>
+                                    <strong className="text-emerald-900">Algorithm:</strong> {attAi.algorithmApproach}
+                                  </div>
+                                )}
+                                {attAi?.keyInvariants && attAi.keyInvariants.length > 0 && (
+                                  <div>
+                                    <strong className="text-emerald-900">Key Invariants:</strong> {attAi.keyInvariants.join(', ')}
+                                  </div>
+                                )}
+                                <div className="pt-1 text-[11px] font-mono text-slate-600">
+                                  Estimated Complexity (Source: AI): Time: <strong>{attAi?.complexity?.time || p.candidateTimeComplexity || 'O(n)'}</strong> | Space: <strong>{attAi?.complexity?.space || p.candidateSpaceComplexity || 'O(1)'}</strong>
+                                </div>
+                              </div>
+                            </div>
+
+                            {/* AI OPTIMIZED CODE CARD */}
+                            <div className="p-5 rounded-xl border-2 border-emerald-300 bg-emerald-50/40 space-y-4 text-xs font-sans shadow-sm">
+                              <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-emerald-200">
+                                <div className="flex items-center gap-2">
+                                  <TrendingUp className="h-4 w-4 text-emerald-600" />
+                                  <span className="font-bold text-emerald-950 uppercase tracking-wider text-sm">
+                                    AI Optimization Review
+                                  </span>
+                                  <span className="px-2.5 py-0.5 rounded-full font-mono font-bold text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                    Asymptotic Review
+                                  </span>
+                                </div>
+                                <span className="text-[10px] font-mono text-emerald-700 font-semibold">
+                                  Version 2.0.0
+                                </span>
+                              </div>
+
+                              {attAi?.optimization?.isAlreadyOptimal || comp?.isOptimal ? (
+                                <div className="p-4 rounded-lg bg-white border border-emerald-200 space-y-2 text-slate-800">
+                                  <div className="font-bold text-emerald-800 flex items-center gap-1.5">
+                                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                                    No meaningful better asymptotic approach was identified.
+                                  </div>
+                                  <p className="text-xs text-slate-600 leading-relaxed">
+                                    {attAi?.optimization?.whyBetter || 'Your solution already operates at the theoretical optimal time and space complexity for this problem pattern.'}
+                                  </p>
+                                </div>
+                              ) : (
+                                <div className="space-y-3">
+                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-mono text-xs">
+                                    <div className="p-3 rounded-lg bg-white border border-emerald-200 space-y-1">
+                                      <span className="text-[10px] text-slate-500 uppercase font-semibold">Current Complexity</span>
+                                      <div className="font-bold text-indigo-700 text-sm">
+                                        {attAi?.optimization?.currentComplexity || p.candidateTimeComplexity || 'O(n²)'}
+                                      </div>
+                                    </div>
+                                    <div className="p-3 rounded-lg bg-white border border-emerald-200 space-y-1">
+                                      <span className="text-[10px] text-slate-500 uppercase font-semibold">Target Optimal Complexity</span>
+                                      <div className="font-bold text-emerald-700 text-sm">
+                                        {attAi?.optimization?.suggestedComplexity || p.expectedComplexity || 'O(n)'}
+                                      </div>
+                                    </div>
+                                  </div>
+
+                                  {attAi?.optimization?.description && (
+                                    <p className="text-slate-800 leading-relaxed pl-0.5">
+                                      {attAi.optimization.description}
+                                    </p>
+                                  )}
+
+                                  {attAi?.optimizedCode && (
+                                    <div className="space-y-2 pt-1">
+                                      <div className="flex items-center justify-between text-[11px] font-bold text-emerald-900 uppercase">
+                                        <span>AI Optimized Implementation ({curAtt.language || 'Python'})</span>
+                                        <button
+                                          onClick={() => {
+                                            navigator.clipboard.writeText(attAi.optimizedCode);
+                                            setCopiedOptimizedIdx(curAtt.attemptNumber);
+                                            setTimeout(() => setCopiedOptimizedIdx(null), 2000);
+                                          }}
+                                          className="flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-100 hover:bg-emerald-200 text-emerald-800 transition-colors cursor-pointer text-[10px] font-mono font-semibold"
+                                        >
+                                          {copiedOptimizedIdx === curAtt.attemptNumber ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+                                          <span>{copiedOptimizedIdx === curAtt.attemptNumber ? 'Copied!' : 'Copy Optimized Code'}</span>
+                                        </button>
+                                      </div>
+                                      <pre className="p-4 rounded-xl bg-slate-900 text-emerald-100 font-mono text-xs overflow-x-auto leading-relaxed border border-emerald-950/40">
+                                        {attAi.optimizedCode}
+                                      </pre>
+                                    </div>
+                                  )}
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Overall Problem Complexity & Algorithmic Constraint Card */}
+                        <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 space-y-3 text-xs">
+                          <div className="flex items-center justify-between pb-1 border-b border-slate-200">
+                            <span className="font-bold text-slate-900 uppercase tracking-wider text-[11px]">
+                              Algorithmic Complexity & Constraints
+                            </span>
+                            <span className={`px-2.5 py-0.5 rounded font-mono font-bold text-[10px] ${
+                              comp?.isOptimal ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
+                            }`}>
+                              {comp?.isOptimal ? 'OPTIMAL BOUNDS' : 'OPTIMIZATION AVAILABLE'}
+                            </span>
+                          </div>
+
+                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-mono text-xs">
+                            <div className="p-3 rounded-lg bg-white border border-slate-200 space-y-1">
+                              <span className="text-[10px] text-slate-500 uppercase font-semibold">Your Detected Approach</span>
+                              <div className="font-bold text-indigo-700 font-sans text-xs">
+                                {comp?.candidateApproach || p.approachClassification}
+                              </div>
+                              <div className="text-[11px] text-slate-600">
+                                Time: <strong className="text-indigo-600">{p.candidateTimeComplexity || 'O(n)'}</strong> | Space: <strong>{p.candidateSpaceComplexity || 'O(1)'}</strong>
+                              </div>
+                            </div>
+
+                            <div className="p-3 rounded-lg bg-white border border-slate-200 space-y-1">
+                              <span className="text-[10px] text-slate-500 uppercase font-semibold">Target Optimal Algorithm</span>
+                              <div className="font-bold text-emerald-700 font-sans text-xs">
+                                {comp?.optimalApproach || p.betterApproach?.description || 'Optimal Pattern'}
+                              </div>
+                              <div className="text-[11px] text-slate-600">
+                                Time: <strong className="text-emerald-600">{p.expectedComplexity || 'O(n)'}</strong> | Space: <strong>{p.expectedSpaceComplexity || 'O(1)'}</strong>
+                              </div>
+                            </div>
+                          </div>
+
+                          <p className="text-slate-700 leading-relaxed font-sans pt-1">
+                            {comp?.reason || p.approachSummary}
+                          </p>
+                        </div>
+
+                        {/* Key Learning Takeaway */}
+                        {p.keyLearning && (
+                          <div className="p-4 rounded-xl bg-purple-50/60 border border-purple-200 text-xs space-y-1.5 font-sans">
+                            <div className="font-bold text-purple-950 uppercase text-[11px] tracking-wider flex items-center gap-1.5">
+                              <Brain className="h-4 w-4 text-purple-600" /> Key Algorithmic Learning
+                            </div>
+                            <p className="text-slate-800 leading-relaxed">
+                              {p.keyLearning}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Bottom AI Prompt Bar */}
+                      <div className="pt-2 flex items-center justify-between flex-wrap gap-3 border-t border-slate-100">
+                        <div className="text-[11px] text-slate-500 italic">
+                          Have questions on why your logic produced this result or how to rewrite it?
+                        </div>
+                        <Button
+                          onClick={() => handleAskAICoding(p, probNumber)}
+                          size="sm"
+                          variant="ai"
+                          className="gap-2 text-xs font-semibold px-4 py-2"
+                        >
+                          <MessageSquare className="h-4 w-4" />
+                          Ask AI About Problem #{probNumber}
+                        </Button>
+                      </div>
+                    </Card>
+                  );
+                };
+
+                if (codingAnalysis.length === 0) {
+                  return (
+                    <Card className="p-8 text-center bg-white border border-slate-200 text-slate-500 text-xs rounded-2xl shadow-2xs">
+                      No coding problems recorded for this interview session.
+                    </Card>
+                  );
+                }
+
+                if (codingViewMode === 'single') {
+                  const curProb = codingAnalysis[selectedCodingIndex] || codingAnalysis[0];
+                  return (
+                    <div className="space-y-4">
+                      {renderCodingCard(curProb, selectedCodingIndex)}
+
+                      {/* Bottom Navigation */}
+                      <div className="flex items-center justify-between pt-2">
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={selectedCodingIndex <= 0}
+                          onClick={() => {
+                            setSelectedCodingIndex(prev => Math.max(0, prev - 1));
+                            window.scrollTo({ top: 300, behavior: 'smooth' });
+                          }}
+                        >
+                          <ChevronLeft className="h-3.5 w-3.5 mr-1" /> Previous Problem
+                        </Button>
+
+                        <span className="text-xs font-mono text-slate-500">
+                          Problem {selectedCodingIndex + 1} of {codingAnalysis.length}
+                        </span>
+
+                        <Button
+                          variant="secondary"
+                          size="sm"
+                          disabled={selectedCodingIndex >= codingAnalysis.length - 1}
+                          onClick={() => {
+                            setSelectedCodingIndex(prev => Math.min(codingAnalysis.length - 1, prev + 1));
+                            window.scrollTo({ top: 300, behavior: 'smooth' });
+                          }}
+                        >
+                          Next Problem <ChevronRight className="h-3.5 w-3.5 ml-1" />
+                        </Button>
+                      </div>
                     </div>
+                  );
+                }
 
-                    {/* Compiler or Runtime Error Alert (if present) */}
-                    {p.errorExplanation && (
-                      <div className="p-4 rounded-xl bg-rose-950/30 border border-rose-500/30 space-y-2 text-xs">
-                        <div className="flex items-center gap-2 text-rose-400 font-bold">
-                          <AlertCircle className="h-4 w-4" />
-                          <span>{p.errorExplanation.errorType} Diagnostics:</span>
-                        </div>
-                        <pre className="p-2.5 rounded bg-black/60 font-mono text-[11px] text-rose-300 overflow-x-auto">
-                          {p.errorExplanation.rawMessage}
-                        </pre>
-                        <p className="text-gray-300 leading-relaxed font-sans">{p.errorExplanation.explanation}</p>
-                        <p className="text-emerald-400 font-medium">Fix: {p.errorExplanation.suggestedFix}</p>
-                      </div>
-                    )}
-
-                    {/* Submitted Code Viewer */}
-                    {p.submittedCode && (
-                      <div className="space-y-1.5">
-                        <div className="text-[11px] font-semibold text-gray-400 uppercase tracking-wider flex items-center gap-1.5">
-                          <Terminal className="h-3.5 w-3.5 text-gray-500" /> Submitted Solution Source Code
-                        </div>
-                        <pre className="p-4 rounded-xl bg-[#090d13] border border-white/10 font-mono text-xs text-gray-200 overflow-x-auto max-h-[260px] scrollbar-thin">
-                          {p.submittedCode}
-                        </pre>
-                      </div>
-                    )}
-                  </Card>
-                ))}
-              </div>
+                return (
+                  <div className="space-y-6">
+                    {codingAnalysis.map((p: any, idx: number) => renderCodingCard(p, idx))}
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -1501,40 +2408,43 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
             <div className="space-y-6">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    <MessageSquare className="h-5 w-5 text-purple-400" /> HR Behavioral Interview Transcript & Feedback
+                  <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <MessageSquare className="h-5 w-5 text-purple-600" /> HR Behavioral Interview Transcript & Feedback
                   </h2>
-                  <p className="text-xs text-gray-400 mt-0.5">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     Multi-turn conversational dialogue analysis, articulation scoring, and STAR framework recommendations.
                   </p>
                 </div>
-                <div className="px-3 py-1.5 rounded-lg bg-purple-500/10 border border-purple-500/20 text-xs font-mono font-bold text-purple-400">
+                <div className="px-3 py-1.5 rounded-lg bg-purple-50 border border-purple-200 text-xs font-mono font-bold text-purple-700">
                   {summary.hrStatus === 'COMPLETED' ? '✓ Completed' : 'Not Attempted'}
                 </div>
               </div>
 
+              {/* HR Deep Behavioral Evaluation (10-dimensional radar & question analysis) */}
+              <HRReportTab interviewId={interviewId} />
+
               {/* Communication Scores Card */}
               {hrAnalysis && (
-                <Card className="p-6 bg-[#161b22] border border-white/10 space-y-4">
+                <Card className="p-6 bg-white border border-slate-200 shadow-sm space-y-4">
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
-                    <div className="p-3.5 rounded-xl bg-black/40 border border-white/5">
-                      <div className="text-[10px] text-gray-500 uppercase tracking-wider">Overall Communication</div>
-                      <div className="text-lg font-bold text-purple-400 font-mono mt-0.5">{hrAnalysis.communicationScore || 85} / 100</div>
+                    <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                      <div className="text-[10px] text-slate-500 uppercase tracking-wider">Overall Communication</div>
+                      <div className="text-lg font-bold text-purple-600 font-mono mt-0.5">{hrAnalysis.communicationScore || 85} / 100</div>
                     </div>
-                    <div className="p-3.5 rounded-xl bg-black/40 border border-white/5">
-                      <div className="text-[10px] text-gray-500 uppercase tracking-wider">Clarity Score</div>
-                      <div className="text-lg font-bold text-white font-mono mt-0.5">{hrAnalysis.clarityScore || 88} / 100</div>
+                    <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                      <div className="text-[10px] text-slate-500 uppercase tracking-wider">Clarity Score</div>
+                      <div className="text-lg font-bold text-slate-900 font-mono mt-0.5">{hrAnalysis.clarityScore || 88} / 100</div>
                     </div>
-                    <div className="p-3.5 rounded-xl bg-black/40 border border-white/5">
-                      <div className="text-[10px] text-gray-500 uppercase tracking-wider">Relevance Score</div>
-                      <div className="text-lg font-bold text-white font-mono mt-0.5">{hrAnalysis.relevanceScore || 84} / 100</div>
+                    <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
+                      <div className="text-[10px] text-slate-500 uppercase tracking-wider">Relevance Score</div>
+                      <div className="text-lg font-bold text-slate-900 font-mono mt-0.5">{hrAnalysis.relevanceScore || 84} / 100</div>
                     </div>
                   </div>
 
                   {hrAnalysis.starMethodGuidance && (
-                    <div className="p-4 rounded-xl bg-purple-950/20 border border-purple-500/30 text-xs space-y-1.5">
-                      <span className="font-semibold text-purple-300">🌟 Behavioral Interview Advice (STAR Method):</span>
-                      <p className="text-gray-300 leading-relaxed font-sans">{hrAnalysis.starMethodGuidance}</p>
+                    <div className="p-4 rounded-xl bg-purple-50 border border-purple-200 text-xs space-y-1.5">
+                      <span className="font-semibold text-purple-900">🌟 Behavioral Interview Advice (STAR Method):</span>
+                      <p className="text-slate-700 leading-relaxed font-sans">{hrAnalysis.starMethodGuidance}</p>
                     </div>
                   )}
                 </Card>
@@ -1542,8 +2452,8 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
 
               {/* Dialogue Transcript */}
               <div className="space-y-4">
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider flex items-center gap-2">
-                  <MessageSquare className="h-4 w-4 text-purple-400" /> Chronological Dialogue Transcript
+                <h3 className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <MessageSquare className="h-4 w-4 text-purple-600" /> Chronological Dialogue Transcript
                 </h3>
 
                 {hrTranscript.length > 0 ? (
@@ -1555,8 +2465,8 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                           key={idx}
                           className={`p-4 rounded-xl border flex gap-3 text-xs leading-relaxed font-sans ${
                             isInterviewer
-                              ? 'bg-[#161b22] border-indigo-500/30 text-gray-200 ml-0 mr-12'
-                              : 'bg-purple-950/20 border-purple-500/30 text-purple-100 mr-0 ml-12'
+                              ? 'bg-slate-50 border-slate-200 text-slate-800 ml-0 mr-12'
+                              : 'bg-purple-50/70 border-purple-200 text-purple-900 mr-0 ml-12'
                           }`}
                         >
                           <div
@@ -1567,18 +2477,18 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                             {isInterviewer ? 'HR' : 'YOU'}
                           </div>
                           <div className="flex-1 space-y-1">
-                            <div className="flex items-center justify-between text-[10px] text-gray-400 font-mono">
+                            <div className="flex items-center justify-between text-[10px] text-slate-500 font-mono">
                               <span>{isInterviewer ? 'Interviewer' : 'Your Response'}</span>
                               <span>{msg.timestamp ? new Date(msg.timestamp).toLocaleTimeString() : ''}</span>
                             </div>
-                            <p className="text-gray-200">{msg.content}</p>
+                            <p className="text-slate-800">{msg.content}</p>
                           </div>
                         </div>
                       );
                     })}
                   </div>
                 ) : (
-                  <p className="text-xs text-gray-500 italic p-4 bg-white/3 rounded-xl border border-white/5">
+                  <p className="text-xs text-slate-500 italic p-4 bg-slate-50 rounded-xl border border-slate-200">
                     No HR dialogue transcript was recorded for this session.
                   </p>
                 )}
@@ -1593,38 +2503,38 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
             <div className="space-y-4">
               <div className="flex items-center justify-between">
                 <div>
-                  <h2 className="text-lg font-bold text-white flex items-center gap-2">
-                    <Bot className="h-5 w-5 text-purple-400" /> Ask About My Interview
+                  <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                    <Bot className="h-5 w-5 text-purple-600" /> Ask About My Interview
                   </h2>
-                  <p className="text-xs text-gray-400 mt-0.5">
+                  <p className="text-xs text-slate-500 mt-0.5">
                     Ask questions about your answers, submitted code, mistakes, algorithmic complexity, and how to improve.
                   </p>
                 </div>
-                <div className="px-3 py-1 rounded-full bg-purple-500/10 border border-purple-500/30 text-xs text-purple-300 font-mono flex items-center gap-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-400" />
+                <div className="px-3 py-1 rounded-full bg-purple-50 border border-purple-200 text-xs text-purple-700 font-mono flex items-center gap-1.5 font-medium">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500" />
                   Evidence Grounded
                 </div>
               </div>
 
               {/* Chat Container Card */}
-              <Card className="p-6 bg-[#161b22] border border-white/10 flex flex-col" style={{ height: '680px' }}>
+              <Card className="p-6 bg-white border border-slate-200 shadow-sm flex flex-col" style={{ height: '680px' }}>
 
                 {/* Active Question Discussion Banner & Teaching Mode Pills */}
                 {askAiQuestion && (
-                  <div className="mb-3 p-3 rounded-xl bg-indigo-950/30 border border-indigo-500/30 space-y-2.5 shrink-0">
+                  <div className="mb-3 p-3 rounded-xl bg-indigo-50 border border-indigo-200 space-y-2.5 shrink-0">
                     <div className="flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2 text-indigo-300 font-semibold">
-                        <Sparkles className="h-4 w-4 text-indigo-400" />
+                      <div className="flex items-center gap-2 text-indigo-900 font-semibold">
+                        <Sparkles className="h-4 w-4 text-indigo-600" />
                         <span>Discussing Q{askAiQuestion.questionNumber || 1}: {typeof askAiQuestion.topic === 'string' ? askAiQuestion.topic : (askAiQuestion.topic?.name || 'Question')}</span>
                         <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${
-                          askAiQuestion.isCorrect ? 'bg-emerald-500/20 text-emerald-300' : 'bg-rose-500/20 text-rose-300'
+                          askAiQuestion.isCorrect ? 'bg-emerald-100 text-emerald-800' : 'bg-rose-100 text-rose-800'
                         }`}>
                           {askAiQuestion.isCorrect ? '✓ Correct in Assessment' : '✗ Incorrect in Assessment'}
                         </span>
                       </div>
                       <button
                         onClick={() => setAskAiQuestion(null)}
-                        className="text-[11px] text-gray-400 hover:text-white transition-colors"
+                        className="text-[11px] text-slate-500 hover:text-slate-800 transition-colors"
                       >
                         ✕ Switch to General Chat
                       </button>
@@ -1635,21 +2545,21 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                       <button
                         onClick={() => handleTeachingPill('HINT')}
                         disabled={isSending}
-                        className="px-2.5 py-1 rounded-lg bg-amber-500/15 border border-amber-500/30 text-amber-300 hover:bg-amber-500/25 text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-50"
+                        className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100 text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-50"
                       >
                         💡 Give Me a Hint
                       </button>
                       <button
                         onClick={() => handleTeachingPill('EXPLAIN')}
                         disabled={isSending}
-                        className="px-2.5 py-1 rounded-lg bg-indigo-500/15 border border-indigo-500/30 text-indigo-300 hover:bg-indigo-500/25 text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-50"
+                        className="px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-800 hover:bg-indigo-100 text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-50"
                       >
                         📖 Explain the Answer
                       </button>
                       <button
                         onClick={() => handleTeachingPill('TEACH_ME')}
                         disabled={isSending}
-                        className="px-2.5 py-1 rounded-lg bg-purple-500/15 border border-purple-500/30 text-purple-300 hover:bg-purple-500/25 text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-50"
+                        className="px-2.5 py-1 rounded-lg bg-purple-50 border border-purple-200 text-purple-800 hover:bg-purple-100 text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-50"
                       >
                         🎓 Teach Me From Basics
                       </button>
@@ -1657,7 +2567,7 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                         <button
                           onClick={() => handleTeachingPill('EXPLAIN_MISTAKE')}
                           disabled={isSending}
-                          className="px-2.5 py-1 rounded-lg bg-rose-500/15 border border-rose-500/30 text-rose-300 hover:bg-rose-500/25 text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-50"
+                          className="px-2.5 py-1 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 hover:bg-rose-100 text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-50"
                         >
                           🧐 Explain My Mistake
                         </button>
@@ -1665,9 +2575,75 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                       <button
                         onClick={() => handleTeachingPill('SIMILAR_QUESTION')}
                         disabled={isSending}
-                        className="px-2.5 py-1 rounded-lg bg-emerald-500/15 border border-emerald-500/30 text-emerald-300 hover:bg-emerald-500/25 text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-50"
+                        className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 hover:bg-emerald-100 text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-50"
                       >
                         🧠 Give Me a Similar Question
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Active Coding Problem Discussion Banner & Action Pills */}
+                {askAiCodingProblem && (
+                  <div className="mb-3 p-3 rounded-xl bg-emerald-50 border border-emerald-200 space-y-2.5 shrink-0">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2 text-emerald-950 font-semibold">
+                        <Code2 className="h-4 w-4 text-emerald-600" />
+                        <span>Discussing Coding #{askAiCodingProblem.problemNumber || 1}: {askAiCodingProblem.title}</span>
+                        <span className={`px-2 py-0.5 rounded text-[10px] font-mono ${
+                          askAiCodingProblem.finalVerdict === 'ACCEPTED'
+                            ? 'bg-emerald-100 text-emerald-800'
+                            : 'bg-rose-100 text-rose-800'
+                        }`}>
+                          {askAiCodingProblem.finalVerdict === 'ACCEPTED'
+                            ? `✓ All ${askAiCodingProblem.testsTotal || 0} Passed`
+                            : `✗ ${askAiCodingProblem.testsPassed || 0}/${askAiCodingProblem.testsTotal || 0} Passed (${askAiCodingProblem.finalVerdict || 'FAILED'})`}
+                        </span>
+                      </div>
+                      <button
+                        onClick={() => setAskAiCodingProblem(null)}
+                        className="text-[11px] text-slate-500 hover:text-slate-800 transition-colors"
+                      >
+                        ✕ Switch to General Chat
+                      </button>
+                    </div>
+
+                    {/* 5 Coding Diagnostic Pills — always visible when coding problem is selected */}
+                    <div className="flex flex-wrap gap-1.5 pt-0.5">
+                      <button
+                        onClick={() => handleCodingPill('WHAT_IS_WRONG')}
+                        disabled={isSending}
+                        className="px-2.5 py-1 rounded-lg bg-rose-50 border border-rose-200 text-rose-800 hover:bg-rose-100 text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
+                      >
+                        🧐 What is wrong in my code?
+                      </button>
+                      <button
+                        onClick={() => handleCodingPill('WHICH_TEST_FAILED')}
+                        disabled={isSending}
+                        className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 hover:bg-amber-100 text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
+                      >
+                        ❌ Which test case failed?
+                      </button>
+                      <button
+                        onClick={() => handleCodingPill('COMPLEXITY')}
+                        disabled={isSending}
+                        className="px-2.5 py-1 rounded-lg bg-indigo-50 border border-indigo-200 text-indigo-800 hover:bg-indigo-100 text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
+                      >
+                        ⚡ Why is my solution {askAiCodingProblem.candidateTimeComplexity || 'suboptimal'}?
+                      </button>
+                      <button
+                        onClick={() => handleCodingPill('CORRECT_APPROACH')}
+                        disabled={isSending}
+                        className="px-2.5 py-1 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-800 hover:bg-emerald-100 text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
+                      >
+                        💡 Show optimal approach
+                      </button>
+                      <button
+                        onClick={() => handleCodingPill('TEACH_PATTERN')}
+                        disabled={isSending}
+                        className="px-2.5 py-1 rounded-lg bg-purple-50 border border-purple-200 text-purple-800 hover:bg-purple-100 text-xs font-medium transition-all flex items-center gap-1.5 disabled:opacity-50 shadow-sm"
+                      >
+                        🎓 Teach me the pattern
                       </button>
                     </div>
                   </div>
@@ -1680,14 +2656,14 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                 >
                   {/* Welcome / Starter — shown only when no messages have been sent yet */}
                   {messages.length === 0 && !chatLoading && (
-                    <div className="p-4 rounded-xl bg-purple-950/20 border border-purple-500/30 text-xs text-purple-200 space-y-3">
-                      <div className="flex items-center gap-2 font-bold text-purple-300">
-                        <Bot className="h-4 w-4" /> Interview AI Intelligence Assistant
+                    <div className="p-4 rounded-xl bg-purple-50 border border-purple-200 text-xs text-purple-900 space-y-3">
+                      <div className="flex items-center gap-2 font-bold text-purple-950">
+                        <Bot className="h-4 w-4 text-purple-600" /> Interview AI Intelligence Assistant
                       </div>
-                      <p className="leading-relaxed">
+                      <p className="leading-relaxed text-slate-700">
                         I have analyzed your specific assessment evidence across Aptitude ({summary.aptitudePassed}/{summary.aptitudeTotal}), Coding ({summary.codingAccepted}/{summary.codingTotal} accepted), and the HR interview.
                       </p>
-                      <p className="text-[11px] text-gray-400">
+                      <p className="text-[11px] text-slate-500">
                         Click any question’s “Ask AI” button or pick a starter question below:
                       </p>
                       {/* Starter questions — ONLY shown before any messages */}
@@ -1703,7 +2679,7 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                             key={idx}
                             onClick={() => handleSendMessage(q)}
                             disabled={isSending}
-                            className="px-2.5 py-1 rounded-full bg-white/5 hover:bg-white/10 border border-white/10 text-gray-300 text-[11px] transition-colors disabled:opacity-50"
+                            className="px-2.5 py-1 rounded-full bg-white hover:bg-purple-50 border border-purple-200 text-purple-800 text-[11px] shadow-sm transition-colors disabled:opacity-50"
                           >
                             {q}
                           </button>
@@ -1713,7 +2689,7 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                   )}
 
                   {chatLoading && (
-                    <div className="text-xs text-gray-500 italic p-4">Loading conversation history...</div>
+                    <div className="text-xs text-slate-500 italic p-4">Loading conversation history...</div>
                   )}
 
                   {/* Message bubbles */}
@@ -1730,7 +2706,7 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                         }`}
                       >
                         {!isUser && (
-                          <div className="w-7 h-7 rounded-full bg-purple-600 flex items-center justify-center text-white shrink-0 text-xs mt-0.5">
+                          <div className="w-7 h-7 rounded-full bg-purple-600 flex items-center justify-center text-white shrink-0 text-xs mt-0.5 shadow-sm">
                             <Bot className="h-4 w-4" />
                           </div>
                         )}
@@ -1738,8 +2714,8 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                         <div
                           className={`rounded-xl max-w-[85%] space-y-3 font-sans ${
                             isUser
-                              ? 'bg-indigo-600 text-white rounded-br-none p-3.5 text-xs'
-                              : 'bg-white/5 border border-white/10 text-gray-200 rounded-bl-none p-4'
+                              ? 'bg-indigo-600 text-white rounded-br-none p-3.5 text-xs shadow-sm'
+                              : 'bg-slate-50 border border-slate-200 text-slate-800 rounded-bl-none p-4 shadow-sm'
                           }`}
                         >
                           {/* Content */}
@@ -1751,8 +2727,8 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
 
                           {/* Practice Question Interactive Options (no answer hidden) */}
                           {m.practiceQuestion && m.practiceQuestion.options && (
-                            <div className="pt-2 border-t border-white/10 space-y-2">
-                              <span className="text-[11px] font-bold text-emerald-400 uppercase tracking-wider">
+                            <div className="pt-2 border-t border-slate-200 space-y-2">
+                              <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider">
                                 Select Your Answer:
                               </span>
                               <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
@@ -1763,9 +2739,9 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                                       key={optIdx}
                                       onClick={() => handleAnswerPractice(m.practiceQuestion!.practiceQuestionId, letter)}
                                       disabled={isSending}
-                                      className="p-2.5 rounded-lg bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/30 text-emerald-200 text-left text-xs transition-all flex items-center gap-2 disabled:opacity-50"
+                                      className="p-2.5 rounded-lg bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-900 text-left text-xs transition-all flex items-center gap-2 disabled:opacity-50"
                                     >
-                                      <span className="w-5 h-5 rounded-full bg-emerald-500/30 font-bold font-mono text-[10px] flex items-center justify-center shrink-0">
+                                      <span className="w-5 h-5 rounded-full bg-emerald-200 font-bold font-mono text-[10px] flex items-center justify-center shrink-0 text-emerald-800">
                                         {letter}
                                       </span>
                                       <span className="flex-1">{opt}</span>
@@ -1778,8 +2754,8 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
 
                           {/* Follow-up suggestions — ONLY on the latest assistant message */}
                           {isLastAssistant && m.suggestedFollowups && m.suggestedFollowups.length > 0 && (
-                            <div className="pt-2 border-t border-white/10 space-y-1.5">
-                              <span className="text-[10px] uppercase font-bold tracking-wider text-purple-400">
+                            <div className="pt-2 border-t border-slate-200 space-y-1.5">
+                              <span className="text-[10px] uppercase font-bold tracking-wider text-purple-700">
                                 Suggested Follow-up:
                               </span>
                               <div className="flex flex-wrap gap-1.5">
@@ -1788,7 +2764,7 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                                     key={fIdx}
                                     onClick={() => handleSendMessage(f)}
                                     disabled={isSending}
-                                    className="px-2.5 py-1 rounded-md bg-purple-500/10 border border-purple-500/30 text-purple-300 hover:bg-purple-500/20 text-[11px] transition-colors disabled:opacity-50"
+                                    className="px-2.5 py-1 rounded-md bg-purple-50 border border-purple-200 text-purple-800 hover:bg-purple-100 text-[11px] transition-colors disabled:opacity-50"
                                   >
                                     {f}
                                   </button>
@@ -1799,7 +2775,7 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                         </div>
 
                         {isUser && (
-                          <div className="w-7 h-7 rounded-full bg-indigo-500 flex items-center justify-center text-white shrink-0 text-xs mt-0.5">
+                          <div className="w-7 h-7 rounded-full bg-indigo-600 flex items-center justify-center text-white shrink-0 text-xs mt-0.5 shadow-sm">
                             <User className="h-4 w-4" />
                           </div>
                         )}
@@ -1809,15 +2785,15 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
 
                   {/* Typing indicator */}
                   {isSending && (
-                    <div className="flex items-center gap-3 text-xs text-purple-300 italic p-3">
-                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-400" />
+                    <div className="flex items-center gap-3 text-xs text-purple-700 italic p-3">
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-purple-600" />
                       Analyzing session evidence and synthesizing answer...
                     </div>
                   )}
                 </div>
 
                 {/* Input Console — ONLY input + send, no suggestion repeat */}
-                <div className="pt-3 border-t border-white/10 flex gap-2 shrink-0">
+                <div className="pt-3 border-t border-slate-200 flex gap-2 shrink-0">
                   <input
                     type="text"
                     value={inputMessage}
@@ -1830,12 +2806,12 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                     }}
                     placeholder="Ask about your aptitude choices, coding mistakes, or interview answers..."
                     disabled={isSending}
-                    className="flex-1 px-4 py-2.5 bg-black/40 border border-white/10 rounded-xl text-xs text-gray-200 placeholder:text-gray-500 focus:outline-none focus:border-indigo-500"
+                    className="flex-1 px-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-900 placeholder:text-slate-400 focus:outline-none focus:border-indigo-500 focus:bg-white transition-all"
                   />
                   <Button
                     onClick={() => handleSendMessage()}
                     disabled={isSending || !inputMessage.trim()}
-                    className="bg-indigo-600 hover:bg-indigo-500 text-white px-4"
+                    className="px-4 shadow-xs"
                   >
                     <Send className="h-4 w-4" />
                   </Button>

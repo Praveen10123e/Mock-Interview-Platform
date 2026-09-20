@@ -6,7 +6,7 @@ async function main() {
   
   const files = [
     { file: 'aptitude.json', name: 'Curated Aptitude Set v1' },
-    { file: 'coding.json', name: 'Curated Coding Set v1' },
+    { file: 'full_program_coding_interview_dataset_40(3).json', name: 'Curated - Full-Program Coding Interview Dataset' },
     { file: 'hr.json', name: 'Curated HR Set v1' }
   ];
 

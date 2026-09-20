@@ -39,8 +39,13 @@ export interface CodingProblemEvidence {
   questionRefId?: string;
   title: string;
   topic: string;
+  pattern?: string;
+  description?: string;
+  constraints?: string[];
+  examples?: any[];
   difficulty: string;
   expectedComplexity: string;
+  expectedSpaceComplexity?: string;
   totalTests: number;
   hasSubmitted: boolean;
   finalVerdict: string;
@@ -54,8 +59,22 @@ export interface CodingProblemEvidence {
   submittedCode: string | null;
   compileOutput: string | null;
   runtimeError: string | null;
+  stdout?: string | null;
+  stderr?: string | null;
+  primaryErrorType?: string | null;
   executionTime: number | null;
   memory: number | null;
+  testCaseResults: any[] | null;
+  authoritativeTestCases?: any[];
+  bestResult: {
+    attemptNumber: number;
+    passedCount: number;
+    totalCount: number;
+    status: string;
+    score: number;
+    verdictText: string;
+  };
+  attempts: CodingAttemptEvidence[];
   runHistory: Array<{
     attemptNumber: number;
     status: string;
@@ -74,11 +93,58 @@ export interface CodingProblemEvidence {
   }>;
 }
 
+export interface CodingAttemptEvidence {
+  submissionId: string;
+  sessionId: string;
+  problemId: string;
+  attemptNumber: number;
+  runMode: 'RUN' | 'SUBMIT';
+  language: string;
+  sourceCode: string | null;
+  submittedAt: string;
+  status: string;
+  passedCount: number;
+  failedCount: number;
+  totalTests: number;
+  executionTime: number | null;
+  memory: number | null;
+  compileError: string | null;
+  runtimeError: string | null;
+  testResults: Array<{
+    testCaseId: string;
+    status: string;
+    input: string;
+    expectedOutput: string;
+    actualOutput: string;
+    executionTime?: number;
+    error?: string | null;
+    visible: true;
+    passed: boolean;
+  }>;
+  aiAnalysis?: any;
+}
+
 export interface HRTurnEvidence {
   turnIndex: number;
   role: 'interviewer' | 'candidate';
   content: string;
   timestamp: string;
+}
+
+export interface MonitoringEventItem {
+  leftAt: string;
+  returnedAt: string | null;
+  durationSeconds: number;
+}
+
+export interface AssessmentMonitoringEvidence {
+  status: 'Integrity Verified' | 'Review Recommended';
+  monitoringStatus: 'Integrity Verified' | 'Review Recommended';
+  totalSwitches: number;
+  tabSwitches: number;
+  totalAwaySeconds: number;
+  totalTimeAwaySeconds: number;
+  events: MonitoringEventItem[];
 }
 
 export interface CompleteSessionEvidence {
@@ -90,6 +156,8 @@ export interface CompleteSessionEvidence {
   startedAt: string | null;
   finishedAt: string | null;
   durationMinutes: number;
+  completionReason?: string;
+  monitoring: AssessmentMonitoringEvidence;
   aptitude: {
     totalQuestions: number;
     attemptedCount: number;
@@ -290,27 +358,125 @@ export class ReportEvidenceService {
       totalRunCount += runs.length;
       totalSubmitCount += submits.length;
 
+      // 1. Authoritative test cases & complexity
+      const expectedComplexity = q.expectedComplexity || q.timeComplexity || q.metadata?.jsonPayload?.timeComplexity || (q.difficulty === 'EASY' ? 'O(n)' : 'O(n log n)');
+      const expectedSpaceComplexity = q.expectedSpaceComplexity || q.spaceComplexity || q.metadata?.jsonPayload?.spaceComplexity || 'O(1)';
+      const pattern = q.pattern || q.metadata?.jsonPayload?.pattern || (typeof q.topic === 'string' ? q.topic : 'Algorithms');
+      const description = q.description || q.metadata?.jsonPayload?.description || '';
+      const constraints = Array.isArray(q.constraints) ? q.constraints : (Array.isArray(q.metadata?.jsonPayload?.constraints) ? q.metadata.jsonPayload.constraints : []);
+      const examples = Array.isArray(q.examples) ? q.examples : (Array.isArray(q.metadata?.jsonPayload?.examples) ? q.metadata.jsonPayload.examples : []);
+      const authoritativeTestCases = Array.isArray(q.testCases) ? q.testCases : (Array.isArray(q.metadata?.jsonPayload?.testCases) ? q.metadata.jsonPayload.testCases : []);
+
+      // 2. Deterministic Best Result Calculation (highest passedCount, tie-breaker: latest attempt)
+      const candidateRecords = submits.length > 0 ? submits : runs;
+      let bestAttempt = candidateRecords.length > 0 ? candidateRecords[0] : null;
+      for (const att of candidateRecords) {
+        if (!bestAttempt) {
+          bestAttempt = att;
+        } else if (att.passedCount > bestAttempt.passedCount) {
+          bestAttempt = att;
+        } else if (att.passedCount === bestAttempt.passedCount) {
+          if (att.attemptNumber >= bestAttempt.attemptNumber) {
+            bestAttempt = att;
+          }
+        }
+      }
+
       const latestSubmit = submits.length > 0 ? submits[submits.length - 1] : null;
       const latestRun = runs.length > 0 ? runs[runs.length - 1] : null;
       const latestRecord = latestSubmit || latestRun;
 
-      const testsPassed = latestSubmit ? latestSubmit.passedCount : (latestRun ? latestRun.passedCount : 0);
-      const testsTotal = latestSubmit
-        ? latestSubmit.totalCount
-        : (latestRun ? latestRun.totalCount : (Array.isArray(q.testCases) ? q.testCases.length : 2));
+      const testsPassed = bestAttempt ? bestAttempt.passedCount : 0;
+      const testsTotal = bestAttempt
+        ? bestAttempt.totalCount
+        : (Array.isArray(authoritativeTestCases) && authoritativeTestCases.length > 0 ? authoritativeTestCases.length : 2);
 
       totalTestsPassedSum += testsPassed;
       totalTestsCountSum += testsTotal;
 
       let finalVerdict = 'NOT_ATTEMPTED';
-      if (latestSubmit) {
-        finalVerdict = latestSubmit.status || (latestSubmit.passedCount === latestSubmit.totalCount && latestSubmit.totalCount > 0 ? 'ACCEPTED' : 'WRONG_ANSWER');
-        if (finalVerdict === 'ACCEPTED' || finalVerdict === 'PASSED') {
+      if (bestAttempt) {
+        finalVerdict = bestAttempt.status || (bestAttempt.passedCount === bestAttempt.totalCount && bestAttempt.totalCount > 0 ? 'ACCEPTED' : 'WRONG_ANSWER');
+        if (finalVerdict === 'ACCEPTED' || finalVerdict === 'PASSED' || (bestAttempt.passedCount === bestAttempt.totalCount && bestAttempt.totalCount > 0)) {
           problemsAcceptedCount++;
+          finalVerdict = 'ACCEPTED';
         }
       } else if (latestRun) {
         finalVerdict = 'RUN_ONLY';
       }
+
+      const bestResult = bestAttempt ? {
+        attemptNumber: bestAttempt.attemptNumber,
+        passedCount: bestAttempt.passedCount,
+        totalCount: bestAttempt.totalCount,
+        status: finalVerdict,
+        score: bestAttempt.score,
+        verdictText: `${bestAttempt.passedCount}/${bestAttempt.totalCount}`,
+      } : {
+        attemptNumber: 0,
+        passedCount: 0,
+        totalCount: testsTotal,
+        status: 'NOT_ATTEMPTED',
+        score: 0,
+        verdictText: `0/${testsTotal}`,
+      };
+
+      // 3. Compile full immutable attempts history
+      const attempts: CodingAttemptEvidence[] = candidateRecords.map((att) => {
+        const rawResults = Array.isArray(att.testCaseResults) ? att.testCaseResults : [];
+        const authTCs = Array.isArray(authoritativeTestCases) ? authoritativeTestCases : [];
+
+        const formattedTestResults = rawResults.length > 0 ? rawResults.map((r: any, idx: number) => {
+          const matchingAuth = authTCs[idx] || authTCs.find((a: any) => (a.id || a.testCaseId) === r.testCaseId);
+          const input = r.input ?? matchingAuth?.input ?? '';
+          const expectedOutput = r.expectedOutput ?? r.expected ?? matchingAuth?.expectedOutput ?? '';
+          const actualOutput = r.actualOutput ?? r.actual ?? r.studentOutput ?? (r.passed ? expectedOutput : (r.stderr || ''));
+          const error = !r.passed ? (r.stderr || r.error || (r.status === 'RUNTIME_ERROR' ? 'Runtime Exception' : null)) : null;
+
+          return {
+            testCaseId: r.testCaseId || `${q.id}-tc-${idx + 1}`,
+            status: r.status || (r.passed ? 'ACCEPTED' : 'WRONG_ANSWER'),
+            input: typeof input === 'string' ? input : JSON.stringify(input),
+            expectedOutput: typeof expectedOutput === 'string' ? expectedOutput : JSON.stringify(expectedOutput),
+            actualOutput: typeof actualOutput === 'string' ? actualOutput : (actualOutput != null ? JSON.stringify(actualOutput) : ''),
+            executionTime: typeof r.executionTime === 'number' ? r.executionTime : (parseFloat(r.time) || 0),
+            error,
+            visible: true as const,
+            passed: Boolean(r.passed),
+          };
+        }) : authTCs.map((tc: any, idx: number) => ({
+          testCaseId: tc.testCaseId || tc.id || `${q.id}-tc-${idx + 1}`,
+          status: att.passedCount === att.totalCount && att.totalCount > 0 ? 'ACCEPTED' : 'FAILED',
+          input: typeof tc.input === 'string' ? tc.input : JSON.stringify(tc.input),
+          expectedOutput: typeof tc.expectedOutput === 'string' ? tc.expectedOutput : JSON.stringify(tc.expectedOutput),
+          actualOutput: att.compileOutput ? 'Compilation Error' : (att.stderr || ''),
+          executionTime: att.executionTime || 0,
+          error: att.compileOutput || att.stderr || null,
+          visible: true as const,
+          passed: false,
+        }));
+
+        return {
+          submissionId: att.id,
+          sessionId: att.sessionId,
+          problemId: q.id,
+          attemptNumber: att.attemptNumber,
+          runMode: att.runMode as 'RUN' | 'SUBMIT',
+          language: att.language,
+          sourceCode: att.sourceCode,
+          submittedAt: att.timestamp.toISOString(),
+          status: att.status,
+          passedCount: att.passedCount,
+          failedCount: Math.max(0, att.totalCount - att.passedCount),
+          totalTests: att.totalCount,
+          executionTime: att.executionTime,
+          memory: att.memory,
+          compileError: att.compileOutput,
+          runtimeError: att.primaryErrorType === 'RUNTIME_ERROR' ? (att.stderr || 'Runtime error') : null,
+          testResults: formattedTestResults,
+          aiAnalysis: (att as any).aiAnalysis || null,
+        };
+      });
 
       // Compile and runtime errors
       let compileOutput = latestRecord?.compileOutput || null;
@@ -319,15 +485,17 @@ export class ReportEvidenceService {
         runtimeError = latestRecord.stderr || 'Runtime Exception occurred during execution.';
       }
 
-      // Fallback complexity
-      const expectedComplexity = q.expectedComplexity || (q.difficulty === 'EASY' ? 'O(n)' : 'O(n log n)');
-
       codingProblemsEvidence.push({
         questionId: q.id,
         title: q.title || 'Coding Problem',
-        topic: q.topic || 'Algorithms',
+        topic: typeof q.topic === 'string' ? q.topic : (q.topic?.name || 'Algorithms'),
+        pattern,
+        description,
+        constraints,
+        examples,
         difficulty: q.difficulty || 'Medium',
         expectedComplexity,
+        expectedSpaceComplexity,
         totalTests: testsTotal,
         hasSubmitted: submits.length > 0,
         finalVerdict,
@@ -341,8 +509,15 @@ export class ReportEvidenceService {
         submittedCode: latestSubmit?.sourceCode || latestRun?.sourceCode || null,
         compileOutput,
         runtimeError,
+        stdout: latestRecord?.stdout || null,
+        stderr: latestRecord?.stderr || null,
+        primaryErrorType: latestRecord?.primaryErrorType || null,
         executionTime: latestRecord?.executionTime || null,
         memory: latestRecord?.memory || null,
+        testCaseResults: (latestRecord?.testCaseResults as any[]) || null,
+        authoritativeTestCases,
+        bestResult,
+        attempts,
         runHistory: runs.map((r) => ({
           attemptNumber: r.attemptNumber,
           status: r.status,
@@ -397,6 +572,38 @@ export class ReportEvidenceService {
     const durationMs = new Date(finishedAt).getTime() - new Date(startedAt).getTime();
     const durationMinutes = Math.max(1, Math.round(durationMs / 60000));
 
+    // ─── E. ASSESSMENT INTEGRITY & MONITORING EVIDENCE ────────────────────────
+    const tabSwitchRecords = await (prisma as any).interviewTabSwitchEvent.findMany({
+      where: {
+        OR: [
+          { interviewId },
+          { sessionId },
+        ],
+      },
+      orderBy: { leftAt: 'asc' },
+    });
+
+    const monitoringEvents: MonitoringEventItem[] = tabSwitchRecords.map((ev: any) => ({
+      leftAt: ev.leftAt.toISOString(),
+      returnedAt: ev.returnedAt ? ev.returnedAt.toISOString() : null,
+      durationSeconds: ev.durationSeconds || 0,
+    }));
+
+    const completedEvents = monitoringEvents.filter(
+      (ev) => ev.leftAt != null && ev.returnedAt != null
+    );
+
+    const totalSwitches = completedEvents.length;
+    const totalAwaySeconds = completedEvents.reduce(
+      (sum, e) => sum + (e.durationSeconds || 0),
+      0
+    );
+
+    const monitoringStatus: 'Integrity Verified' | 'Review Recommended' =
+      totalSwitches > 2 || totalAwaySeconds > 30
+        ? 'Review Recommended'
+        : 'Integrity Verified';
+
     return {
       interviewId,
       sessionId,
@@ -405,6 +612,16 @@ export class ReportEvidenceService {
       startedAt,
       finishedAt,
       durationMinutes,
+      completionReason: interview.session?.completionReason || undefined,
+      monitoring: {
+        status: monitoringStatus,
+        monitoringStatus,
+        totalSwitches,
+        tabSwitches: totalSwitches,
+        totalAwaySeconds,
+        totalTimeAwaySeconds: totalAwaySeconds,
+        events: completedEvents,
+      },
       aptitude: {
         totalQuestions: aptTotalQuestions,
         attemptedCount: aptAttemptedCount,

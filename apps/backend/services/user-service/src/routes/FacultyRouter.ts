@@ -13,5 +13,7 @@ export class FacultyRouter extends BaseRouter {
     this.router.get('/dashboard', this.facultyController.getDashboard as any);
     this.router.get('/students', this.facultyController.getStudents as any);
     this.router.get('/students/:studentId', this.facultyController.getStudentDetail as any);
+    this.router.get('/profile', this.facultyController.getProfile as any);
+    this.router.put('/profile', this.facultyController.updateProfile as any);
   }
 }

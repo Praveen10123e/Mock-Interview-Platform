@@ -72,7 +72,18 @@ export const FacultyDashboard: React.FC = () => {
     );
   }
 
-  const { faculty, metrics, performanceTrend, studentsNeedingAttention, recentActivity } = data;
+  const faculty = data?.faculty;
+  const metrics = data?.metrics || (data as any)?.stats || {
+    totalStudents: 0,
+    activeStudents: 0,
+    assessments: 0,
+    totalSubmissions: 0,
+    averagePerformance: 0,
+    hasEnoughPerformanceData: false,
+  };
+  const performanceTrend = data?.performanceTrend || [];
+  const studentsNeedingAttention = data?.studentsNeedingAttention || [];
+  const recentActivity = data?.recentActivity || [];
 
   // Resolve faculty display name with fallbacks
   const displayName =

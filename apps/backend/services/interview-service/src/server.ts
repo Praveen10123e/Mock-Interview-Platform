@@ -54,14 +54,31 @@ async function resolveQuestionId(interviewId: string, questionRefId: string): Pr
 
 /** Fetch a question from Question Bank Service */
 async function fetchQuestion(questionId: string) {
-  const res = await axios.get(`http://localhost:3005/${questionId}`);
+  const res = await axios.get(`http://localhost:3005/${questionId}`, {
+    headers: { 'x-user-role': 'FACULTY' },
+  });
   return res.data?.data || null;
 }
 
 // ─── Execution Payload Builder ────────────────────────────────────────────────
 
-async function buildExecutionPayload(body: any, interviewId: string | null, runMode: 'RUN' | 'SUBMIT') {
-  const payload: any = { ...body, runMode };
+async function buildExecutionPayload(body: any, interviewId: string | null, runMode: 'RUN' | 'SUBMIT' | 'SAMPLE' | 'CUSTOM') {
+  const isCustom =
+    runMode === 'CUSTOM' ||
+    (runMode as any) === 'CUSTOM_RUN' ||
+    (runMode === 'RUN' && body.customInput !== undefined && body.customInput !== null && String(body.customInput).trim() !== '');
+
+  const payload: any = {
+    ...body,
+    runMode: isCustom ? 'CUSTOM' : runMode,
+  };
+
+  if (isCustom) {
+    payload.customInput = String(body.customInput || '');
+    payload.stdin = String(body.customInput || '');
+    delete payload.testCases;
+  }
+
   let questionMeta: any = null;
   if (interviewId) {
     payload.interviewId = interviewId;
@@ -79,16 +96,20 @@ async function buildExecutionPayload(body: any, interviewId: string | null, runM
     }
   }
 
-  // Fetch authoritative metadata from Question Bank Service
-  if (questionId) {
+  // Fetch authoritative metadata from Question Bank Service (only if not custom run)
+  if (questionId && !isCustom) {
     try {
       const question = await fetchQuestion(questionId);
-      if (question?.metadata?.jsonPayload?.testCases) {
-        const allTC = question.metadata.jsonPayload.testCases;
-        if (runMode === 'RUN') {
-          const hasVis = allTC.some((tc: any) => typeof tc.hidden === 'boolean' || typeof tc.visible === 'boolean');
+      const rawTCs =
+        question?.metadata?.jsonPayload?.testCases ||
+        question?.testCases ||
+        question?.metadata?.testCases;
+      if (rawTCs && Array.isArray(rawTCs) && rawTCs.length > 0) {
+        const allTC = rawTCs;
+        if (runMode === 'RUN' || runMode === 'SAMPLE') {
+          const hasVis = allTC.some((tc: any) => typeof tc.hidden === 'boolean' || typeof tc.visible === 'boolean' || tc.visibility === 'VISIBLE');
           if (hasVis) {
-            payload.testCases = allTC.filter((tc: any) => tc.hidden === false || tc.visible === true);
+            payload.testCases = allTC.filter((tc: any) => tc.hidden === false || tc.visible === true || tc.visibility === 'VISIBLE');
           } else if (question.examples?.length > 0) {
             payload.testCases = allTC.slice(0, Math.min(question.examples.length, allTC.length));
           } else {
@@ -99,11 +120,9 @@ async function buildExecutionPayload(body: any, interviewId: string | null, runM
         }
         console.log(`[Exec] ${runMode} | ${payload.testCases.length}/${allTC.length} testCases | question: ${question.title}`);
       }
+      payload.executionType = 'STDIN_PROGRAM';
       if (question?.metadata?.jsonPayload?.execution) {
         payload.execution = question.metadata.jsonPayload.execution;
-        const lk = JUDGE0_LANG_KEY[body.languageId];
-        const fn = payload.execution?.languages?.[lk]?.functionName || payload.execution?.languages?.[lk]?.methodName;
-        console.log(`[Exec] functionName=${fn} | lang=${lk}`);
       }
       if (question?.examples) payload.examples = question.examples;
       questionMeta = question;
@@ -288,62 +307,13 @@ app.post('/:id/ai/follow-up', async (req, res) => {
 
 // ─── Practice Session Creation ────────────────────────────────────────────────
 
+import { InterviewSessionService } from './services/InterviewSessionService';
+
 app.post('/practice', async (req, res) => {
   try {
     const identityId = req.headers['x-identity-id'] as string || 'anonymous';
-    
-    // Fresh assignment
-    const [aptRes, codRes, hrRes] = await Promise.all([
-      axios.get('http://localhost:3005/?questionType=APTITUDE&limit=100'),
-      axios.get('http://localhost:3005/?questionType=CODING&limit=100'),
-      axios.get('http://localhost:3005/?questionType=HR&limit=20'),
-    ]);
-
-    const isCurated = (q: any) => q.source?.name?.startsWith('Curated') || q.isCurated === true;
-    const isExecutable = (q: any) => {
-      const tc = q.metadata?.jsonPayload?.testCases;
-      return !!(tc && tc.length > 0);
-    };
-
-    const allApt = (aptRes.data?.data || []).filter(isCurated);
-    const allCod = (codRes.data?.data || []).filter((q: any) => isCurated(q) && isExecutable(q));
-    const allHr  = (hrRes.data?.data  || []).filter(isCurated);
-
-    const seed = Date.now();
-    const aptQuestions = seededShuffle(allApt, seed).slice(0, 5);
-    const codQuestions = seededShuffle(allCod, seed + 1).slice(0, 2);
-    const hrQuestions  = seededShuffle(allHr,  seed + 2).slice(0, 1);
-
-    // Create Interview & Session in DB
-    const interview = await prisma.interview.create({
-      data: {
-        identityId,
-        title: 'Practice Session',
-        interviewType: 'PRACTICE',
-        difficulty: 'MIXED',
-        state: 'RUNNING',
-        session: {
-          create: {
-            startedAt: new Date()
-          }
-        }
-      },
-      include: { session: true }
-    });
-
-    const id = interview.id;
-
-    // Persist assignments
-    const records: any[] = [];
-    aptQuestions.forEach((q: any, i: number) => records.push({ interviewId: id, questionId: q.id, questionRefId: q.id, round: 'APTITUDE', position: i }));
-    codQuestions.forEach((q: any, i: number) => records.push({ interviewId: id, questionId: q.id, questionRefId: q.id, round: 'CODING',   position: i }));
-    hrQuestions.forEach( (q: any, i: number) => records.push({ interviewId: id, questionId: q.id, questionRefId: q.id, round: 'HR',      position: i }));
-    
-    if (records.length > 0) {
-      await (prisma as any).interviewRoundAssignment.createMany({ data: records, skipDuplicates: true });
-    }
-
-    res.json({ id: interview.id });
+    const result = await InterviewSessionService.startPracticeSession(identityId);
+    res.json(result);
   } catch (err: any) {
     console.error('Failed to create practice session:', err);
     res.status(500).json({ error: 'Failed to create practice session' });
@@ -439,12 +409,8 @@ app.get('/:id/questions', async (req, res) => {
 
       const isCurated = (q: any) => q.source?.name?.startsWith('Curated') || q.isCurated === true;
       const isExecutable = (q: any) => {
-        const exec = q.metadata?.jsonPayload?.execution;
         const tc = q.metadata?.jsonPayload?.testCases;
-        if (!exec || !tc?.length) return false;
-        return Object.values(exec.languages || {}).some((lc: any) =>
-          (lc.functionName || lc.methodName) && lc.starterCode && lc.judge0LanguageId
-        );
+        return !!(tc && tc.length > 0);
       };
 
       const allApt = (aptRes.data?.data || []).filter(isCurated);
@@ -726,6 +692,10 @@ app.get('/:id/report', async (req, res) => {
 
     if (interview.session?.finalizedAt && interview.session?.reportSnapshot && (interview.session.reportSnapshot as any).metrics) {
       return res.json(interview.session.reportSnapshot);
+    }
+
+    if (interview.state === 'RUNNING' && !interview.session?.finalizedAt) {
+      return res.status(403).json({ success: false, error: 'Assessment report unavailable: Interview session is currently active.' });
     }
 
     const liveReport = await generateReport(id, identityId, prisma);
@@ -1176,6 +1146,18 @@ templateRouter.delete('/:id', requireFaculty, async (req, res) => {
   }
 });
 
+// 7. Start Template Session (Idempotent for candidate)
+templateRouter.post('/:id/start', async (req, res) => {
+  try {
+    const identityId = (req.headers['x-identity-id'] as string) || 'anonymous';
+    const result = await InterviewSessionService.startTemplateSession(req.params.id, identityId);
+    res.json(result);
+  } catch (err: any) {
+    console.error('Failed to start template session:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
 app.use('/templates', templateRouter);
 
 // ─── Faculty Interview Sessions Monitoring ────────────────────────────────────
@@ -1238,6 +1220,60 @@ facultySessionRouter.get('/executions/:executionId', requireFaculty, async (req,
   }
 });
 
+// Comprehensive Faculty Analytics
+facultySessionRouter.get('/analytics', requireFaculty, async (req, res) => {
+  try {
+    const data = await FacultyInterviewService.getFacultyAnalytics({
+      templateId: req.query.templateId as string,
+      department: req.query.department as string,
+      dateRange: req.query.dateRange as string,
+      status: req.query.status as string,
+    });
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (err: any) {
+    console.error('Failed to get faculty analytics:', err);
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// List Completed Faculty Reports
+facultySessionRouter.get('/reports', requireFaculty, async (req, res) => {
+  try {
+    const data = await FacultyInterviewService.getFacultyReports({
+      search: req.query.search as string,
+      templateId: req.query.templateId as string,
+      interviewType: req.query.interviewType as string,
+      date: req.query.date as string,
+      scoreMin: req.query.scoreMin ? parseFloat(req.query.scoreMin as string) : undefined,
+      scoreMax: req.query.scoreMax ? parseFloat(req.query.scoreMax as string) : undefined,
+    });
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (err: any) {
+    console.error('Failed to list faculty reports:', err);
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+// Get Single Completed Assessment Report Detail
+facultySessionRouter.get('/reports/:id', requireFaculty, async (req, res) => {
+  try {
+    const data = await FacultyInterviewService.getFacultyReportDetail(req.params.id);
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (err: any) {
+    console.error('Failed to get faculty report details:', err);
+    res.status(404).json({ success: false, error: { message: err.message } });
+  }
+});
+
 // Get single student session details
 facultySessionRouter.get('/:id', requireFaculty, async (req, res) => {
   try {
@@ -1252,6 +1288,38 @@ facultySessionRouter.get('/:id', requireFaculty, async (req, res) => {
   }
 });
 
+// ─── ADMIN PORTAL ROUTER ──────────────────────────────────────────────────
+import { AdminService } from './services/AdminService';
+
+const requireAdmin = (req: any, res: any, next: any) => {
+  const roleHeader = (req.headers['x-user-role'] as string) || '';
+  const roles = roleHeader.split(',').map((r) => r.trim().toUpperCase());
+  if (roles.includes('ADMINISTRATOR') || roles.includes('ADMIN')) {
+    return next();
+  }
+  return res.status(403).json({
+    success: false,
+    error: { code: 'FORBIDDEN', message: 'Access denied: Administrator privileges required.' },
+  });
+};
+
+const adminRouter = express.Router();
+
+adminRouter.get('/dashboard', requireAdmin, async (req, res) => {
+  try {
+    const adminIdentityId = req.headers['x-identity-id'] as string;
+    const data = await AdminService.getAdminDashboard(adminIdentityId);
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (err: any) {
+    console.error('Failed to get admin dashboard:', err);
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+app.use('/admin', adminRouter);
 app.use('/faculty/sessions', facultySessionRouter);
 app.use('/faculty/executions', facultySessionRouter);
 

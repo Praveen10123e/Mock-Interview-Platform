@@ -1,24 +1,28 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
-  CheckCircle2, Lock, Circle, Clock, AlertCircle, ChevronLeft, ChevronRight,
-  RotateCcw, Bot, Mic, MicOff, Volume2,
-  Shield, XCircle, Loader2
+  CheckCircle2, Lock, Clock, AlertCircle, ChevronLeft, ChevronRight,
+  RotateCcw, Shield, XCircle, Loader2
 } from 'lucide-react';
 import { ReportWorkspace } from '../components/ReportWorkspace';
 
 import api from '../../../api/axios/instance';
-import { InterviewService } from '../services/interview.service';
 import { Button } from '../../../components/ui/button';
 import { Skeleton } from '../../../components/ui/skeleton';
-import { Card } from '../../../components/ui/card';
-import { Badge } from '../../../components/ui/badge';
 import { normalizeInterviewQuestion } from '../../../utils/normalizeQuestion';
 import { CodingRound } from '../components/CodingRound';
-import { useInterviewFocusGuard } from '../hooks/useInterviewFocusGuard';
-import type { FocusViolation } from '../hooks/useInterviewFocusGuard';
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '../../../components/ui/dialog';
+import { useAuthStore } from '../../../store/AuthStore';
+import { useProfile } from '../../../hooks/useProfile';
+
+// ── New HR Interview Module ──────────────────────────────────
+import { HREntryCard } from '../components/hr/HREntryCard';
+import { HRInterviewRoom } from '../components/hr/HRInterviewRoom';
+import { HRCompletionScreen } from '../components/hr/HRCompletionScreen';
+import { HRInterviewAPI } from '../services/hrInterview.service';
+import type { HRQuestion } from '../services/hrInterview.service';
+
 
 // ============================================================
 // TYPES
@@ -40,6 +44,7 @@ interface AptitudeTelemetry {
   unanswered: number;
   score: number;
   completed: boolean;
+  answers?: Record<string, number>;
 }
 
 interface CodingTelemetry {
@@ -78,54 +83,69 @@ const formatTime = (seconds: number): string => {
 };
 
 const difficultyClass = (d?: string) => {
-  if (d === 'EASY') return 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20';
-  if (d === 'MEDIUM') return 'bg-amber-500/10 text-amber-400 border-amber-500/20';
-  return 'bg-rose-500/10 text-rose-400 border-rose-500/20';
+  const norm = (d || '').toUpperCase();
+  if (norm === 'EASY') return 'bg-emerald-50 text-emerald-700 border-emerald-200';
+  if (norm === 'MEDIUM') return 'bg-amber-50 text-amber-700 border-amber-200';
+  return 'bg-rose-50 text-rose-700 border-rose-200';
 };
 
 // ============================================================
 // HEADER COMPONENT
 // ============================================================
 
+// ============================================================
+// HEADER COMPONENT
+// ============================================================
+
 const InterviewHeader = ({
-  sessionId,
+  sessionId: _sessionId,
   timeLeft,
   roundState,
   activeRound,
+  tabSwitchesCount,
   onLockedClick,
   onFinish,
   isSubmitting,
+  isTimeExpired,
+  userName,
 }: {
   sessionId: string;
   timeLeft: number;
   roundState: RoundState;
   activeRound: 'aptitude' | 'coding' | 'hr' | 'report';
+  tabSwitchesCount: number;
   onLockedClick: () => void;
   onFinish: () => void;
   isSubmitting: boolean;
+  isTimeExpired: boolean;
+  userName?: string;
 }) => {
   const rounds = [
-    { key: 'aptitude', label: 'Aptitude' },
-    { key: 'coding', label: 'Coding' },
-    { key: 'hr', label: 'HR Interview' },
-    { key: 'report', label: 'Final Report' },
+    { key: 'aptitude', label: '1 Aptitude' },
+    { key: 'coding', label: '2 Coding' },
+    { key: 'hr', label: '3 HR Interview' },
+    { key: 'report', label: '4 Review' },
   ] as const;
 
   const isLow = timeLeft < 300;
+  const displayName = userName || 'Candidate';
+  const initialLetter = displayName.charAt(0).toUpperCase() || 'C';
 
   return (
-    <header className="h-14 border-b border-white/10 bg-[#0d1117] flex items-center justify-between px-4 sm:px-6 shrink-0 z-20 shadow-sm">
-      {/* Left: Branding */}
-      <div className="flex items-center gap-3 shrink-0">
-        <div className="font-bold text-base text-indigo-400 tracking-tight">NM Sandbox</div>
-        <div className="hidden sm:block h-4 w-px bg-white/20" />
-        <span className="hidden sm:block text-xs text-gray-500 font-mono">
-          {sessionId.startsWith('practice-') ? 'Practice' : `Session: ${sessionId.slice(0, 8)}â€¦`}
-        </span>
+    <header className="h-14 border-b border-[#E2E8F0] bg-white flex items-center justify-between px-4 sm:px-6 shrink-0 z-20 shadow-2xs">
+      {/* Left: NM Brand */}
+      <div className="flex items-center gap-2.5 shrink-0">
+        <div className="w-7 h-7 rounded-md bg-[#111827] flex items-center justify-center text-white font-bold text-xs shadow-xs tracking-wider select-none">
+          NM
+        </div>
+        <div className="flex flex-col">
+          <div className="font-bold text-xs sm:text-sm text-[#0F172A] leading-tight">NM Interview</div>
+          <div className="text-[10px] text-[#64748B] font-medium leading-none mt-0.5">Mock • Practice • Improvement</div>
+        </div>
       </div>
 
-      {/* Center: Round Progress */}
-      <div className="flex items-center gap-1 bg-white/5 px-3 py-1.5 rounded-lg border border-white/5">
+      {/* Center: Compact Assessment Stages */}
+      <div className="hidden md:flex items-center gap-1.5">
         {rounds.map((r, i) => {
           const status = roundState[r.key];
           const isCurrent = r.key === activeRound;
@@ -134,42 +154,68 @@ const InterviewHeader = ({
               <button
                 onClick={status === 'LOCKED' ? onLockedClick : undefined}
                 disabled={status === 'LOCKED'}
-                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs font-medium transition-all
-                  ${isCurrent ? 'bg-indigo-600 text-white shadow-sm' : ''}
-                  ${status === 'COMPLETED' && !isCurrent ? 'text-emerald-400 hover:bg-white/5 cursor-default' : ''}
-                  ${status === 'LOCKED' ? 'text-gray-600 cursor-not-allowed' : ''}
-                `}
+                className={`flex items-center gap-1.5 px-2.5 py-1 rounded-md text-xs transition-colors cursor-pointer ${
+                  isCurrent
+                    ? 'bg-[#111827] text-white font-semibold shadow-xs'
+                    : status === 'COMPLETED'
+                    ? 'text-emerald-700 bg-emerald-50 border border-emerald-200/80 font-medium hover:bg-emerald-100/70'
+                    : 'text-slate-400 cursor-not-allowed font-normal'
+                }`}
               >
-                {status === 'COMPLETED' && !isCurrent && <CheckCircle2 className="w-3 h-3 shrink-0" />}
-                {isCurrent && <span className="w-1.5 h-1.5 rounded-full bg-current animate-pulse shrink-0" />}
-                {status === 'LOCKED' && <Lock className="w-3 h-3 shrink-0" />}
-                {status === 'ACTIVE' && !isCurrent && <Circle className="w-3 h-3 shrink-0" />}
-                <span className="hidden sm:inline">{r.label}</span>
+                {status === 'COMPLETED' && !isCurrent && <CheckCircle2 className="w-3.5 h-3.5 shrink-0 text-emerald-600" />}
+                {isCurrent && <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 shrink-0" />}
+                {status === 'LOCKED' && <Lock className="w-3 h-3 shrink-0 text-slate-400" />}
+                <span>{r.label}</span>
               </button>
               {i < rounds.length - 1 && (
-                <div className={`w-4 h-px ${status === 'COMPLETED' ? 'bg-emerald-500/40' : 'bg-white/10'}`} />
+                <span className="text-slate-300 text-xs select-none">›</span>
               )}
             </React.Fragment>
           );
         })}
       </div>
 
-      {/* Right: Timer + Finish */}
-      <div className="flex items-center gap-3 shrink-0">
-        <div className={`flex items-center gap-1.5 font-mono text-sm font-semibold px-3 py-1.5 rounded-md border
-          ${isLow ? 'bg-rose-500/10 text-rose-400 border-rose-500/20 animate-pulse' : 'bg-white/5 text-gray-300 border-white/10'}`}>
-          <Clock className="h-3.5 w-3.5 shrink-0" />
-          {formatTime(timeLeft)}
+      {/* Right: Monitoring + Timer + End Interview + Candidate Info */}
+      <div className="flex items-center gap-2.5 shrink-0">
+        {/* Monitoring Pill */}
+        <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#F8FAFC] border border-[#E2E8F0] text-xs text-[#475569]">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+          <span className="font-medium">Monitoring Active</span>
+          <span className="text-slate-300">•</span>
+          <span>Visibility Events: <strong className="font-mono text-[#0F172A] font-bold">{tabSwitchesCount}</strong></span>
         </div>
-        <Button
-          size="sm"
-          variant="outline"
-          className="h-8 border-white/10 text-gray-400 hover:bg-rose-500/10 hover:text-rose-400 hover:border-rose-500/30 text-xs"
-          onClick={onFinish}
-          disabled={isSubmitting}
-        >
-          {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Finish Session'}
-        </Button>
+
+        {/* Timer */}
+        <div className={`flex items-center gap-1.5 font-mono text-xs sm:text-sm font-bold px-2.5 py-1 rounded-md border shadow-2xs ${
+          isLow ? 'bg-rose-50 text-rose-700 border-rose-200 animate-pulse' : 'bg-slate-100 text-slate-800 border-slate-200'
+        }`}>
+          <Clock className="h-3.5 w-3.5 text-slate-600 shrink-0" />
+          <span>{formatTime(timeLeft)}</span>
+        </div>
+
+        {/* End Interview */}
+        {activeRound !== 'report' && (
+          <Button
+            variant="secondary"
+            size="sm"
+            className="h-7.5 px-3 text-xs font-semibold rounded-md border border-[#CBD5E1] bg-white text-[#0F172A] hover:bg-[#F8FAFC] hover:text-rose-600 shadow-2xs cursor-pointer"
+            onClick={onFinish}
+            disabled={isSubmitting || isTimeExpired}
+          >
+            {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'End Interview'}
+          </Button>
+        )}
+
+        {/* Candidate Profile */}
+        <div className="hidden sm:flex items-center gap-2 pl-2 border-l border-[#E2E8F0]">
+          <div className="w-7 h-7 rounded-full bg-slate-900 text-white flex items-center justify-center text-xs font-bold ring-1 ring-slate-200 shadow-2xs">
+            {initialLetter}
+          </div>
+          <div className="flex flex-col text-left">
+            <span className="text-xs font-bold text-[#0F172A] leading-tight truncate max-w-[100px]">{displayName}</span>
+            <span className="text-[9px] font-bold text-[#64748B] uppercase tracking-wider">STUDENT</span>
+          </div>
+        </div>
       </div>
     </header>
   );
@@ -234,10 +280,10 @@ const AptitudeWorkspace = ({
 
   if (!q) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div className="flex-1 flex items-center justify-center bg-slate-50">
         <div className="text-center">
-          <AlertCircle className="w-10 h-10 text-rose-400 mx-auto mb-3" />
-          <p className="text-gray-400">Unable to load question data.</p>
+          <AlertCircle className="w-10 h-10 text-rose-500 mx-auto mb-3" />
+          <p className="text-slate-600 font-medium">Unable to load question data.</p>
         </div>
       </div>
     );
@@ -245,12 +291,12 @@ const AptitudeWorkspace = ({
 
   if (!q.valid) {
     return (
-      <div className="flex-1 flex items-center justify-center">
+      <div className="flex-1 flex items-center justify-center bg-slate-50">
         <div className="text-center max-w-sm">
-          <XCircle className="w-10 h-10 text-rose-400 mx-auto mb-3" />
-          <h3 className="font-semibold text-lg mb-1">Question Configuration Error</h3>
-          <p className="text-gray-400 text-sm">This question is missing required options. Please contact support.</p>
-          <p className="text-gray-600 text-xs mt-2 font-mono">ID: {q.id}</p>
+          <XCircle className="w-10 h-10 text-rose-500 mx-auto mb-3" />
+          <h3 className="font-semibold text-lg mb-1 text-slate-900">Question Configuration Error</h3>
+          <p className="text-slate-600 text-sm">This question is missing required options. Please contact support.</p>
+          <p className="text-slate-400 text-xs mt-2 font-mono">ID: {q.id}</p>
         </div>
       </div>
     );
@@ -259,333 +305,301 @@ const AptitudeWorkspace = ({
   const progress = Math.round(((index + 1) / total) * 100);
 
   return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden">
-      {/* Progress bar */}
-      <div className="h-1 bg-white/5 shrink-0">
-        <div className="h-full bg-indigo-500 transition-all duration-500" style={{ width: `${progress}%` }} />
+    <div className="flex-1 min-h-0 flex flex-col h-full overflow-hidden bg-[#F8FAFC]">
+      {/* Subtle assessment progress indicator */}
+      <div className="h-0.5 bg-[#E2E8F0] shrink-0 w-full">
+        <div
+          className="h-full bg-[#111827] transition-all duration-300 ease-out"
+          style={{ width: `${progress}%` }}
+        />
       </div>
 
-      <div className="flex-1 overflow-y-auto p-6 lg:p-8 max-w-3xl mx-auto w-full">
-        {/* Question meta */}
-        <div className="flex items-center justify-between mb-6">
-          <div>
-            <p className="text-xs font-semibold text-indigo-400 uppercase tracking-widest mb-1">Aptitude Round</p>
-            <h2 className="text-2xl font-bold text-white">Question {index + 1} <span className="text-gray-500 font-normal">of {total}</span></h2>
+      {/* Main Question Area - Centered workspace */}
+      <div className="flex-1 min-h-0 overflow-y-auto px-4 sm:px-6 lg:px-8 py-3.5 sm:py-4">
+        <div className="w-full max-w-[1150px] mx-auto flex flex-col justify-start">
+          {/* Question Card */}
+          <div className="bg-white border border-[#E2E8F0] rounded-xl p-5 sm:p-7 shadow-xs">
+            {/* Question Header / Meta */}
+            <div className="flex flex-wrap items-center justify-between gap-3 pb-3.5 mb-4 border-b border-[#E2E8F0]">
+              <div className="flex items-center gap-3">
+                <span className="text-[11px] font-bold text-[#64748B] uppercase tracking-wider">
+                  Aptitude Assessment
+                </span>
+                <span className="text-slate-300">•</span>
+                <h2 className="text-base sm:text-lg font-bold text-[#0F172A]">
+                  Question {index + 1} <span className="text-[#64748B] font-normal text-sm">of {total}</span>
+                </h2>
+              </div>
+              <div className="flex items-center gap-2">
+                {q.difficulty && (
+                  <span className={`text-xs font-semibold px-2.5 py-0.5 rounded border ${difficultyClass(q.difficulty)}`}>
+                    {q.difficulty.toUpperCase()}
+                  </span>
+                )}
+                {q.topic && (
+                  <span className="text-xs text-[#475569] bg-[#F8FAFC] border border-[#CBD5E1] px-2.5 py-0.5 rounded font-medium">
+                    {typeof q.topic === 'string' ? q.topic : (q.topic?.name || 'General')}
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Question Title & Description */}
+            <div className="mb-4">
+              <h3 className="text-lg sm:text-xl font-semibold text-[#0F172A] leading-relaxed">
+                {q.title}
+              </h3>
+              {q.description && q.description !== q.title && (
+                <div
+                  className="mt-2 text-sm sm:text-base text-[#334155] leading-relaxed"
+                  dangerouslySetInnerHTML={{ __html: q.description.replace(/\n/g, '<br/>') }}
+                />
+              )}
+            </div>
+
+            {/* Multiple-Choice Answer Cards */}
+            <div className="space-y-2.5 mb-1" role="radiogroup" aria-label="Answer options">
+              {q.options.map((opt: string, i: number) => {
+                const isSelected = selectedOption === i;
+                const letter = String.fromCharCode(65 + i);
+                return (
+                  <button
+                    key={i}
+                    type="button"
+                    role="radio"
+                    aria-checked={isSelected}
+                    onClick={() => handleSelect(i)}
+                    className={`w-full flex items-center gap-3.5 px-4 py-2.5 sm:py-3 rounded-lg border text-left transition-colors cursor-pointer group focus:outline-none focus-visible:ring-2 focus-visible:ring-[#111827] ${
+                      isSelected
+                        ? 'bg-[#F8FAFC] border-[#111827] ring-1 ring-[#111827] text-[#0F172A]'
+                        : 'bg-white border-[#CBD5E1] hover:bg-[#F8FAFC] hover:border-[#94A3B8] text-[#0F172A]'
+                    }`}
+                  >
+                    <div
+                      className={`w-7 h-7 sm:w-8 sm:h-8 rounded-md border flex items-center justify-center text-xs font-bold shrink-0 transition-colors ${
+                        isSelected
+                          ? 'bg-[#111827] border-[#111827] text-white'
+                          : 'bg-white border-[#CBD5E1] text-[#475569] group-hover:border-[#94A3B8] group-hover:text-[#0F172A]'
+                      }`}
+                    >
+                      {letter}
+                    </div>
+                    <span className={`text-sm sm:text-base flex-1 ${isSelected ? 'font-semibold text-[#0F172A]' : 'font-normal text-[#1E293B]'}`}>
+                      {opt}
+                    </span>
+                    {isSelected && (
+                      <CheckCircle2 className="w-5 h-5 text-[#111827] shrink-0" />
+                    )}
+                  </button>
+                );
+              })}
+            </div>
           </div>
-          <div className="flex items-center gap-2">
-            <span className={`text-xs font-medium px-2 py-1 rounded-full border ${difficultyClass(q.difficulty)}`}>
-              {q.difficulty}
-            </span>
-            {q.topic && (
-              <span className="text-xs text-gray-500 border border-white/10 px-2 py-1 rounded-full">
-                {typeof q.topic === 'string' ? q.topic : (q.topic?.name || 'General')}
+
+          {/* Navigation Controls Bar - Directly below Question Card with small spacing */}
+          <div className="mt-3.5 sm:mt-4 bg-white border border-[#E2E8F0] rounded-xl px-4 sm:px-6 py-2.5 sm:py-3 shadow-xs flex flex-wrap items-center justify-between gap-3">
+            {/* Left: Previous Button */}
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setIndex(p => Math.max(0, p - 1))}
+              disabled={index === 0}
+              className="h-9 px-4 text-xs font-semibold rounded-md border border-[#CBD5E1] bg-white text-[#0F172A] hover:bg-[#F8FAFC] hover:text-[#0F172A] disabled:opacity-40 disabled:cursor-not-allowed shadow-2xs cursor-pointer"
+            >
+              <ChevronLeft className="w-4 h-4 mr-1.5" /> Previous
+            </Button>
+
+            {/* Center/Left: Question Navigation Controls */}
+            <div className="flex items-center gap-2 flex-wrap">
+              <span className="text-xs font-bold text-[#64748B] uppercase tracking-wider hidden sm:inline-block mr-1">
+                Questions:
               </span>
+              <div className="flex items-center gap-1.5 flex-wrap">
+                {questions.map((raw, i) => {
+                  const nq = normalizeInterviewQuestion(raw);
+                  const answered = nq?.id != null && answers[nq.id] !== undefined;
+                  const isCurrent = i === index;
+                  return (
+                    <button
+                      key={i}
+                      type="button"
+                      onClick={() => setIndex(i)}
+                      aria-label={`Question ${i + 1}`}
+                      className={`w-8 h-8 rounded-md text-xs font-bold border transition-colors cursor-pointer flex items-center justify-center ${
+                        isCurrent
+                          ? 'bg-[#111827] border-[#111827] text-white shadow-xs'
+                          : answered
+                          ? 'bg-emerald-50 border-emerald-300 text-emerald-800 hover:bg-emerald-100 font-semibold'
+                          : 'bg-white border-[#CBD5E1] text-[#64748B] hover:bg-[#F8FAFC] hover:text-[#0F172A] hover:border-[#94A3B8]'
+                      }`}
+                    >
+                      {i + 1}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* Right: Next or Submit Button */}
+            {index < total - 1 ? (
+              <Button
+                type="button"
+                onClick={() => setIndex(p => p + 1)}
+                className="h-9 px-6 text-xs font-semibold rounded-md bg-[#111827] hover:bg-[#1F2937] text-white shadow-xs border border-[#111827] cursor-pointer"
+              >
+                Next <ChevronRight className="w-4 h-4 ml-1.5" />
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                onClick={handleSubmit}
+                className="h-9 px-6 text-xs font-semibold rounded-md bg-[#111827] hover:bg-[#1F2937] text-white shadow-xs border border-[#111827] cursor-pointer"
+              >
+                <CheckCircle2 className="w-4 h-4 mr-1.5" /> Submit Assessment
+              </Button>
             )}
           </div>
         </div>
-
-        {/* Question text */}
-        <div className="mb-8">
-          <h3 className="text-lg font-medium text-gray-100 leading-relaxed mb-3">{q.title}</h3>
-          {q.description && q.description !== q.title && (
-            <div className="text-gray-400 text-sm leading-relaxed" dangerouslySetInnerHTML={{ __html: q.description.replace(/\n/g, '<br/>') }} />
-          )}
-        </div>
-
-        {/* Options */}
-        <div className="space-y-3 mb-8">
-          {q.options.map((opt: string, i: number) => {
-            const isSelected = selectedOption === i;
-            return (
-              <button
-                key={i}
-                onClick={() => handleSelect(i)}
-                className={`w-full flex items-center gap-4 p-4 rounded-xl border-2 text-left transition-all duration-200 group
-                  ${isSelected
-                    ? 'border-indigo-500 bg-indigo-500/10 shadow-lg shadow-indigo-500/10'
-                    : 'border-white/8 bg-white/3 hover:border-indigo-500/40 hover:bg-indigo-500/5'
-                  }`}
-              >
-                <div className={`w-9 h-9 rounded-full border-2 flex items-center justify-center text-sm font-bold shrink-0 transition-all
-                  ${isSelected ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-white/20 text-gray-500 group-hover:border-indigo-500/50'}`}>
-                  {String.fromCharCode(65 + i)}
-                </div>
-                <span className={`text-base flex-1 ${isSelected ? 'text-white' : 'text-gray-300'}`}>{opt}</span>
-                {isSelected && <CheckCircle2 className="w-5 h-5 text-indigo-400 shrink-0" />}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Answer progress summary */}
-        <div className="flex gap-1 mb-8 flex-wrap">
-          {questions.map((raw, i) => {
-            const nq = normalizeInterviewQuestion(raw);
-            const answered = nq?.id != null && answers[nq.id] !== undefined;
-            return (
-              <button
-                key={i}
-                onClick={() => setIndex(i)}
-                className={`w-8 h-8 rounded-md text-xs font-bold border transition-all
-                  ${i === index ? 'border-indigo-500 bg-indigo-500 text-white' : answered ? 'border-emerald-500/50 bg-emerald-500/10 text-emerald-400' : 'border-white/10 bg-white/5 text-gray-500'}`}
-              >
-                {i + 1}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* Footer nav */}
-      <div className="shrink-0 border-t border-white/8 px-6 py-4 flex items-center justify-between bg-[#0d1117]">
-        <Button
-          variant="outline"
-          onClick={() => setIndex(p => Math.max(0, p - 1))}
-          disabled={index === 0}
-          className="gap-2 border-white/10 bg-transparent hover:bg-white/5 disabled:opacity-30"
-        >
-          <ChevronLeft className="w-4 h-4" /> Previous
-        </Button>
-
-        {index < total - 1 ? (
-          <Button
-            onClick={() => setIndex(p => p + 1)}
-            className="gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-8"
-          >
-            Next <ChevronRight className="w-4 h-4" />
-          </Button>
-        ) : (
-          <Button
-            onClick={handleSubmit}
-            className="gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold px-8"
-          >
-            <CheckCircle2 className="w-4 h-4" /> Submit Aptitude
-          </Button>
-        )}
       </div>
     </div>
   );
 };
+
 // ============================================================
-// HR WORKSPACE
+// HR SESSION ORCHESTRATOR
+// Stages: entry → room → completion
 // ============================================================
 
-const HRWorkspace = ({
-  question: rawQuestion,
-  sessionId,
+type HRStage = 'entry' | 'room' | 'completion';
+
+const HRSessionOrchestrator = ({
+  interviewId,
   onComplete,
-  telemetry,
-  setTelemetry,
 }: {
-  question: any;
-  sessionId: string;
+  interviewId: string;
   onComplete: (result: HRTelemetry) => void;
-  telemetry: HRTelemetry;
-  setTelemetry: (t: HRTelemetry) => void;
 }) => {
-  const question = normalizeInterviewQuestion(rawQuestion);
-  const [transcript, setTranscript] = useState('');
-  const [history, setHistory] = useState<Array<{ role: 'interviewer' | 'candidate'; content: string }>>([]);
-  const [isRecording, setIsRecording] = useState(false);
-  const [isThinking, setIsThinking] = useState(false);
-  const [isSpeaking, setIsSpeaking] = useState(false);
-  const recognitionRef = useRef<any>(null);
-  const chatEndRef = useRef<HTMLDivElement>(null);
+  const [stage, setStage] = useState<HRStage>('entry');
+  const [hrQuestions, setHrQuestions] = useState<HRQuestion[]>([]);
+  const videoStream: MediaStream | null = null;
+  const [isInitializing, setIsInitializing] = useState(false);
+  const [initError, setInitError] = useState('');
+  const preloadedQuestionsRef = useRef<HRQuestion[] | null>(null);
 
+  // Preload questions as soon as entry card is displayed
   useEffect(() => {
-    // Load persisted conversation history
-    api.get(`/interviews/${sessionId}/hr/conversation`)
+    let active = true;
+    HRInterviewAPI.initSession(interviewId, 'Software Engineer')
       .then((res) => {
-        const conv = res.data?.data?.conversation;
-        if (Array.isArray(conv) && conv.length > 0) {
-          setHistory(conv.map((c: any) => ({ role: c.role, content: c.content })));
-        } else {
-          const initial = question?.description || question?.title || 'Please introduce yourself and your technical background.';
-          setHistory([{ role: 'interviewer', content: initial }]);
-          if ('speechSynthesis' in window) {
-            setTimeout(() => speakText(initial), 800);
-          }
-        }
+        if (!active) return;
+        const sessionData = res.data || res;
+        const questions: HRQuestion[] = sessionData.questions || [];
+        const main = questions.filter((q: HRQuestion) => q.questionType === 'MAIN');
+        preloadedQuestionsRef.current = main;
+        setHrQuestions(main);
+        console.log('[HR-TTS-TRACE] INIT_SESSION_COMPLETED (preloaded):', main.length, 'questions');
       })
-      .catch(() => {
-        const initial = question?.description || question?.title || 'Please introduce yourself and your technical background.';
-        setHistory([{ role: 'interviewer', content: initial }]);
+      .catch((err) => {
+        console.warn('Preloading HR questions caught:', err);
       });
-
     return () => {
-      stopSpeaking();
-      recognitionRef.current?.stop();
+      active = false;
     };
-  }, [sessionId, question?.id]);
+  }, [interviewId]);
 
-  useEffect(() => {
-    chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [history, isThinking]);
-
-  const speakText = (text: string) => {
-    if (!('speechSynthesis' in window)) return;
-    window.speechSynthesis.cancel();
-    const msg = new SpeechSynthesisUtterance(text);
-    msg.onstart = () => setIsSpeaking(true);
-    msg.onend = () => setIsSpeaking(false);
-    msg.onerror = () => setIsSpeaking(false);
-    window.speechSynthesis.speak(msg);
-  };
-
-  const stopSpeaking = () => {
-    if ('speechSynthesis' in window) { window.speechSynthesis.cancel(); setIsSpeaking(false); }
-  };
-
-  const toggleRecording = () => {
-    if (isRecording) {
-      recognitionRef.current?.stop();
-      setIsRecording(false);
-    } else {
-      if (!('webkitSpeechRecognition' in window) && !('SpeechRecognition' in window)) {
-        alert('Your browser does not support Speech Recognition. Please type your answer.');
-        return;
-      }
-      const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-      const recognition = new SR();
-      recognition.continuous = true;
-      recognition.interimResults = true;
-      recognition.onresult = (e: any) => {
-        let final = '';
-        for (let i = e.resultIndex; i < e.results.length; i++) {
-          if (e.results[i].isFinal) final += e.results[i][0].transcript;
-        }
-        if (final) setTranscript(prev => prev + ' ' + final);
-      };
-      recognition.onend = () => setIsRecording(false);
-      recognitionRef.current = recognition;
-      recognition.start();
-      setIsRecording(true);
+  const handleStartAssessment = async () => {
+    // If questions are already preloaded, enter the room SYNCHRONOUSLY within the active user gesture!
+    if (preloadedQuestionsRef.current && preloadedQuestionsRef.current.length > 0) {
+      console.log('[HR-TTS-TRACE] INIT_SESSION_COMPLETED (synchronous transition):', preloadedQuestionsRef.current.length);
+      setStage('room');
+      // Fire startSession in the background without blocking the UI transition
+      HRInterviewAPI.startSession(interviewId).catch(() => {});
+      return;
     }
-  };
 
-  const handleSubmit = async () => {
-    if (isRecording) toggleRecording();
-    if (!transcript.trim()) return;
-    const userText = transcript.trim();
-    const newHistory: typeof history = [...history, { role: 'candidate', content: userText }];
-    setHistory(newHistory);
-    setTranscript('');
-    setIsThinking(true);
-
+    // Fallback if user clicked before preloading finished
+    setIsInitializing(true);
+    setInitError('');
     try {
-      const res = await api.post(`/interviews/${sessionId}/hr/message`, {
-        response: userText,
-        turnIndex: newHistory.length,
-      });
-      setIsThinking(false);
-      if (res.data?.nextMessage?.content) {
-        const nextContent = res.data.nextMessage.content;
-        setHistory(prev => [...prev, { role: 'interviewer', content: nextContent }]);
-        speakText(nextContent);
-      }
-    } catch {
-      setIsThinking(false);
-      const msg = 'Thank you. Your response has been recorded.';
-      setHistory(prev => [...prev, { role: 'interviewer', content: msg }]);
+      const res = await HRInterviewAPI.initSession(interviewId, 'Software Engineer');
+      const sessionData = res.data || res;
+      const questions: HRQuestion[] = sessionData.questions || [];
+      const main = questions.filter((q: HRQuestion) => q.questionType === 'MAIN');
+      console.log('[Q1-DEBUG] session initialization completed (on-demand):', main.length);
+      setHrQuestions(main);
+      await HRInterviewAPI.startSession(interviewId).catch(() => {});
+      setStage('room');
+    } catch (err: any) {
+      setInitError('Failed to load interview questions. Please try again.');
+    } finally {
+      setIsInitializing(false);
     }
   };
 
-  const candidateTurns = history.filter(h => h.role === 'candidate').length;
-  const canComplete = candidateTurns >= 1 && !isThinking;
-  const evaluationCriteria = question?.evaluationCriteria || [];
+  // ── Stage: Entry Card ──────────────────────────────────────
+  if (stage === 'entry') {
+    return <HREntryCard onStart={handleStartAssessment} />;
+  }
 
-  return (
-    <div className="flex-1 flex flex-col h-full overflow-hidden max-w-4xl mx-auto w-full p-4">
-      {/* Criteria */}
-      {evaluationCriteria.length > 0 && (
-        <Card className="p-4 bg-indigo-500/5 border-indigo-500/20 mb-4 shrink-0">
-          <h4 className="text-xs font-semibold text-indigo-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-            <Shield className="w-3.5 h-3.5" /> Evaluation Criteria
-          </h4>
-          <ul className="space-y-1">
-            {evaluationCriteria.map((c: string, i: number) => (
-              <li key={i} className="text-xs text-gray-400 flex items-start gap-2">
-                <span className="text-indigo-400 mt-0.5">â€¢</span> {c}
-              </li>
-            ))}
-          </ul>
-        </Card>
-      )}
+  // ── Initializing overlay ───────────────────────────────────
+  if (isInitializing) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 bg-[#F8FAFC] text-[#0F172A] p-6">
+        <Loader2 className="w-8 h-8 animate-spin text-[#111827]" />
+        <p className="text-sm font-semibold">Preparing your interview room…</p>
+        <p className="text-xs text-[#64748B]">Configuring AI interviewer and loading behavioral questions</p>
+      </div>
+    );
+  }
 
-      {/* Chat */}
-      <Card className="flex-1 flex flex-col border-white/5 overflow-hidden">
-        <div className="p-4 border-b border-white/5 flex items-center justify-between shrink-0">
-          <div className="flex items-center gap-2">
-            <Bot className="w-4 h-4 text-indigo-400" />
-            <span className="text-sm font-medium">AI Interviewer</span>
-          </div>
-          <div className="flex items-center gap-2">
-            {isSpeaking && <Badge variant="outline" className="text-indigo-400 border-indigo-500/30 bg-indigo-500/10 text-xs animate-pulse gap-1"><Volume2 className="w-3 h-3" />Speaking</Badge>}
-            <Button size="sm" variant="outline" onClick={stopSpeaking} disabled={!isSpeaking} className="h-7 text-xs border-white/10">Stop</Button>
-          </div>
-        </div>
+  if (initError) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-3 bg-[#F8FAFC] text-[#0F172A] p-6">
+        <AlertCircle className="w-8 h-8 text-rose-500" />
+        <p className="text-sm font-semibold">{initError}</p>
+        <button
+          className="h-9 px-4 text-xs font-semibold rounded-md bg-[#111827] text-white hover:bg-[#1F2937] shadow-xs cursor-pointer"
+          onClick={handleStartAssessment}
+        >
+          Retry
+        </button>
+      </div>
+    );
+  }
 
-        <div className="flex-1 overflow-y-auto p-4 space-y-3 scrollbar-thin">
-          {history.map((msg, i) => (
-            <div key={i} className={`flex ${msg.role === 'candidate' ? 'justify-end' : 'justify-start'}`}>
-              <div className={`max-w-[80%] p-3 rounded-2xl text-sm leading-relaxed
-                ${msg.role === 'candidate' ? 'bg-indigo-500/20 border border-indigo-500/30 text-indigo-100' : 'bg-white/5 border border-white/8 text-gray-200'}`}>
-                {msg.content}
-              </div>
-            </div>
-          ))}
-          {isThinking && (
-            <div className="flex justify-start">
-              <div className="bg-white/5 border border-white/8 p-3 rounded-2xl text-gray-500 text-sm flex items-center gap-2">
-                <Loader2 className="w-3.5 h-3.5 animate-spin" /> Thinkingâ€¦
-              </div>
-            </div>
-          )}
-          <div ref={chatEndRef} />
-        </div>
+  // ── Stage: Live Interview Room ─────────────────────────────
+  if (stage === 'room') {
+    return (
+      <HRInterviewRoom
+        interviewId={interviewId}
+        questions={hrQuestions}
+        videoStream={videoStream}
+        onComplete={async () => {
+          try {
+            await HRInterviewAPI.completeHR(interviewId);
+          } catch (err) {
+            console.warn('HR complete API error:', err);
+          }
+          setStage('completion');
+        }}
+        onExit={() => setStage('entry')}
+      />
+    );
+  }
 
-        {/* Input */}
-        <div className="shrink-0 p-4 border-t border-white/5 space-y-3">
-          <textarea
-            value={transcript}
-            onChange={e => setTranscript(e.target.value)}
-            disabled={isThinking}
-            placeholder="Type or dictate your response hereâ€¦"
-            className="w-full p-3 rounded-xl border border-white/10 bg-black/20 text-sm text-gray-200 placeholder:text-gray-600 focus:outline-none focus:ring-1 focus:ring-indigo-500 resize-none min-h-[80px] disabled:opacity-50"
-          />
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-gray-600">{transcript.length} chars</span>
-            <div className="flex items-center gap-2">
-              <Button
-                variant="outline"
-                size="sm"
-                className={`gap-1.5 text-xs border-white/10 ${isRecording ? 'border-rose-500/50 text-rose-400 hover:bg-rose-500/10' : ''}`}
-                onClick={toggleRecording}
-                disabled={isThinking}
-              >
-                {isRecording ? <><MicOff className="w-3.5 h-3.5" /> Stop Dictation</> : <><Mic className="w-3.5 h-3.5" /> Start Dictation</>}
-              </Button>
-              <Button size="sm" onClick={handleSubmit} disabled={!transcript.trim() || isThinking} className="text-xs bg-indigo-600 hover:bg-indigo-500 text-white">
-                Submit Answer
-              </Button>
-            </div>
-          </div>
-        </div>
-      </Card>
+  // ── Stage: Completion + AI Evaluation Progress ────────────
+  if (stage === 'completion') {
+    return (
+      <HRCompletionScreen
+        interviewId={interviewId}
+        onViewReport={() => {
+          onComplete({ transcript: '', followUps: 0, completed: true });
+        }}
+      />
+    );
+  }
 
-      {/* Complete HR */}
-      {canComplete && (
-        <div className="shrink-0 pt-4 flex justify-end">
-          <Button
-            onClick={() => onComplete({ ...telemetry, completed: true })}
-            className="gap-2 bg-emerald-600 hover:bg-emerald-500 text-white font-semibold"
-          >
-            <CheckCircle2 className="w-4 h-4" /> Complete HR Round & View Report
-          </Button>
-        </div>
-      )}
-    </div>
-  );
+  return null;
 };
 
 // ============================================================
@@ -602,8 +616,8 @@ const LockedToast = ({ visible, onHide }: { visible: boolean; onHide: () => void
   useEffect(() => { if (visible) { const t = setTimeout(onHide, 2500); return () => clearTimeout(t); } }, [visible]);
   if (!visible) return null;
   return (
-    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-rose-900/90 border border-rose-500/30 text-rose-200 px-5 py-3 rounded-xl shadow-xl text-sm flex items-center gap-2 backdrop-blur">
-      <Lock className="w-4 h-4 text-rose-400 shrink-0" />
+    <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 bg-rose-50 border border-rose-200 text-rose-800 px-5 py-3 rounded-xl shadow-lg text-sm font-medium flex items-center gap-2 backdrop-blur">
+      <Lock className="w-4 h-4 text-rose-600 shrink-0" />
       Complete the current round first to proceed.
     </div>
   );
@@ -612,31 +626,69 @@ const LockedToast = ({ visible, onHide }: { visible: boolean; onHide: () => void
 // ============================================================
 // FINISH CONFIRM DIALOG
 // ============================================================
-
-const FinishDialog = ({ open, roundState, onCancel, onConfirm }: { open: boolean; roundState: RoundState; onCancel: () => void; onConfirm: () => void }) => {
+const FinishDialog = ({
+  open,
+  roundState,
+  onCancel,
+  onConfirm,
+  isSubmitting,
+}: {
+  open: boolean;
+  roundState: RoundState;
+  onCancel: () => void;
+  onConfirm: () => void;
+  isSubmitting: boolean;
+}) => {
   if (!open) return null;
   return (
-    <div className="fixed inset-0 z-50 bg-black/70 flex items-center justify-center p-4 backdrop-blur-sm">
-      <div className="bg-[#0d1117] border border-white/10 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
-        <h3 className="text-lg font-bold mb-1">Finish Interview?</h3>
-        <p className="text-gray-400 text-sm mb-4">Your current progress will be saved.</p>
+    <div className="fixed inset-0 z-50 bg-slate-900/40 flex items-center justify-center p-4 backdrop-blur-xs">
+      <div className="bg-white border border-slate-200 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
+        <h3 className="text-lg font-bold mb-1 text-slate-900">Submit Assessment?</h3>
+        <p className="text-slate-500 text-xs mb-4 leading-relaxed">
+          Are you sure you want to submit your assessment? You will not be able to continue after submission.
+        </p>
         <div className="space-y-2 mb-6">
           {[
             { label: 'Aptitude', status: roundState.aptitude },
             { label: 'Coding', status: roundState.coding },
             { label: 'HR Interview', status: roundState.hr },
-          ].map(r => (
-            <div key={r.label} className="flex items-center justify-between text-sm">
-              <span className="text-gray-300">{r.label}</span>
-              <span className={r.status === 'COMPLETED' ? 'text-emerald-400' : r.status === 'ACTIVE' ? 'text-indigo-400' : 'text-gray-600'}>
-                {r.status === 'COMPLETED' ? 'âœ“ Completed' : r.status === 'ACTIVE' ? 'â— In Progress' : 'â—‹ Not Started'}
+          ].map((r) => (
+            <div key={r.label} className="flex items-center justify-between text-xs py-1 border-b border-slate-50">
+              <span className="text-slate-700 font-medium">{r.label}</span>
+              <span
+                className={
+                  r.status === 'COMPLETED'
+                    ? 'text-emerald-700 font-semibold'
+                    : r.status === 'ACTIVE'
+                    ? 'text-[#0F172A] font-bold'
+                    : 'text-[#94A3B8]'
+                }
+              >
+                {r.status === 'COMPLETED'
+                  ? '✓ Completed'
+                  : r.status === 'ACTIVE'
+                  ? '● In Progress'
+                  : '○ Not Started'}
               </span>
             </div>
           ))}
         </div>
         <div className="flex gap-3">
-          <Button variant="outline" className="flex-1 border-white/10" onClick={onCancel}>Continue Interview</Button>
-          <Button className="flex-1 bg-rose-600 hover:bg-rose-500 text-white" onClick={onConfirm}>Finish Session</Button>
+          <Button
+            variant="outline"
+            className="flex-1 border-[#CBD5E1] text-[#0F172A] hover:bg-[#F8FAFC] text-xs font-semibold"
+            onClick={onCancel}
+            disabled={isSubmitting}
+          >
+            Continue
+          </Button>
+          <Button
+            className="flex-1 bg-[#111827] hover:bg-[#1F2937] text-white text-xs font-semibold shadow-xs"
+            onClick={onConfirm}
+            disabled={isSubmitting}
+          >
+            {isSubmitting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : 'Confirm Submit'}
+          </Button>
         </div>
       </div>
     </div>
@@ -649,24 +701,19 @@ const FinishDialog = ({ open, roundState, onCancel, onConfirm }: { open: boolean
 
 export const InterviewSession = () => {
   const { id } = useParams<{ id: string }>();
-  const navigate = useNavigate();
-  const [timeLeft, setTimeLeft] = useState(3600);
+  const { user } = useAuthStore();
+  const { data: profile } = useProfile();
+  const candidateName = profile?.fullName || user?.name || user?.email?.split('@')[0] || 'Candidate';
+
+  const [timeLeft, setTimeLeft] = useState<number>(3600);
+  const [expiresAtTime, setExpiresAtTime] = useState<number | null>(null);
+  const [tabSwitchesCount, setTabSwitchesCount] = useState<number>(0);
+  const [isTimeExpired, setIsTimeExpired] = useState<boolean>(false);
+  const [showAutoSubmitModal, setShowAutoSubmitModal] = useState<boolean>(false);
+  const [focusLostToast, setFocusLostToast] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showFinishDialog, setShowFinishDialog] = useState(false);
   const [showLockedToast, setShowLockedToast] = useState(false);
-
-  const { isWarningVisible, acknowledgeWarning } = useInterviewFocusGuard({
-    gracePeriodMs: 2000,
-    enabled: true, // we could disable it if roundState is report
-    onViolation: async (violation: FocusViolation) => {
-      try {
-        if (!id) return;
-        await api.post(`/interviews/${id}/focus-violation`, violation);
-      } catch (err) {
-        console.error('Failed to log focus violation', err);
-      }
-    }
-  });
 
   // Round state machine
   const [roundState, setRoundState] = useState<RoundState>({
@@ -680,6 +727,12 @@ export const InterviewSession = () => {
 
   // Telemetry
   const [telemetry, setTelemetry] = useState<SessionTelemetry>(initialTelemetry);
+  const telemetryRef = useRef<SessionTelemetry>(initialTelemetry);
+  useEffect(() => {
+    telemetryRef.current = telemetry;
+  }, [telemetry]);
+
+  const [sessionReport, setSessionReport] = useState<any>(null);
 
   // 1. Fetch complete session runtime state (Restores active stage on reload/refresh)
   const { data: sessionStateRes, refetch: refetchState } = useQuery({
@@ -692,20 +745,77 @@ export const InterviewSession = () => {
     staleTime: 5000,
   });
 
+  // Auto-expire handler (when deadline expires)
+  const autoExpiredRef = useRef(false);
+  const handleAutoExpire = useCallback(async () => {
+    if (autoExpiredRef.current) return;
+    autoExpiredRef.current = true;
+    setIsTimeExpired(true);
+    setTimeLeft(0);
+    setShowAutoSubmitModal(true);
+
+    try {
+      if (id) {
+        const res = await api.post(`/interviews/${id}/finalize`, {
+          completionReason: 'TIME_EXPIRED',
+          telemetry: telemetryRef.current,
+        });
+        if (res.data) {
+          setSessionReport(res.data);
+        }
+      }
+    } catch (err: any) {
+      console.warn('Auto-finalize response:', err);
+    }
+    setRoundState({ aptitude: 'COMPLETED', coding: 'COMPLETED', hr: 'COMPLETED', report: 'ACTIVE' });
+    setActiveRound('report');
+  }, [id]);
+
   // Restore state when sessionStateRes arrives
+  const answersRestoredRef = useRef(false);
   useEffect(() => {
     if (sessionStateRes) {
-      if (sessionStateRes.roundState) {
-        setRoundState(sessionStateRes.roundState);
+      if (typeof sessionStateRes.tabSwitchesCount === 'number') {
+        setTabSwitchesCount(sessionStateRes.tabSwitchesCount);
       }
-      if (sessionStateRes.activeRound) {
-        setActiveRound(sessionStateRes.activeRound);
+      if (sessionStateRes.isFinalized || sessionStateRes.state === 'COMPLETED') {
+        setIsTimeExpired(true);
+        setTimeLeft(0);
+        setActiveRound('report');
+        setRoundState({ aptitude: 'COMPLETED', coding: 'COMPLETED', hr: 'COMPLETED', report: 'ACTIVE' });
+        if (sessionStateRes.reportSnapshot) {
+          setSessionReport(sessionStateRes.reportSnapshot);
+        }
+      } else if (sessionStateRes.expiresAt) {
+        const exp = new Date(sessionStateRes.expiresAt).getTime();
+        setExpiresAtTime(exp);
+        const rem = Math.max(0, Math.floor((exp - Date.now()) / 1000));
+        setTimeLeft(rem);
+        if (rem <= 0) {
+          handleAutoExpire();
+        } else {
+          if (sessionStateRes.roundState) {
+            setRoundState(sessionStateRes.roundState);
+          }
+          if (sessionStateRes.activeRound) {
+            setActiveRound(sessionStateRes.activeRound);
+          }
+        }
+      } else {
+        if (sessionStateRes.roundState) {
+          setRoundState(sessionStateRes.roundState);
+        }
+        if (sessionStateRes.activeRound) {
+          setActiveRound(sessionStateRes.activeRound);
+        }
+        if (typeof sessionStateRes.timeRemainingSeconds === 'number') {
+          setTimeLeft(sessionStateRes.timeRemainingSeconds);
+        }
       }
-      if (sessionStateRes.reportSnapshot) {
-        setSessionReport(sessionStateRes.reportSnapshot);
-      }
-      if (sessionStateRes.aptitude?.answers) {
-        setTelemetry(prev => ({
+
+      if (sessionStateRes.aptitude?.answers && !answersRestoredRef.current) {
+        answersRestoredRef.current = true;
+        setTelemetry((prev) => ({
           ...prev,
           aptitude: {
             ...prev.aptitude,
@@ -715,7 +825,74 @@ export const InterviewSession = () => {
         }));
       }
     }
-  }, [sessionStateRes]);
+  }, [sessionStateRes, handleAutoExpire]);
+
+  // Authoritative Countdown: calculated from expiresAtTime - Date.now()
+  useEffect(() => {
+    if (expiresAtTime === null || activeRound === 'report' || isTimeExpired) return;
+
+    const tick = () => {
+      const remaining = Math.max(0, Math.floor((expiresAtTime - Date.now()) / 1000));
+      setTimeLeft(remaining);
+      if (remaining <= 0 && !isTimeExpired) {
+        handleAutoExpire();
+      }
+    };
+
+    tick();
+    const interval = setInterval(tick, 1000);
+    return () => clearInterval(interval);
+  }, [expiresAtTime, activeRound, isTimeExpired, handleAutoExpire]);
+
+  // Real Page Visibility API listener (only actual detected events)
+  const hiddenTimestampRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!id || activeRound === 'report' || isTimeExpired) return;
+
+    const handleVisibility = async () => {
+      if (document.visibilityState === 'hidden') {
+        hiddenTimestampRef.current = Date.now();
+        try {
+          await api.post(`/interviews/${id}/tab-switch`, {
+            eventType: 'SWITCH_AWAY',
+            leftAt: new Date().toISOString(),
+          });
+        } catch (e) {
+          console.warn('Tab switch away log error:', e);
+        }
+      } else if (document.visibilityState === 'visible') {
+        const leftTime = hiddenTimestampRef.current || Date.now() - 1000;
+        const durationSec = Math.max(1, Math.round((Date.now() - leftTime) / 1000));
+        hiddenTimestampRef.current = null;
+
+        try {
+          const res = await api.post(`/interviews/${id}/tab-switch`, {
+            eventType: 'RETURN',
+            returnedAt: new Date().toISOString(),
+            durationSeconds: durationSec,
+          });
+          if (typeof res.data?.tabSwitchesCount === 'number') {
+            setTabSwitchesCount(res.data.tabSwitchesCount);
+          } else {
+            setTabSwitchesCount((c) => c + 1);
+          }
+        } catch (e) {
+          console.warn('Tab switch return log error:', e);
+          setTabSwitchesCount((c) => c + 1);
+        }
+
+        setFocusLostToast(
+          'Assessment Focus Lost: Your assessment page became inactive. This activity has been recorded for assessment integrity review.'
+        );
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibility);
+    return () => {
+      document.removeEventListener('visibilitychange', handleVisibility);
+    };
+  }, [id, activeRound, isTimeExpired]);
 
   // 2. Fetch assigned questions
   const { data: sessionQuestionsRes, isLoading, isError, refetch } = useQuery({
@@ -731,17 +908,9 @@ export const InterviewSession = () => {
 
   const aptitudeQuestions: any[] = sessionQuestionsRes?.aptitude || [];
   const codingQuestions: any[] = sessionQuestionsRes?.coding || [];
-  const hrQuestion: any = sessionQuestionsRes?.hr?.[0] || null;
-
-  // Timer
-  useEffect(() => {
-    if (timeLeft <= 0) { handleFinish(); return; }
-    const t = setInterval(() => setTimeLeft(p => p - 1), 1000);
-    return () => clearInterval(t);
-  }, [timeLeft]);
 
   const handleAptitudeComplete = useCallback(async (result: AptitudeTelemetry) => {
-    setTelemetry(prev => ({ ...prev, aptitude: result }));
+    setTelemetry((prev) => ({ ...prev, aptitude: result }));
     try {
       if (id) await api.post(`/interviews/${id}/aptitude`, result);
     } catch (err) {
@@ -753,7 +922,7 @@ export const InterviewSession = () => {
   }, [id, refetchState]);
 
   const handleCodingComplete = useCallback(async (result: CodingTelemetry) => {
-    setTelemetry(prev => ({ ...prev, coding: result }));
+    setTelemetry((prev) => ({ ...prev, coding: result }));
     try {
       if (id) await api.post(`/interviews/${id}/coding/complete`);
     } catch (err) {
@@ -764,16 +933,20 @@ export const InterviewSession = () => {
     refetchState();
   }, [id, refetchState]);
 
-  const [sessionReport, setSessionReport] = useState<any>(null);
-
   const handleHRComplete = useCallback(async (result: HRTelemetry) => {
-    setTelemetry(prev => ({ ...prev, hr: result }));
+    setTelemetry((prev) => ({ ...prev, hr: result }));
     try {
-      if (id) await api.post(`/interviews/${id}/hr`, result);
-      const res = await api.post(`/interviews/${id}/finalize`, {
-        telemetry: { ...telemetry, hr: result }
-      });
-      setSessionReport(res.data);
+      // The HR API already called completeHR() inside HRSessionOrchestrator;
+      // here we only finalize the overall interview session.
+      if (id) {
+        const res = await api.post(`/interviews/${id}/finalize`, {
+          completionReason: 'MANUAL_SUBMISSION',
+          telemetry: { ...telemetry, hr: result },
+        });
+        if (res.data) {
+          setSessionReport(res.data);
+        }
+      }
     } catch (err) {
       console.error('Failed to finalize session:', err);
     }
@@ -782,25 +955,36 @@ export const InterviewSession = () => {
     refetchState();
   }, [id, telemetry, refetchState]);
 
-
-  const handleFinish = async () => {
+  const handleManualSubmit = async () => {
     setShowFinishDialog(false);
     setIsSubmitting(true);
     try {
-      await api.post(`/interviews/${id}/finalize`, { telemetry });
+      if (id) {
+        const res = await api.post(`/interviews/${id}/finalize`, {
+          completionReason: 'MANUAL_SUBMISSION',
+          telemetry,
+        });
+        if (res.data) {
+          setSessionReport(res.data);
+        }
+      }
     } catch (err) {
       console.error('Failed to finalize session:', err);
+    } finally {
+      setIsSubmitting(false);
     }
-    navigate(`/student/interviews/summary/${id}`);
+    setRoundState({ aptitude: 'COMPLETED', coding: 'COMPLETED', hr: 'COMPLETED', report: 'ACTIVE' });
+    setActiveRound('report');
+    refetchState();
   };
 
   if (isLoading) {
     return (
-      <div className="h-screen bg-background flex flex-col">
-        <div className="h-14 border-b border-white/5 bg-background" />
+      <div className="h-screen bg-slate-50 flex flex-col">
+        <div className="h-16 border-b border-slate-200 bg-white" />
         <div className="flex-1 p-6 flex gap-4">
-          <Skeleton className="w-full max-w-sm h-full rounded-xl bg-white/5" />
-          <Skeleton className="flex-1 h-full rounded-xl bg-white/5" />
+          <Skeleton className="w-full max-w-sm h-full rounded-2xl bg-slate-200" />
+          <Skeleton className="flex-1 h-full rounded-2xl bg-slate-200" />
         </div>
       </div>
     );
@@ -808,27 +992,32 @@ export const InterviewSession = () => {
 
   if (isError || (!isLoading && !sessionQuestionsRes)) {
     return (
-      <div className="h-screen bg-background flex items-center justify-center flex-col gap-4">
-        <div className="text-destructive/70 mb-2">
-          <AlertCircle className="w-6 h-6" />
+      <div className="h-screen bg-slate-50 flex items-center justify-center flex-col gap-4">
+        <div className="text-rose-500 mb-2">
+          <AlertCircle className="w-8 h-8" />
         </div>
-        <h2 className="text-sm font-medium">Failed to load interview questions</h2>
-        <p className="text-muted-foreground text-sm">Unable to retrieve questions for this session.</p>
-        <Button variant="secondary" size="sm" onClick={() => refetch()} className="gap-2 mt-2"><RotateCcw className="w-4 h-4" /> Retry</Button>
+        <h2 className="text-base font-bold text-slate-900">Failed to load interview questions</h2>
+        <p className="text-slate-500 text-sm">Unable to retrieve assigned questions for this session.</p>
+        <Button variant="outline" size="sm" onClick={() => refetch()} className="gap-2 mt-2 border-slate-200 text-slate-700 hover:bg-slate-100 rounded-xl">
+          <RotateCcw className="w-4 h-4" /> Retry
+        </Button>
       </div>
     );
   }
 
   return (
-    <div className="h-screen flex flex-col bg-background text-foreground overflow-hidden">
+    <div className="h-screen flex flex-col bg-[#F8FAFC] text-[#0F172A] overflow-hidden">
       <InterviewHeader
         sessionId={id || ''}
         timeLeft={timeLeft}
         roundState={roundState}
         activeRound={activeRound}
+        tabSwitchesCount={tabSwitchesCount}
         onLockedClick={() => setShowLockedToast(true)}
         onFinish={() => setShowFinishDialog(true)}
         isSubmitting={isSubmitting}
+        isTimeExpired={isTimeExpired}
+        userName={candidateName}
       />
 
       <main className="flex-1 min-h-0 flex flex-col overflow-hidden">
@@ -851,13 +1040,10 @@ export const InterviewSession = () => {
           />
         )}
 
-        {activeRound === 'hr' && hrQuestion && (
-          <HRWorkspace
-            question={hrQuestion}
-            sessionId={id || ''}
+        {activeRound === 'hr' && (
+          <HRSessionOrchestrator
+            interviewId={id || ''}
             onComplete={handleHRComplete}
-            telemetry={telemetry.hr}
-            setTelemetry={(t) => setTelemetry(prev => ({ ...prev, hr: t }))}
           />
         )}
 
@@ -868,46 +1054,62 @@ export const InterviewSession = () => {
         {/* Edge case: active round but no data */}
         {activeRound === 'aptitude' && !isLoading && aptitudeQuestions.length === 0 && (
           <div className="flex-1 flex items-center justify-center flex-col gap-4">
-            <div className="text-muted-foreground opacity-50 mb-2">
-              <AlertCircle className="w-6 h-6" />
+            <div className="text-slate-400 opacity-50 mb-2">
+              <AlertCircle className="w-6 h-6 text-slate-400" />
             </div>
-            <p className="text-sm text-muted-foreground">No aptitude questions found for this session.</p>
+            <p className="text-sm text-slate-600">No aptitude questions found for this session.</p>
             <Button variant="secondary" size="sm" onClick={() => refetch()} className="gap-2"><RotateCcw className="w-4 h-4" /> Retry</Button>
           </div>
         )}
       </main>
 
-      <LockedToast visible={showLockedToast} onHide={() => setShowLockedToast(false)} />
-      
-      <Dialog open={isWarningVisible}>
-        <DialogContent className="sm:max-w-md bg-rose-950/90 border-rose-500/50 text-rose-50">
+      {/* Focus Lost Toast */}
+      {focusLostToast && (
+        <div className="fixed top-16 left-1/2 -translate-x-1/2 z-50 bg-amber-50 border border-amber-300 text-amber-900 px-5 py-3 rounded-xl shadow-xl text-xs flex items-center justify-between gap-4 backdrop-blur max-w-lg">
+          <div className="flex items-center gap-2.5">
+            <Shield className="w-4 h-4 text-amber-600 shrink-0" />
+            <span className="font-medium">{focusLostToast}</span>
+          </div>
+          <button
+            onClick={() => setFocusLostToast(null)}
+            className="text-amber-600 hover:text-amber-900 p-1 rounded-md text-xs font-mono"
+          >
+            ✕
+          </button>
+        </div>
+      )}
+
+      {/* Auto Submit Modal on Deadline Expiration */}
+      <Dialog open={showAutoSubmitModal} onOpenChange={() => setShowAutoSubmitModal(false)}>
+        <DialogContent className="sm:max-w-md bg-white border-slate-200 text-slate-900 shadow-2xl">
           <DialogHeader>
-            <DialogTitle className="flex items-center gap-2 text-rose-200">
-              <Shield className="w-5 h-5" />
-              Focus Lost Detected
+            <DialogTitle className="flex items-center gap-2 text-rose-600">
+              <Clock className="w-5 h-5 text-rose-600" />
+              Assessment Time Completed
             </DialogTitle>
-            <DialogDescription className="text-rose-200/80">
-              You navigated away from the interview tab or lost focus. 
-              This event has been recorded in your interview telemetry. Please remain focused on this window.
+            <DialogDescription className="text-slate-600">
+              Your responses have been automatically submitted. Your assessment report is being generated.
             </DialogDescription>
           </DialogHeader>
-          <DialogFooter className="sm:justify-start">
+          <DialogFooter className="sm:justify-end">
             <Button
-              type="button"
-              className="bg-rose-600 hover:bg-rose-500 text-white w-full"
-              onClick={acknowledgeWarning}
+              className="bg-indigo-600 hover:bg-indigo-700 text-white font-semibold shadow-xs"
+              onClick={() => setShowAutoSubmitModal(false)}
             >
-              I Understand, Continue Interview
+              View Full Report
             </Button>
           </DialogFooter>
         </DialogContent>
       </Dialog>
 
+      <LockedToast visible={showLockedToast} onHide={() => setShowLockedToast(false)} />
+
       <FinishDialog
         open={showFinishDialog}
         roundState={roundState}
         onCancel={() => setShowFinishDialog(false)}
-        onConfirm={handleFinish}
+        onConfirm={handleManualSubmit}
+        isSubmitting={isSubmitting}
       />
     </div>
   );

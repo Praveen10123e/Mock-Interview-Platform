@@ -2,18 +2,14 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import api from '../../../api/axios/instance';
 import {
-  Target,
   Calendar,
   Play,
   CheckCircle2,
   History,
   ArrowRight,
-  Sparkles,
   BookOpen,
   Clock,
   Layers,
-  Award,
-  Loader2,
   Briefcase,
 } from 'lucide-react';
 import { Card } from '../../../components/ui/card';
@@ -28,7 +24,6 @@ export const InterviewDashboard = () => {
   const [isCreating, setIsCreating] = useState(false);
   const [interviews, setInterviews] = useState<any[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
-  const [isLoading, setIsLoading] = useState(true);
 
   useEffect(() => {
     Promise.all([
@@ -38,8 +33,7 @@ export const InterviewDashboard = () => {
       .then(([sessionList, templateList]) => {
         setInterviews(Array.isArray(sessionList) ? sessionList : []);
         setTemplates(Array.isArray(templateList) ? templateList : []);
-      })
-      .finally(() => setIsLoading(false));
+      });
   }, []);
 
   const handleStartPractice = async () => {
@@ -166,7 +160,7 @@ export const InterviewDashboard = () => {
               </div>
             </div>
 
-            <div className="pt-4 mt-2 border-t border-white/5 flex justify-end">
+            <div className="pt-4 mt-2 border-t border-slate-200 flex justify-end">
               <Button
                 size="sm"
                 onClick={handleStartPractice}
@@ -187,42 +181,41 @@ export const InterviewDashboard = () => {
             return (
               <Card
                 key={tmpl.id}
-                className="p-5 flex flex-col justify-between hover:border-white/20 transition-all"
+                className="p-5 flex flex-col justify-between hover:border-slate-300 transition-all"
               >
                 <div className="space-y-2.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-white/10 text-text-primary">
+                    <span className="text-[11px] font-semibold uppercase tracking-wider px-2 py-0.5 rounded bg-slate-100 text-slate-700 border border-slate-200">
                       {tmpl.interviewType || 'MOCK'}
                     </span>
-                    <span className="text-xs text-text-muted flex items-center gap-1">
+                    <span className="text-xs text-slate-500 flex items-center gap-1">
                       <Clock className="h-3.5 w-3.5" /> {tmpl.duration || 60} mins
                     </span>
                   </div>
-                  <h3 className="font-bold text-base text-text-primary line-clamp-1">
+                  <h3 className="font-bold text-base text-slate-900 line-clamp-1">
                     {tmpl.name}
                   </h3>
-                  <p className="text-xs text-text-secondary line-clamp-2 leading-relaxed">
+                  <p className="text-xs text-slate-600 line-clamp-2 leading-relaxed">
                     {tmpl.description ||
                       'Comprehensive assessment with Aptitude, Coding, and HR interview rounds.'}
                   </p>
-                  <div className="flex items-center gap-3 pt-2 text-[11px] text-text-muted">
+                  <div className="flex items-center gap-3 pt-2 text-[11px] text-slate-500">
                     <span className="flex items-center gap-1">
-                      <Layers className="h-3.5 w-3.5 text-indigo-400" /> 3 Stages
+                      <Layers className="h-3.5 w-3.5 text-slate-600" /> 3 Stages
                     </span>
                     <span>•</span>
                     <span className="capitalize">{tmpl.difficulty?.toLowerCase() || 'mixed'}</span>
                   </div>
                 </div>
 
-                <div className="pt-4 mt-2 border-t border-white/5 flex justify-end">
+                <div className="pt-4 mt-2 border-t border-slate-200 flex justify-end">
                   <Button
                     size="sm"
-                    variant={existingAttempt ? 'secondary' : 'primary'}
                     onClick={() => handleStartTemplate(tmpl.id)}
                     disabled={isCreating}
                     rightIcon={<Play className="h-3.5 w-3.5 fill-current" />}
                   >
-                    {existingAttempt ? 'Resume Session' : 'Start Assessment'}
+                    {existingAttempt ? 'Enter Assessment' : 'Start Assessment'}
                   </Button>
                 </div>
               </Card>
@@ -235,18 +228,18 @@ export const InterviewDashboard = () => {
       <div className="space-y-4 pt-4">
         <div className="flex items-center justify-between">
           <div>
-            <h2 className="text-lg font-bold text-text-primary flex items-center gap-2">
-              <History className="h-5 w-5 text-accent" /> Previous Interviews
+            <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+              <History className="h-5 w-5 text-slate-700" /> Previous Interviews
             </h2>
-            <p className="text-xs text-text-secondary">
-              Review progress or resume pending assessments.
+            <p className="text-xs text-slate-500">
+              Access active assessments or review finalized reports.
             </p>
           </div>
           <Button
             variant="link"
             size="sm"
             onClick={() => navigate('/student/reports')}
-            className="text-accent hover:text-accent-hover font-medium flex items-center gap-1"
+            className="text-slate-700 hover:text-slate-900 font-medium flex items-center gap-1"
           >
             <span>View All Reports</span>
             <ArrowRight className="h-3.5 w-3.5" />
@@ -264,8 +257,8 @@ export const InterviewDashboard = () => {
                         {interview.title || 'Technical Assessment'}
                       </h3>
                       <StatusBadge status={interview.state || 'PENDING'} />
-                      <span className="text-[11px] font-mono text-text-muted">
-                        ID: {interview.id.substring(0, 12)}...
+                      <span className="text-[11px] font-medium text-slate-500 bg-slate-100 border border-slate-200 px-2 py-0.5 rounded-md">
+                        #NM-{interview.id.replace(/-/g, '').slice(0, 4).toUpperCase()}
                       </span>
                     </div>
                     <p className="text-xs text-text-secondary flex items-center gap-2">
@@ -293,7 +286,7 @@ export const InterviewDashboard = () => {
                         onClick={() => navigate(`/student/interviews/session/${interview.id}`)}
                         rightIcon={<Play className="h-3.5 w-3.5 fill-current" />}
                       >
-                        Resume Session
+                        Enter Assessment
                       </Button>
                     )}
                   </div>

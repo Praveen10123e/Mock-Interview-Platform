@@ -2,23 +2,15 @@ import React, { useState } from 'react';
 import {
   X,
   User,
-  Calendar,
-  Clock,
   Award,
   CheckCircle2,
   AlertCircle,
   Brain,
   Code2,
   MessageSquare,
-  FileText,
-  ShieldCheck,
-  TrendingUp,
   Terminal,
   Activity,
   Layers,
-  Sparkles,
-  Dices,
-  Hand,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 import { Skeleton } from '../../../components/ui/skeleton';
@@ -164,9 +156,13 @@ export const FacultySessionDetailModal: React.FC<FacultySessionDetailModalProps>
                         </span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-text-muted">Aptitude Score:</span>
+                        <span className="text-text-muted">Aptitude Correct:</span>
                         <span className="font-mono font-bold text-blue-400">
-                          {session.progress.aptitude.score !== null ? `${session.progress.aptitude.score}%` : 'Pending'}
+                          {session.progress.aptitude.correctCount !== undefined && session.progress.aptitude.correctCount !== null
+                            ? `${session.progress.aptitude.correctCount} / ${session.progress.aptitude.totalQuestions} (${session.progress.aptitude.score ?? Math.round((session.progress.aptitude.correctCount / session.progress.aptitude.totalQuestions) * 100)}%)`
+                            : session.progress.aptitude.score !== null
+                            ? `${session.progress.aptitude.score}%`
+                            : 'Pending'}
                         </span>
                       </div>
                     </div>

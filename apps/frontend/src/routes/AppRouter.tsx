@@ -60,10 +60,13 @@ import FacultyStudentDetail from '../pages/faculty/FacultyStudentDetail';
 import FacultyQuestionBank from '../pages/faculty/FacultyQuestionBank';
 import FacultyTemplates from '../pages/faculty/FacultyTemplates';
 import FacultyInterviews from '../pages/faculty/FacultyInterviews';
+import { FacultyAnalytics } from '../pages/faculty/FacultyAnalytics';
+import { FacultyReports } from '../pages/faculty/FacultyReports';
+import { FacultyProfile } from '../pages/faculty/FacultyProfile';
 
 // Admin Pages
 import AdminDashboard from '../pages/dashboard/AdminDashboard';
-const AdminUsers = () => <ComingSoon title="User Management" />;
+import { AdminUsers } from '../pages/admin/AdminUsers';
 const AdminDatasets = () => <ComingSoon title="Dataset Management" />;
 
 // Interview Pages
@@ -142,9 +145,10 @@ const router = createBrowserRouter([
               { path: 'questions', element: <FacultyQuestionBank /> },
               { path: 'templates', element: <FacultyTemplates /> },
               { path: 'interviews', element: <FacultyInterviews /> },
-              { path: 'analytics', element: <Analytics /> },
-              { path: 'reports', element: <ComingSoon title="Reports" /> },
-              { path: 'settings', element: <ComingSoon title="Settings" /> },
+              { path: 'analytics', element: <FacultyAnalytics /> },
+              { path: 'reports', element: <FacultyReports /> },
+              { path: 'profile', element: <FacultyProfile /> },
+              { path: 'settings', element: <FacultyProfile /> },
             ],
           }
         ],

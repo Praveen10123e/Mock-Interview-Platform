@@ -615,17 +615,22 @@ export async function generateReport(interviewId: string, identityId: string, pr
     `Review optimal O(n log n) and O(n) algorithmic patterns before retaking mock assessments.`
   ];
 
-  // Duration
+  // Duration: accurately calculate and clamp to configured assessment duration
+  const configDuration = ((interview as any).configuration?.duration as number) || 60;
   const sessionStarted = interview.session.startedAt ? new Date(interview.session.startedAt).getTime() : Date.now();
-  const sessionFinished = interview.session.finishedAt ? new Date(interview.session.finishedAt).getTime() : Date.now();
-  const totalSessionMinutes = Math.max(1, Math.round((sessionFinished - sessionStarted) / 60000));
+  const sessionFinished = interview.session.finalizedAt ? new Date(interview.session.finalizedAt).getTime() : (interview.session.finishedAt ? new Date(interview.session.finishedAt).getTime() : sessionStarted + configDuration * 60000);
+  const diffMinutes = Math.max(1, Math.round((sessionFinished - sessionStarted) / 60000));
+  const totalSessionMinutes = Math.min(configDuration, diffMinutes);
+  const formattedDuration = totalSessionMinutes < 60
+    ? `${totalSessionMinutes} min`
+    : (totalSessionMinutes % 60 === 0 ? `${Math.floor(totalSessionMinutes / 60)} hr` : `${Math.floor(totalSessionMinutes / 60)} hr ${totalSessionMinutes % 60} min`);
 
   return {
     sessionId,
     interviewId,
     candidateId: identityId,
     assessmentDate: interview.createdAt.toISOString(),
-    sessionDuration: `${totalSessionMinutes} min`,
+    sessionDuration: formattedDuration,
     assessmentStatus: interview.state === 'COMPLETED' ? 'COMPLETED' : 'IN_PROGRESS',
     overallProficiencyScore,
     percentileBenchmark,

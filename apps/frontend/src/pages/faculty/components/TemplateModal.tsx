@@ -10,10 +10,8 @@ import {
   Settings2,
   Check,
   Search,
-  Shuffle,
   Brain,
   MessageSquare,
-  Sparkles,
   Dices,
   Hand,
 } from 'lucide-react';
@@ -126,7 +124,7 @@ export const TemplateModal: React.FC<TemplateModalProps> = ({
         setAllowSkipping(cfg.allowSkipping !== false);
         setTimePerQuestion(cfg.timePerQuestion || 0);
 
-        const hrCfg = cfg.hrConfig || {};
+        const hrCfg: any = cfg.hrConfig || {};
         setHrInitialPrompt(
           hrCfg.initialPrompt ||
             'Tell me about yourself, your educational background, and why you are interested in this software engineering role.'

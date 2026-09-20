@@ -6,7 +6,6 @@ import { useLocation, useNavigate, Link } from 'react-router-dom';
 import { useProfile } from '../../hooks/useProfile';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useState, useRef, useEffect } from 'react';
-import { ThemeToggle } from '../ui/theme-toggle';
 
 interface HeaderProps {
   onMenuToggle?: () => void;
@@ -66,7 +65,7 @@ export const Header: FC<HeaderProps> = ({ onMenuToggle }) => {
   }
 
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-surface/90 px-4 md:px-8 backdrop-blur-md z-30 sticky top-0">
+    <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-white px-4 md:px-8 z-30 sticky top-0 shadow-xs">
       <div className="flex items-center gap-3 md:gap-4">
         {/* Mobile Menu Button */}
         {onMenuToggle && (
@@ -103,12 +102,6 @@ export const Header: FC<HeaderProps> = ({ onMenuToggle }) => {
       </div>
 
       <div className="flex items-center gap-3 sm:gap-4">
-        {/* Theme Toggle Button */}
-        <ThemeToggle />
-
-        {/* Vertical Divider */}
-        <div className="h-5 w-px bg-border hidden sm:block" />
-
         {/* User Profile Cluster */}
         <div className="relative" ref={profileRef}>
           <button 

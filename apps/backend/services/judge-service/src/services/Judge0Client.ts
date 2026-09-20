@@ -24,11 +24,11 @@ export class Judge0Client {
    * Submit code for execution
    * Returns a token which can be polled for the result.
    */
-  static async submitCode(sourceCode: string, languageId: number, customInput?: string) {
+  static async submitCode(sourceCode: string, languageId: number, stdin?: string) {
     const payload = {
       source_code: Buffer.from(sourceCode).toString('base64'),
       language_id: languageId,
-      stdin: customInput ? Buffer.from(customInput).toString('base64') : '',
+      stdin: (stdin !== undefined && stdin !== null && stdin !== '') ? Buffer.from(stdin).toString('base64') : '',
     };
 
     const response = await judgeClient.post(

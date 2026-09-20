@@ -26,7 +26,9 @@ export class SearchService {
   static async searchQuestions(query: {
     keyword?: string;
     categoryId?: string;
+    category?: string;
     topicId?: string;
+    topic?: string;
     difficulty?: string;
     language?: string;
     questionType?: string;
@@ -39,7 +41,9 @@ export class SearchService {
     const {
       keyword,
       categoryId,
+      category,
       topicId,
+      topic,
       difficulty,
       language,
       questionType,
@@ -76,8 +80,45 @@ export class SearchService {
       });
     }
 
-    if (categoryId && categoryId !== 'ALL') whereClause.categoryId = categoryId;
-    if (topicId && topicId !== 'ALL') whereClause.topicId = topicId;
+    // Category filtering (ID or name)
+    const effectiveCategory = (categoryId || category || '').trim();
+    if (effectiveCategory && effectiveCategory !== 'ALL') {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(effectiveCategory);
+      if (isUuid) {
+        whereClause.categoryId = effectiveCategory;
+      } else {
+        whereClause.AND = whereClause.AND || [];
+        (whereClause.AND as any[]).push({
+          category: { name: { equals: effectiveCategory, mode: 'insensitive' } },
+        });
+      }
+    }
+
+    // Topic filtering (ID or name with DP abbreviation normalization)
+    const effectiveTopic = (topicId || topic || '').trim();
+    if (effectiveTopic && effectiveTopic !== 'ALL') {
+      const isUuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(effectiveTopic);
+      if (isUuid) {
+        whereClause.topicId = effectiveTopic;
+      } else {
+        const normalizedVariants = [effectiveTopic];
+        if (effectiveTopic.includes('DP')) {
+          normalizedVariants.push(effectiveTopic.replace(/\bDP\b/g, 'Dynamic Programming'));
+        }
+        if (effectiveTopic.toLowerCase().includes('dynamic programming')) {
+          normalizedVariants.push(effectiveTopic.replace(/Dynamic Programming/gi, 'DP'));
+        }
+
+        whereClause.AND = whereClause.AND || [];
+        (whereClause.AND as any[]).push({
+          OR: [
+            { topic: { name: { in: normalizedVariants, mode: 'insensitive' } } },
+            { tags: { some: { name: { in: normalizedVariants, mode: 'insensitive' } } } },
+          ],
+        });
+      }
+    }
+
     if (difficulty && difficulty !== 'ALL') whereClause.difficulty = difficulty as any;
     if (questionType && questionType !== 'ALL') whereClause.questionType = questionType as any;
 
@@ -128,10 +169,10 @@ export class SearchService {
 
       let payloadToReturn = { ...rawPayload };
       if (q.questionType === 'CODING') {
-        const defaultMode = rawPayload.execution?.languages?.python?.functionName ? 'FUNCTION' : 'STANDARD_IO';
+        const defaultMode = rawPayload.execution?.executionMode || 'STANDARD_IO';
         payloadToReturn.execution = {
           ...(rawPayload.execution || {}),
-          executionMode: rawPayload.execution?.executionMode || defaultMode,
+          executionMode: defaultMode,
         };
       }
 
@@ -232,6 +273,7 @@ export class SearchService {
         },
       },
       include: {
+        category: true,
         _count: {
           select: {
             questions: {
@@ -289,10 +331,10 @@ export class SearchService {
 
     let payloadToReturn = { ...rawPayload };
     if (question.questionType === 'CODING') {
-      const defaultMode = rawPayload.execution?.languages?.python?.functionName ? 'FUNCTION' : 'STANDARD_IO';
+      const defaultMode = rawPayload.execution?.executionMode || 'STANDARD_IO';
       payloadToReturn.execution = {
         ...(rawPayload.execution || {}),
-        executionMode: rawPayload.execution?.executionMode || defaultMode,
+        executionMode: defaultMode,
       };
     }
 
@@ -300,10 +342,13 @@ export class SearchService {
       // Strip hidden test cases completely
       const sanitizedTestCases = testCases
         .filter((tc: any) => tc.visibility !== 'HIDDEN' && !tc.isHidden)
-        .map((tc: any) => ({
+        .map((tc: any, idx: number) => ({
+          testCaseId: tc.testCaseId || `${question.id}-tc-${idx + 1}`,
           input: tc.input,
           expectedOutput: tc.expectedOutput,
+          visible: true,
           visibility: 'VISIBLE',
+          weight: tc.weight ?? 1,
         }));
 
       payloadToReturn = {
@@ -352,6 +397,10 @@ export class SearchService {
       correctAnswer: correctOptionIndex,
       explanation,
       storedExplanation: explanation,
+      inputFormat: rawPayload.inputFormat || '',
+      outputFormat: rawPayload.outputFormat || '',
+      submissionFormat: rawPayload.submissionFormat || 'full_program',
+      candidateStarterCode: rawPayload.candidateStarterCode || 'empty',
       examples: effectiveExamples,
       constraints: effectiveConstraints,
       hints: effectiveHints,

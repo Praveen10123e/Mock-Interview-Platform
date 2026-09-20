@@ -165,7 +165,7 @@ export const Login: FC = () => {
           <div className="mt-6 pt-5 border-t border-border text-center text-xs text-text-muted space-y-2">
             <p>
               Don't have an account?{' '}
-              <Link to="/register" className="text-accent hover:underline font-semibold">
+              <Link to="/register" className="text-slate-800 hover:text-slate-950 underline font-semibold">
                 Create one now
               </Link>
             </p>

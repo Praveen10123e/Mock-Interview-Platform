@@ -223,7 +223,7 @@ export const Register: FC = () => {
               <div className="mt-5 pt-4 border-t border-border text-center text-xs text-text-muted">
                 <p>
                   Already have an account?{' '}
-                  <Link to="/login" className="text-accent hover:underline font-semibold">
+                  <Link to="/login" className="text-slate-800 hover:text-slate-950 underline font-semibold">
                     Sign in here
                   </Link>
                 </p>

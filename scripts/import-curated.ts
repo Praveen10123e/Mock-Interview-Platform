@@ -5,7 +5,7 @@ async function importCurated() {
   const CURATED_DIR = path.join(__dirname, '../data/curated');
   
   const files = [
-    { file: 'coding.json', name: 'Curated Coding Set v1' },
+    { file: 'full_program_coding_interview_dataset_40(3).json', name: 'Curated - Full-Program Coding Interview Dataset' },
     { file: 'aptitude.json', name: 'Curated Aptitude Set v1' },
     { file: 'hr.json', name: 'Curated HR Set v1' }
   ];

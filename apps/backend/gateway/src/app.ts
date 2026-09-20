@@ -127,6 +127,10 @@ export class GatewayApplication extends BaseApplication {
                 const subPath = path.startsWith('/') ? path : `/${path}`;
                 return subPath === '/' ? '/templates' : `/templates${subPath}`;
               }
+              if (key === 'admin') {
+                const subPath = path.startsWith('/') ? path : `/${path}`;
+                return subPath === '/' ? '/admin' : `/admin${subPath}`;
+              }
               return path;
             },
             on: {

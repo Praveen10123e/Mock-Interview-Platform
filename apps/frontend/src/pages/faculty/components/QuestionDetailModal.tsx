@@ -1,17 +1,8 @@
 import React from 'react';
 import {
   X,
-  Code2,
-  CheckCircle2,
   Eye,
   EyeOff,
-  Clock,
-  Award,
-  Layers,
-  FileCode2,
-  Tag,
-  ListOrdered,
-  Check,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
 
@@ -35,8 +26,6 @@ export const QuestionDetailModal: React.FC<QuestionDetailModalProps> = ({
 
   const isCoding = qType === 'CODING' || qType === 'PROGRAMMING';
   const isMcq = qType === 'APTITUDE' || qType === 'MCQ';
-  const isHr = qType === 'HR' || qType === 'BEHAVIORAL';
-  const isTheory = qType === 'THEORY' || qType === 'TECHNICAL' || qType === 'DESCRIPTIVE';
 
   const execution = payload.execution || {};
   const testCases = payload.testCases || [];

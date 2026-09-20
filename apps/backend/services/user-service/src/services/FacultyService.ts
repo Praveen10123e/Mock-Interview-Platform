@@ -12,6 +12,29 @@ const prisma = new Proxy({} as PrismaClient, {
   },
 });
 
+const AUTH_DB_URL =
+  process.env.AUTH_DATABASE_URL ||
+  'postgresql://postgres:9865@localhost:5432/auth_db?schema=public';
+
+let _authPrisma: any = null;
+function getAuthPrisma() {
+  if (!_authPrisma) {
+    try {
+      const { PrismaClient: AuthPrismaClient } = require('../../../auth-service/src/generated/client');
+      _authPrisma = new AuthPrismaClient({
+        datasources: {
+          db: {
+            url: AUTH_DB_URL,
+          },
+        },
+      });
+    } catch {
+      _authPrisma = null;
+    }
+  }
+  return _authPrisma;
+}
+
 export interface StudentFilterParams {
   search?: string;
   department?: string;
@@ -28,6 +51,79 @@ export class FacultyService extends BaseService {
   }
 
   /**
+   * Check if email belongs to an automated test / development runner
+   */
+  private isTestOrGeneratedAccount(email: string): boolean {
+    const lower = (email || '').toLowerCase().trim();
+    if (/^(student_arun_|praveen_sync_|test_profile_)/.test(lower)) {
+      return true;
+    }
+    if (/_178\d{7,}|\.178\d{7,}/.test(lower)) {
+      return true;
+    }
+    return false;
+  }
+
+  /**
+   * Helper to retrieve all authoritative STUDENT identities from auth_db
+   */
+  private async getStudentIdentitiesMap(): Promise<Map<string, { id: string; email: string }>> {
+    const map = new Map<string, { id: string; email: string }>();
+    const authPrisma = getAuthPrisma();
+    if (authPrisma) {
+      try {
+        const identities = await authPrisma.identity.findMany({
+          where: {
+            roles: {
+              some: {
+                role: {
+                  name: { in: ['STUDENT', 'CANDIDATE'] },
+                },
+              },
+              none: {
+                role: {
+                  name: { in: ['FACULTY', 'ADMIN', 'ADMINISTRATOR', 'SUPER_ADMIN'] },
+                },
+              },
+            },
+          },
+          select: { id: true, email: true },
+        });
+        identities.forEach((i: any) => {
+          if (!this.isTestOrGeneratedAccount(i.email)) {
+            map.set(i.id, i);
+          }
+        });
+      } catch (err: any) {
+        this.logger.warn(`Could not query student identities from auth_db: ${err.message}`);
+      }
+    }
+    return map;
+  }
+
+  /**
+   * Resolve clean full name dynamically for candidate from profile or email
+   */
+  private resolveStudentName(profile: any, email?: string): string {
+    const raw = `${profile?.firstName || ''} ${profile?.lastName || ''}`.trim();
+    if (raw && raw !== 'New User' && raw !== 'Student') {
+      return raw;
+    }
+
+    if (email) {
+      const prefix = email.split('@')[0].replace(/[._0-9]+/g, ' ').trim();
+      const formatted = prefix
+        .split(' ')
+        .filter(Boolean)
+        .map((w: string) => w.charAt(0).toUpperCase() + w.slice(1))
+        .join(' ');
+      if (formatted) return formatted;
+    }
+
+    return 'Candidate';
+  }
+
+  /**
    * Faculty Overview Dashboard Data
    */
   public async getFacultyDashboard(facultyIdentityId: string) {
@@ -39,34 +135,22 @@ export class FacultyService extends BaseService {
 
     const facultyName =
       `${faculty.firstName} ${faculty.lastName || ''}`.trim() || 'Faculty Member';
-    const college = faculty.facultyProfile?.college || faculty.nmProfile?.institution;
-    const department = faculty.facultyProfile?.department || faculty.nmProfile?.department;
+    const college = faculty.facultyProfile?.college || faculty.nmProfile?.institution || 'Naan Mudhalvan Partner College';
+    const department = faculty.facultyProfile?.department || faculty.nmProfile?.department || 'CSE';
     const designation = faculty.facultyProfile?.designation || 'Faculty Instructor';
 
-    // 2. Fetch real students belonging to the same institution / department
+    // 2. Fetch real student identities from auth_db
+    const studentIdentitiesMap = await this.getStudentIdentitiesMap();
+
+    // 3. Fetch all real registered student profiles (strictly excluding faculty and admin)
     const baseWhere: any = {
       identityId: { not: facultyIdentityId },
-      studentProfile: { isNot: null },
       facultyProfile: null,
       adminProfile: null,
     };
 
-    let students = await prisma.profile.findMany({
-      where: {
-        ...baseWhere,
-        ...(college && {
-          OR: [
-            { studentProfile: { college: { equals: college, mode: 'insensitive' } } },
-            { nmProfile: { institution: { equals: college, mode: 'insensitive' } } },
-          ],
-        }),
-        ...(department && {
-          OR: [
-            { studentProfile: { department: { equals: department, mode: 'insensitive' } } },
-            { nmProfile: { department: { equals: department, mode: 'insensitive' } } },
-          ],
-        }),
-      },
+    const studentProfiles = await prisma.profile.findMany({
+      where: baseWhere,
       include: {
         studentProfile: true,
         nmProfile: true,
@@ -74,26 +158,13 @@ export class FacultyService extends BaseService {
       orderBy: { createdAt: 'desc' },
     });
 
-    // Fallback: If no students in narrow college/dept filter, get all real students (strictly excluding faculty)
-    if (students.length === 0) {
-      students = await prisma.profile.findMany({
-        where: baseWhere,
-        include: {
-          studentProfile: true,
-          nmProfile: true,
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-    }
+    const profileMap = new Map(studentProfiles.map((p) => [p.identityId, p]));
 
-    const studentMap: Record<string, any> = {};
-    students.forEach((s) => {
-      studentMap[s.identityId] = s;
-    });
+    // 4. Query interview-service for real cohort analytics & telemetry
+    const allStudentIdentityIds = Array.from(studentIdentitiesMap.keys()).filter(
+      (id) => id !== facultyIdentityId
+    );
 
-    const studentIdentityIds = students.map((s) => s.identityId);
-
-    // 3. Query interview-service for real cohort analytics & telemetry
     let cohortAnalytics: any = {
       totalAssessments: 0,
       totalSubmissions: 0,
@@ -104,11 +175,11 @@ export class FacultyService extends BaseService {
       studentStats: {},
     };
 
-    if (studentIdentityIds.length > 0) {
+    if (allStudentIdentityIds.length > 0) {
       try {
         const response = await axios.post(
           'http://localhost:3004/cohort-analytics',
-          { identityIds: studentIdentityIds },
+          { identityIds: allStudentIdentityIds },
           { timeout: 5000 }
         );
         if (response.data) {
@@ -121,23 +192,23 @@ export class FacultyService extends BaseService {
       }
     }
 
-    // 4. Determine "Active Students" (activity within last 30 days)
     const thirtyDaysAgo = Date.now() - 30 * 24 * 60 * 60 * 1000;
     let activeStudentsCount = 0;
 
     const studentStats = cohortAnalytics.studentStats || {};
     const studentsNeedingAttentionList: any[] = [];
 
-    students.forEach((student) => {
-      const stats = studentStats[student.identityId];
-      const studentName = `${student.firstName} ${student.lastName || ''}`.trim() || 'Candidate';
+    allStudentIdentityIds.forEach((id) => {
+      const profile = profileMap.get(id);
+      const email = studentIdentitiesMap.get(id)?.email || `${profile?.firstName?.toLowerCase() || 'student'}@nm.edu`;
+      const stats = studentStats[id];
+      const studentName = this.resolveStudentName(profile, email);
       const studentDept =
-        student.studentProfile?.department ||
-        student.nmProfile?.department ||
-        department ||
-        'Computer Science & Engineering';
+        profile?.studentProfile?.department ||
+        profile?.nmProfile?.department ||
+        department;
       const studentBatch =
-        student.studentProfile?.batch || student.nmProfile?.batch || '2025';
+        profile?.studentProfile?.batch || profile?.nmProfile?.batch || '2028';
 
       if (stats?.lastActiveAt) {
         const lastActiveTime = new Date(stats.lastActiveAt).getTime();
@@ -146,77 +217,84 @@ export class FacultyService extends BaseService {
         }
       }
 
-      // 5. Evaluate "Students Needing Attention" ONLY for students with real evaluated performance data
       if (stats) {
-        const scores: number[] = stats.scores || [];
-        const avgStudentScore =
+        const scores = stats.scores || [];
+        const avgScore =
           scores.length > 0
-            ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10
+            ? Math.round(
+                (scores.reduce((a: number, b: number) => a + b, 0) / scores.length) * 10
+              ) / 10
             : null;
 
-        if (avgStudentScore !== null && avgStudentScore < 50) {
+        const isFailing = avgScore !== null && avgScore < 50;
+        const hasFailedSubs = stats.failedSubmissions >= 3;
+
+        if (isFailing || hasFailedSubs) {
           studentsNeedingAttentionList.push({
-            id: student.id,
-            identityId: student.identityId,
+            id: profile?.id || id,
+            identityId: id,
             name: studentName,
             department: studentDept,
             batch: studentBatch,
-            performanceScore: `${avgStudentScore}%`,
-            reason: `Average score (${avgStudentScore}%) is below 50% benchmark`,
-            severity: 'HIGH',
-          });
-        } else if (stats.failedSubmissions >= 3) {
-          studentsNeedingAttentionList.push({
-            id: student.id,
-            identityId: student.identityId,
-            name: studentName,
-            department: studentDept,
-            batch: studentBatch,
-            performanceScore: `${stats.failedSubmissions} failures`,
-            reason: `Repeated failed test cases (${stats.failedSubmissions} unsuccessful submissions)`,
-            severity: 'MEDIUM',
+            performanceScore: isFailing ? `${avgScore}%` : `${stats.failedSubmissions} failures`,
+            reason: isFailing
+              ? `Low aggregate score (${avgScore}%) below benchmark`
+              : `High failure rate (${stats.failedSubmissions} rejected submissions)`,
+            severity: isFailing ? 'HIGH' : 'MEDIUM',
+            averageScore: avgScore,
+            failedSubmissions: stats.failedSubmissions,
+            lastActive: stats.lastActiveAt
+              ? new Date(stats.lastActiveAt).toLocaleDateString()
+              : 'Recently',
           });
         }
       }
     });
 
-    // 6. Enrich Recent Activity with Student Names
-    const enrichedRecentActivity = (cohortAnalytics.recentActivity || [])
-      .map((act: any) => {
-        const student = studentMap[act.identityId];
-        const name = student
-          ? `${student.firstName} ${student.lastName || ''}`.trim()
-          : null;
-        if (!name) return null;
-        return {
-          id: act.id,
-          studentName: name,
-          activityTitle: act.title || 'Practice Session',
-          status: act.state || 'COMPLETED',
-          timestamp: act.timestamp,
-        };
-      })
-      .filter(Boolean);
+    const activeRate =
+      allStudentIdentityIds.length > 0
+        ? Math.round((activeStudentsCount / allStudentIdentityIds.length) * 1000) / 10
+        : 0;
+
+    const enrichedRecentActivity = (cohortAnalytics.recentActivity || []).map((act: any) => {
+      const p = profileMap.get(act.identityId);
+      const email = studentIdentitiesMap.get(act.identityId)?.email;
+      const studentName = this.resolveStudentName(p, email);
+      return {
+        ...act,
+        studentName: studentName || act.studentName,
+      };
+    });
 
     return {
       faculty: {
         id: faculty.id,
         identityId: faculty.identityId,
         name: facultyName,
-        college: college || 'Naan Mudhalvan Partner College',
-        department: department || 'Computer Science & Engineering',
+        email: faculty.email || 'faculty@nm.edu',
+        college,
+        department,
         designation,
       },
       metrics: {
-        totalStudents: students.length,
+        totalStudents: allStudentIdentityIds.length,
         activeStudents: activeStudentsCount,
         assessments: cohortAnalytics.totalAssessments || 0,
         totalSubmissions: cohortAnalytics.totalSubmissions || 0,
         averagePerformance: cohortAnalytics.averageScore || 0,
         hasEnoughPerformanceData: !!cohortAnalytics.hasEnoughPerformanceData,
       },
-      performanceTrend: cohortAnalytics.performanceTrend || [],
+      stats: {
+        totalStudents: allStudentIdentityIds.length,
+        activeStudents: activeStudentsCount,
+        activeRate,
+        totalAssessments: cohortAnalytics.totalAssessments || 0,
+        totalSubmissions: cohortAnalytics.totalSubmissions || 0,
+        averageScore: cohortAnalytics.averageScore || null,
+        hasEnoughPerformanceData: cohortAnalytics.hasEnoughPerformanceData || false,
+      },
       studentsNeedingAttention: studentsNeedingAttentionList.slice(0, 10),
+      performanceTrend: cohortAnalytics.performanceTrend || [],
       recentActivity: enrichedRecentActivity,
     };
   }
@@ -230,33 +308,21 @@ export class FacultyService extends BaseService {
       throw ErrorFactory.unauthorized('Faculty profile not found');
     }
 
-    const college = faculty.facultyProfile?.college || faculty.nmProfile?.institution;
-    const department = faculty.facultyProfile?.department || faculty.nmProfile?.department;
+    const college = faculty.facultyProfile?.college || faculty.nmProfile?.institution || 'Naan Mudhalvan Partner College';
+    const department = faculty.facultyProfile?.department || faculty.nmProfile?.department || 'CSE';
 
-    // Strictly students only: exclude faculty themselves and anyone with facultyProfile / adminProfile
+    // 1. Fetch real student identities from auth_db
+    const studentIdentitiesMap = await this.getStudentIdentitiesMap();
+
+    // 2. Fetch all real registered student profiles
     const baseWhere: any = {
       identityId: { not: facultyIdentityId },
-      studentProfile: { isNot: null },
       facultyProfile: null,
       adminProfile: null,
     };
 
-    let students = await prisma.profile.findMany({
-      where: {
-        ...baseWhere,
-        ...(college && {
-          OR: [
-            { studentProfile: { college: { equals: college, mode: 'insensitive' } } },
-            { nmProfile: { institution: { equals: college, mode: 'insensitive' } } },
-          ],
-        }),
-        ...(department && {
-          OR: [
-            { studentProfile: { department: { equals: department, mode: 'insensitive' } } },
-            { nmProfile: { department: { equals: department, mode: 'insensitive' } } },
-          ],
-        }),
-      },
+    const studentProfiles = await prisma.profile.findMany({
+      where: baseWhere,
       include: {
         studentProfile: true,
         nmProfile: true,
@@ -264,26 +330,20 @@ export class FacultyService extends BaseService {
       orderBy: { createdAt: 'desc' },
     });
 
-    if (students.length === 0) {
-      students = await prisma.profile.findMany({
-        where: baseWhere,
-        include: {
-          studentProfile: true,
-          nmProfile: true,
-        },
-        orderBy: { createdAt: 'desc' },
-      });
-    }
+    const profileMap = new Map(studentProfiles.map((p) => [p.identityId, p]));
 
-    const studentIdentityIds = students.map((s) => s.identityId);
+    // 3. Only identities registered as STUDENT / CANDIDATE in auth_db
+    const allStudentIdentityIds = Array.from(studentIdentitiesMap.keys()).filter(
+      (id) => id !== facultyIdentityId
+    );
 
-    // Fetch cohort analytics from interview-service
+    // 4. Fetch cohort analytics from interview-service
     let studentStats: Record<string, any> = {};
-    if (studentIdentityIds.length > 0) {
+    if (allStudentIdentityIds.length > 0) {
       try {
         const response = await axios.post(
           'http://localhost:3004/cohort-analytics',
-          { identityIds: studentIdentityIds },
+          { identityIds: allStudentIdentityIds },
           { timeout: 5000 }
         );
         if (response.data?.studentStats) {
@@ -298,9 +358,11 @@ export class FacultyService extends BaseService {
     const deptSet = new Set<string>();
     const batchSet = new Set<string>();
 
-    // Transform students to standardized view model
-    const transformedStudents = students.map((student) => {
-      const stats = studentStats[student.identityId] || {
+    // 5. Transform students to standardized view model
+    const transformedStudents = allStudentIdentityIds.map((id) => {
+      const profile = profileMap.get(id);
+      const email = studentIdentitiesMap.get(id)?.email || `${profile?.firstName?.toLowerCase() || 'student'}@nm.edu`;
+      const stats = studentStats[id] || {
         assessmentsCompleted: 0,
         totalAssessments: 0,
         totalSubmissions: 0,
@@ -309,23 +371,21 @@ export class FacultyService extends BaseService {
         failedSubmissions: 0,
       };
 
-      const fullName = `${student.firstName} ${student.lastName || ''}`.trim() || 'Candidate';
+      const fullName = this.resolveStudentName(profile, email);
       const studentDept =
-        student.studentProfile?.department ||
-        student.nmProfile?.department ||
-        department ||
-        'Computer Science & Engineering';
+        profile?.studentProfile?.department ||
+        profile?.nmProfile?.department ||
+        department;
       const studentBatch =
-        student.studentProfile?.batch || student.nmProfile?.batch || '2025';
+        profile?.studentProfile?.batch || profile?.nmProfile?.batch || '2028';
       const studentCollege =
-        student.studentProfile?.college ||
-        student.nmProfile?.institution ||
-        college ||
-        'Naan Mudhalvan Partner College';
+        profile?.studentProfile?.college ||
+        profile?.nmProfile?.institution ||
+        college;
       const rollNumber =
-        student.studentProfile?.rollNumber ||
-        student.studentProfile?.registerNumber ||
-        student.nmProfile?.studentId ||
+        profile?.studentProfile?.rollNumber ||
+        profile?.studentProfile?.registerNumber ||
+        profile?.nmProfile?.studentId ||
         '—';
 
       deptSet.add(studentDept);
@@ -334,7 +394,7 @@ export class FacultyService extends BaseService {
       const scores: number[] = stats.scores || [];
       const avgScore =
         scores.length > 0
-          ? Math.round((scores.reduce((a, b) => a + b, 0) / scores.length) * 10) / 10
+          ? Math.round((scores.reduce((a: number, b: number) => a + b, 0) / scores.length) * 10) / 10
           : null;
 
       // Status resolution
@@ -351,14 +411,14 @@ export class FacultyService extends BaseService {
       }
 
       return {
-        id: student.id,
-        identityId: student.identityId,
-        firstName: student.firstName,
-        lastName: student.lastName,
+        id: profile?.id || id,
+        identityId: id,
+        firstName: profile?.firstName || fullName.split(' ')[0],
+        lastName: profile?.lastName || fullName.split(' ').slice(1).join(' '),
         fullName,
-        email: `${student.firstName.toLowerCase().replace(/\s+/g, '.')}@nm.edu`,
-        phone: student.phone || '—',
-        avatarUrl: student.avatarUrl,
+        email,
+        phone: profile?.phone || '—',
+        avatarUrl: profile?.avatarUrl,
         department: studentDept,
         college: studentCollege,
         batch: studentBatch,
@@ -426,12 +486,14 @@ export class FacultyService extends BaseService {
       throw ErrorFactory.unauthorized('Faculty profile not found');
     }
 
-    // Find student by ID or identityId (ensuring they are NOT faculty)
+    // 1. Fetch real student identities from auth_db
+    const studentIdentitiesMap = await this.getStudentIdentitiesMap();
+
+    // 2. Find student by ID or identityId (ensuring they are NOT faculty)
     const student = await prisma.profile.findFirst({
       where: {
         OR: [{ id: studentId }, { identityId: studentId }],
         identityId: { not: facultyIdentityId },
-        studentProfile: { isNot: null },
         facultyProfile: null,
         adminProfile: null,
       },
@@ -441,12 +503,15 @@ export class FacultyService extends BaseService {
       },
     });
 
-    if (!student) {
+    const targetIdentityId = student?.identityId || studentId;
+    const authIdentity = studentIdentitiesMap.get(targetIdentityId);
+
+    if (!student && !authIdentity) {
       throw ErrorFactory.notFound('Student not found or access denied');
     }
 
-    const college = faculty.facultyProfile?.college || faculty.nmProfile?.institution;
-    const department = faculty.facultyProfile?.department || faculty.nmProfile?.department;
+    const college = faculty.facultyProfile?.college || faculty.nmProfile?.institution || 'Naan Mudhalvan Partner College';
+    const department = faculty.facultyProfile?.department || faculty.nmProfile?.department || 'CSE';
 
     // Fetch individual student analytics from interview-service
     let analytics: any = {
@@ -470,7 +535,7 @@ export class FacultyService extends BaseService {
     try {
       const res = await axios.post(
         'http://localhost:3004/student-analytics',
-        { identityId: student.identityId },
+        { identityId: targetIdentityId },
         { timeout: 5000 }
       );
       if (res.data) {
@@ -480,45 +545,160 @@ export class FacultyService extends BaseService {
       this.logger.warn(`Could not fetch student analytics: ${err.message}`);
     }
 
-    const fullName = `${student.firstName} ${student.lastName || ''}`.trim() || 'Candidate';
+    const email = authIdentity?.email || `${student?.firstName?.toLowerCase() || 'student'}@nm.edu`;
+    const fullName = this.resolveStudentName(student, email);
     const studentDept =
-      student.studentProfile?.department ||
-      student.nmProfile?.department ||
-      department ||
-      'Computer Science & Engineering';
+      student?.studentProfile?.department ||
+      student?.nmProfile?.department ||
+      department;
     const studentBatch =
-      student.studentProfile?.batch || student.nmProfile?.batch || '2025';
+      student?.studentProfile?.batch || student?.nmProfile?.batch || '2028';
     const studentCollege =
-      student.studentProfile?.college ||
-      student.nmProfile?.institution ||
-      college ||
-      'Naan Mudhalvan Partner College';
+      student?.studentProfile?.college ||
+      student?.nmProfile?.institution ||
+      college;
 
     return {
       profile: {
-        id: student.id,
-        identityId: student.identityId,
-        firstName: student.firstName,
-        lastName: student.lastName,
+        id: student?.id || targetIdentityId,
+        identityId: targetIdentityId,
+        firstName: student?.firstName || fullName.split(' ')[0],
+        lastName: student?.lastName || fullName.split(' ').slice(1).join(' '),
         fullName,
-        email: `${student.firstName.toLowerCase().replace(/\s+/g, '.')}@nm.edu`,
-        phone: student.phone || '—',
-        avatarUrl: student.avatarUrl,
+        email,
+        phone: student?.phone || '—',
+        avatarUrl: student?.avatarUrl,
         college: studentCollege,
         department: studentDept,
         batch: studentBatch,
         rollNumber:
-          student.studentProfile?.rollNumber ||
-          student.studentProfile?.registerNumber ||
-          student.nmProfile?.studentId ||
+          student?.studentProfile?.rollNumber ||
+          student?.studentProfile?.registerNumber ||
+          student?.nmProfile?.studentId ||
           '—',
-        placementStatus: student.studentProfile?.placementStatus || 'Eligible for Campus Placement',
+        placementStatus: student?.studentProfile?.placementStatus || 'Eligible for Campus Placement',
         role: 'STUDENT',
-        createdAt: student.createdAt,
+        createdAt: student?.createdAt || new Date().toISOString(),
       },
       codingPerformance: analytics.codingPerformance,
       interviewPerformance: analytics.interviewPerformance,
       recentActivity: analytics.recentActivity,
     };
+  }
+
+  /**
+   * Get Authenticated Faculty Profile Information
+   */
+  public async getFacultyProfile(facultyIdentityId: string) {
+    const faculty = (await this.profileRepo.findByIdentityId(facultyIdentityId)) as any;
+    if (!faculty) {
+      throw ErrorFactory.notFound('Faculty profile not found');
+    }
+
+    const authPrisma = getAuthPrisma();
+    let email = faculty.email;
+    let roles: string[] = ['FACULTY'];
+    let lastLoginAt: string | null = null;
+    let accountStatus: string = 'ACTIVE';
+
+    if (authPrisma) {
+      try {
+        const ident = await authPrisma.identity.findUnique({
+          where: { id: facultyIdentityId },
+          include: {
+            roles: { include: { role: true } },
+          },
+        });
+        if (ident) {
+          email = ident.email;
+          roles = ident.roles.map((r: any) => r.role.name);
+          accountStatus = (ident as any).status || 'ACTIVE';
+          lastLoginAt = (ident as any).lastLoginAt ? new Date((ident as any).lastLoginAt).toISOString() : null;
+        }
+      } catch (err: any) {
+        this.logger.warn(`Could not fetch auth identity info: ${err.message}`);
+      }
+    }
+
+    const fullName = `${faculty.firstName || ''} ${faculty.lastName || ''}`.trim() || 'Faculty Member';
+    const college = faculty.facultyProfile?.college || faculty.nmProfile?.institution || 'Naan Mudhalvan Partner College';
+    const department = faculty.facultyProfile?.department || faculty.nmProfile?.department || 'CSE';
+    const designation = faculty.facultyProfile?.designation || 'Assistant Professor / Faculty Instructor';
+    const employeeId = faculty.facultyProfile?.employeeId || `FAC-${facultyIdentityId.substring(0, 6).toUpperCase()}`;
+
+    return {
+      id: faculty.id,
+      identityId: faculty.identityId,
+      firstName: faculty.firstName || '',
+      lastName: faculty.lastName || '',
+      fullName,
+      email: email || 'faculty@nm.edu',
+      phone: faculty.phone || '',
+      avatarUrl: faculty.avatarUrl || null,
+      college,
+      department,
+      designation,
+      employeeId,
+      roles,
+      accountStatus,
+      createdAt: faculty.createdAt,
+      updatedAt: faculty.updatedAt,
+      lastLoginAt,
+    };
+  }
+
+  /**
+   * Update Authenticated Faculty Profile Information
+   */
+  public async updateFacultyProfile(
+    facultyIdentityId: string,
+    data: {
+      firstName?: string;
+      lastName?: string;
+      phone?: string;
+      avatarUrl?: string;
+      department?: string;
+      designation?: string;
+      college?: string;
+      employeeId?: string;
+    }
+  ) {
+    const faculty = (await this.profileRepo.findByIdentityId(facultyIdentityId)) as any;
+    if (!faculty) {
+      throw ErrorFactory.notFound('Faculty profile not found');
+    }
+
+    // 1. Update base Profile attributes
+    await prisma.profile.update({
+      where: { id: faculty.id },
+      data: {
+        ...(data.firstName !== undefined && { firstName: data.firstName.trim() }),
+        ...(data.lastName !== undefined && { lastName: data.lastName.trim() }),
+        ...(data.phone !== undefined && { phone: data.phone.trim() }),
+        ...(data.avatarUrl !== undefined && { avatarUrl: data.avatarUrl }),
+      },
+    });
+
+    // 2. Upsert facultyProfile attributes
+    if (data.department !== undefined || data.designation !== undefined || data.college !== undefined || data.employeeId !== undefined) {
+      await prisma.facultyProfile.upsert({
+        where: { profileId: faculty.id },
+        create: {
+          profileId: faculty.id,
+          department: data.department?.trim() || faculty.facultyProfile?.department || 'CSE',
+          designation: data.designation?.trim() || faculty.facultyProfile?.designation || 'Faculty Instructor',
+          college: data.college?.trim() || faculty.facultyProfile?.college || 'Naan Mudhalvan Partner College',
+          employeeId: data.employeeId?.trim() || faculty.facultyProfile?.employeeId || null,
+        },
+        update: {
+          ...(data.department !== undefined && { department: data.department.trim() }),
+          ...(data.designation !== undefined && { designation: data.designation.trim() }),
+          ...(data.college !== undefined && { college: data.college.trim() }),
+          ...(data.employeeId !== undefined && { employeeId: data.employeeId.trim() }),
+        },
+      });
+    }
+
+    return this.getFacultyProfile(facultyIdentityId);
   }
 }

@@ -8,10 +8,7 @@ import {
   ArrowRight,
   Code2,
   Calendar,
-  Activity,
   AlertCircle,
-  CheckCircle2,
-  Sparkles,
 } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';

@@ -15,7 +15,13 @@ export interface TestCase {
 
 export interface ExecutionPayload {
   executionMode: 'INTERVIEW' | 'PRACTICE';
-  runMode?: 'RUN' | 'SUBMIT';
+  runMode?: 'RUN' | 'SUBMIT' | 'SAMPLE' | 'CUSTOM';
+  /**
+   * Execution model for this question.
+   * STDIN_PROGRAM (default): student writes a complete standalone program that reads stdin and prints to stdout.
+   * FUNCTION_CALL: legacy adapter mode — NOT supported; engine will reject with INVALID_QUESTION_CONFIGURATION.
+   */
+  executionType?: 'STDIN_PROGRAM' | 'FUNCTION_CALL';
   interviewId?: string;
   questionRefId?: string;
   questionId?: string;
@@ -41,7 +47,7 @@ export interface TestCaseResult {
   executionTime?: number;
   time?: string | number;
   memory?: number;
-  hidden?: boolean;
+  visible?: boolean;
   score?: number;
 }
 
@@ -51,7 +57,8 @@ export interface ExecutionResult {
   message?: string;
   
   language?: string;
-  runMode?: string;
+  runMode?: 'RUN' | 'SUBMIT' | 'SAMPLE' | 'CUSTOM' | string;
+  executionStatus?: 'SUCCESS' | 'COMPILATION_ERROR' | 'RUNTIME_ERROR' | 'TIME_LIMIT_EXCEEDED' | 'MEMORY_LIMIT_EXCEEDED';
   passedCount?: number;
   totalCount?: number;
   allPassed?: boolean;
@@ -66,6 +73,7 @@ export interface ExecutionResult {
   stdout?: string | null;
   stderr?: string | null;
   compileOutput?: string | null;
+  customInput?: string;
   
   status?: {
     id: number;
