@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import api from "../../../api/axios/instance";
 import { normalizeInterviewQuestion } from "../../../utils/normalizeQuestion";
+import { formatExampleText } from "../../../utils/formatExampleText";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -227,9 +228,10 @@ interface ProblemPanelProps {
   question: CodingQuestion;
   onBookmarkToggle?: () => void;
   isBookmarked?: boolean;
+  attemptsHistory?: any[];
 }
 
-const ProblemPanel: React.FC<ProblemPanelProps> = ({ question, onBookmarkToggle, isBookmarked }) => {
+const ProblemPanel: React.FC<ProblemPanelProps> = ({ question, onBookmarkToggle, isBookmarked, attemptsHistory = [] }) => {
   const [activeTab, setActiveTab] = useState<"question" | "submissions">("question");
   const [selectedExampleIndex, setSelectedExampleIndex] = useState(0);
 
@@ -270,13 +272,6 @@ const ProblemPanel: React.FC<ProblemPanelProps> = ({ question, onBookmarkToggle,
       : jsonPayload.examples && jsonPayload.examples.length > 0
       ? jsonPayload.examples
       : [];
-
-  const hintsList =
-    jsonPayload.hints ||
-    (question as any).hints ||
-    (jsonPayload.skillsEvaluated?.map((s: string) => `Skill evaluated: ${s}`)) ||
-    ((question as any).skills_evaluated?.map((s: string) => `Skill evaluated: ${s}`)) ||
-    [];
 
   // Stop speech when question changes or unmounts
   useEffect(() => {
@@ -522,58 +517,160 @@ const ProblemPanel: React.FC<ProblemPanelProps> = ({ question, onBookmarkToggle,
               </div>
 
               {/* Example Card */}
-              {examplesList[selectedExampleIndex] && (
-                <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/80 space-y-3 font-mono text-xs relative group shadow-xs">
-                  <div className="absolute top-3 right-3">
-                    <CopyButton
-                      text={`Input: ${examplesList[selectedExampleIndex].input}\nOutput: ${examplesList[selectedExampleIndex].output}`}
-                    />
-                  </div>
-
-                  <div className="grid grid-cols-[70px_1fr] gap-2 items-baseline">
-                    <span className="text-slate-500 font-sans font-semibold">Input:</span>
-                    <span className="text-slate-900 font-semibold bg-white px-2 py-1 rounded border border-slate-200">
-                      {examplesList[selectedExampleIndex].input}
-                    </span>
-                  </div>
-
-                  <div className="grid grid-cols-[70px_1fr] gap-2 items-baseline">
-                    <span className="text-slate-500 font-sans font-semibold">Output:</span>
-                    <span className="text-emerald-700 font-bold bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
-                      {examplesList[selectedExampleIndex].output}
-                    </span>
-                  </div>
-
-                  {examplesList[selectedExampleIndex].explanation && (
-                    <div className="grid grid-cols-[70px_1fr] gap-2 items-baseline pt-1 border-t border-slate-200/60 font-sans text-xs">
-                      <span className="text-slate-500 font-semibold">Explanation:</span>
-                      <span className="text-slate-700 leading-relaxed">
-                        {examplesList[selectedExampleIndex].explanation}
-                      </span>
+              {examplesList[selectedExampleIndex] && (() => {
+                const ex = examplesList[selectedExampleIndex];
+                const formattedInput = formatExampleText(ex.input);
+                const formattedOutput = formatExampleText(ex.output);
+                return (
+                  <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/80 space-y-3 font-mono text-xs relative group shadow-xs">
+                    <div className="absolute top-3 right-3">
+                      <CopyButton
+                        text={`Input:\n${formattedInput}\n\nOutput:\n${formattedOutput}`}
+                      />
                     </div>
-                  )}
-                </div>
-              )}
+
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 font-sans font-semibold text-[11px] uppercase tracking-wider">Input:</span>
+                        <CopyButton text={formattedInput} />
+                      </div>
+                      <pre className="text-slate-900 font-mono font-medium bg-white p-2.5 rounded-lg border border-slate-200 whitespace-pre-wrap leading-relaxed overflow-x-auto text-xs m-0">
+                        {formattedInput}
+                      </pre>
+                    </div>
+
+                    <div className="space-y-1.5">
+                      <div className="flex items-center justify-between">
+                        <span className="text-slate-500 font-sans font-semibold text-[11px] uppercase tracking-wider">Output:</span>
+                        <CopyButton text={formattedOutput} />
+                      </div>
+                      <pre className="text-emerald-700 font-mono font-bold bg-emerald-50/80 p-2.5 rounded-lg border border-emerald-200 whitespace-pre-wrap leading-relaxed overflow-x-auto text-xs m-0">
+                        {formattedOutput}
+                      </pre>
+                    </div>
+
+                    {ex.explanation && (
+                      <div className="space-y-1 pt-1 border-t border-slate-200/60 font-sans text-xs">
+                        <span className="text-slate-500 font-semibold text-[11px] uppercase tracking-wider block">Explanation:</span>
+                        <span className="text-slate-700 leading-relaxed block whitespace-pre-wrap">
+                          {formatExampleText(ex.explanation)}
+                        </span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
             </section>
           </>
         )}
 
 
 
-        {activeTab === "submissions" && (
-          <div className="space-y-4">
-            <div className="flex items-center gap-2 pb-2 border-b border-slate-100">
-              <History className="w-5 h-5 text-blue-600" />
-              <h2 className="text-base font-bold text-slate-900">Submission History</h2>
+        {activeTab === "submissions" && (() => {
+          const submitAttempts = attemptsHistory.filter((a: any) => a.runMode === "SUBMIT");
+          let bestSubmit: any = null;
+          submitAttempts.forEach((att: any) => {
+            if (
+              !bestSubmit ||
+              att.passedCount > bestSubmit.passedCount ||
+              (att.passedCount === bestSubmit.passedCount && att.attemptNumber >= bestSubmit.attemptNumber)
+            ) {
+              bestSubmit = att;
+            }
+          });
+
+          return (
+            <div className="space-y-4">
+              <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                <div className="flex items-center gap-2">
+                  <History className="w-5 h-5 text-blue-600" />
+                  <h2 className="text-base font-bold text-slate-900">Submission History</h2>
+                </div>
+                {submitAttempts.length > 0 && (
+                  <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-700 border border-slate-200">
+                    {submitAttempts.length} Official Attempt{submitAttempts.length > 1 ? "s" : ""}
+                  </span>
+                )}
+              </div>
+
+              {bestSubmit && (
+                <div className="p-4 rounded-xl border border-emerald-200 bg-emerald-50/70 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold uppercase tracking-wider text-emerald-900">
+                      Authoritative Best Result
+                    </span>
+                    <span className="text-xs font-bold font-mono px-2 py-0.5 rounded bg-emerald-100 text-emerald-800 border border-emerald-300">
+                      {bestSubmit.status === 'ACCEPTED' || (bestSubmit.passedCount === bestSubmit.totalCount && bestSubmit.totalCount > 0) ? 'ACCEPTED' : bestSubmit.status}
+                    </span>
+                  </div>
+                  <div className="text-lg font-bold text-emerald-950 font-mono">
+                    {bestSubmit.passedCount} / {bestSubmit.totalCount} Test Cases Passed
+                  </div>
+                  <p className="text-[11px] text-emerald-800">
+                    Calculated deterministically from official submission attempts.
+                  </p>
+                </div>
+              )}
+
+              {submitAttempts.length > 0 ? (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                    All Official Attempts
+                  </h4>
+                  {submitAttempts.map((att: any, idx: number) => {
+                    const isBest = bestSubmit?.id === att.id || bestSubmit?.attemptNumber === att.attemptNumber;
+                    return (
+                      <div
+                        key={att.id || idx}
+                        className={`p-3 rounded-xl border transition-all text-xs font-mono flex items-center justify-between ${
+                          isBest ? "border-emerald-300 bg-emerald-50/40 shadow-2xs" : "border-slate-200 bg-slate-50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <span className="text-slate-500 font-bold">#{att.attemptNumber || idx + 1}</span>
+                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
+                            att.status === 'ACCEPTED' || att.status === 'PASSED'
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : 'bg-rose-100 text-rose-800 border border-rose-200'
+                          }`}>
+                            {att.status}
+                          </span>
+                          <span className="text-slate-500 font-sans capitalize">{att.language}</span>
+                          {isBest && (
+                            <span className="text-[10px] font-sans font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300">
+                              Best
+                            </span>
+                          )}
+                        </div>
+                        <div className="flex items-center gap-3 text-slate-600">
+                          <span className="font-bold text-slate-900">
+                            {att.passedCount} / {att.totalCount} passed
+                          </span>
+                          <span className="text-[11px] text-slate-400">
+                            {new Date(att.timestamp).toLocaleTimeString()}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <p className="text-[11px] text-slate-400 italic pt-1">
+                    * Run Code executions are temporary validation runs and are not recorded as attempts.
+                  </p>
+                </div>
+              ) : (
+                <div className="p-6 rounded-xl border border-slate-200 bg-slate-50 text-center space-y-2">
+                  <p className="text-xs font-semibold text-slate-700">No official submissions recorded yet.</p>
+                  <p className="text-[11px] text-slate-500">
+                    Click <strong>Submit Solution</strong> to evaluate all visible test cases and record an official attempt.
+                  </p>
+                  <p className="text-[10px] text-slate-400 italic">
+                    Note: "Run Code" executes the first 2 visible test cases for quick validation only and does not record an attempt.
+                  </p>
+                </div>
+              )}
             </div>
-            <p className="text-xs text-slate-500">
-              Your submissions for this coding challenge are recorded authoritatively for review.
-            </p>
-            <div className="p-4 rounded-xl border border-slate-200 bg-slate-50 text-center text-xs text-slate-500">
-              Run or submit your solution on the editor panel to view execution records.
-            </div>
-          </div>
-        )}
+          );
+        })()}
       </div>
     </div>
   );
@@ -836,6 +933,7 @@ export const CodingRound = ({
             question={question}
             onBookmarkToggle={handleBookmarkToggle}
             isBookmarked={!!bookmarked[qIndex]}
+            attemptsHistory={attemptsHistory}
           />
         </div>
 
@@ -1063,8 +1161,15 @@ export const CodingRound = ({
               {/* Progress Summary: e.g. "3 / 5 test cases passed [===] 60%" */}
               {execResult && totalCount > 0 && (
                 <div className="flex items-center gap-3">
+                  <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                    execResult.runMode === 'RUN' || execResult.runMode === 'CUSTOM'
+                      ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                      : 'bg-purple-100 text-purple-800 border border-purple-300'
+                  }`}>
+                    {execResult.runMode === 'RUN' ? 'Run Code Result' : execResult.runMode === 'CUSTOM' ? 'Custom Run' : 'Official Submission'}
+                  </span>
                   <span className="text-xs font-semibold text-slate-700">
-                    {passedCount} / {totalCount} test cases passed
+                    {passedCount} / {totalCount} Test Cases Passed
                   </span>
                   <div className="w-24 h-2 rounded-full bg-slate-200 overflow-hidden">
                     <div
@@ -1121,57 +1226,91 @@ export const CodingRound = ({
                     </button>
                   </div>
                 </div>
-              ) : activeConsoleTab === "history" ? (
-                <div className="space-y-3">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900">
-                    Execution & Submission History
-                  </h4>
-                  {attemptsHistory.length > 0 ? (
-                    <div className="space-y-2">
-                      {attemptsHistory.map((att: any, idx: number) => (
-                        <div
-                          key={att.id || idx}
-                          className="p-3 rounded-xl border border-slate-200 bg-slate-50 flex items-center justify-between text-xs font-mono"
-                        >
-                          <div className="flex items-center gap-3">
-                            <span className="text-slate-400 font-semibold">#{att.attemptNumber || idx + 1}</span>
-                            <span
-                              className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase ${
-                                att.runMode === "SUBMIT"
-                                  ? "bg-purple-100 text-purple-700 border border-purple-200"
-                                  : "bg-blue-100 text-blue-700 border border-blue-200"
-                              }`}
-                            >
-                              {att.runMode}
-                            </span>
-                            <span
-                              className={`font-semibold ${
-                                att.status === "ACCEPTED" || att.status === "PASSED" || att.status === "SUCCESS"
-                                  ? "text-emerald-700"
-                                  : "text-rose-700"
-                              }`}
-                            >
-                              {att.status}
-                            </span>
-                            <span className="text-slate-500 font-sans capitalize">{att.language}</span>
-                          </div>
+              ) : activeConsoleTab === "history" ? (() => {
+                const submitAttempts = attemptsHistory.filter((a: any) => a.runMode === "SUBMIT");
+                let bestSubmit: any = null;
+                submitAttempts.forEach((att: any) => {
+                  if (
+                    !bestSubmit ||
+                    att.passedCount > bestSubmit.passedCount ||
+                    (att.passedCount === bestSubmit.passedCount && att.attemptNumber >= bestSubmit.attemptNumber)
+                  ) {
+                    bestSubmit = att;
+                  }
+                });
 
-                          <div className="flex items-center gap-4 text-slate-500">
-                            {att.totalCount > 0 && (
-                              <span>
-                                {att.passedCount}/{att.totalCount} passed
-                              </span>
-                            )}
-                            <span>{new Date(att.timestamp).toLocaleTimeString()}</span>
-                          </div>
+                return (
+                  <div className="space-y-3">
+                    <div className="flex items-center justify-between">
+                      <h4 className="text-xs font-bold uppercase tracking-wider text-slate-900">
+                        Official Submission History
+                      </h4>
+                      {bestSubmit && (
+                        <div className="flex items-center gap-2 text-xs font-semibold font-mono bg-emerald-50 text-emerald-800 px-2.5 py-1 rounded-lg border border-emerald-200">
+                          <span>Best Result:</span>
+                          <span className="font-bold">{bestSubmit.passedCount} / {bestSubmit.totalCount} Passed</span>
                         </div>
-                      ))}
+                      )}
                     </div>
-                  ) : (
-                    <p className="text-xs text-slate-400">No previous attempts recorded for this question.</p>
-                  )}
-                </div>
-              ) : execResult ? (() => {
+                    {submitAttempts.length > 0 ? (
+                      <div className="space-y-2">
+                        {submitAttempts.map((att: any, idx: number) => {
+                          const isBest = bestSubmit?.id === att.id || bestSubmit?.attemptNumber === att.attemptNumber;
+                          return (
+                            <div
+                              key={att.id || idx}
+                              className={`p-3 rounded-xl border flex items-center justify-between text-xs font-mono ${
+                                isBest ? "border-emerald-300 bg-emerald-50/30 shadow-2xs" : "border-slate-200 bg-slate-50"
+                              }`}
+                            >
+                              <div className="flex items-center gap-3">
+                                <span className="text-slate-500 font-bold">#{att.attemptNumber || idx + 1}</span>
+                                <span className="px-2 py-0.5 rounded text-[10px] font-bold uppercase bg-purple-100 text-purple-700 border border-purple-200">
+                                  SUBMISSION
+                                </span>
+                                <span
+                                  className={`font-semibold ${
+                                    att.status === "ACCEPTED" || att.status === "PASSED" || att.status === "SUCCESS"
+                                      ? "text-emerald-700"
+                                      : "text-rose-700"
+                                  }`}
+                                >
+                                  {att.status}
+                                </span>
+                                <span className="text-slate-500 font-sans capitalize">{att.language}</span>
+                                {isBest && (
+                                  <span className="text-[10px] font-sans font-bold px-1.5 py-0.5 rounded bg-amber-100 text-amber-800 border border-amber-300">
+                                    Best Result
+                                  </span>
+                                )}
+                              </div>
+
+                              <div className="flex items-center gap-4 text-slate-600">
+                                {att.totalCount > 0 && (
+                                  <span className="font-bold text-slate-900">
+                                    {att.passedCount} / {att.totalCount} passed
+                                  </span>
+                                )}
+                                <span>{new Date(att.timestamp).toLocaleTimeString()}</span>
+                              </div>
+                            </div>
+                          );
+                        })}
+                        <p className="text-[11px] text-slate-400 italic pt-1">
+                          * Run Code executions are temporary validation runs and are not recorded as attempts.
+                        </p>
+                      </div>
+                    ) : (
+                      <div className="p-6 rounded-xl border border-slate-200 bg-slate-50 text-center space-y-1">
+                        <p className="text-xs text-slate-600 font-medium">No official submissions recorded for this problem yet.</p>
+                        <p className="text-[11px] text-slate-400">
+                          Click <strong>Submit Solution</strong> to evaluate all visible test cases and record an authoritative attempt.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                );
+              })() : execResult ? (() => {
                 const isCompilationError =
                   execResult.errorType === 'COMPILATION_ERROR' ||
                   Boolean(execResult.compileOutput && execResult.compileOutput.trim());
@@ -1278,7 +1417,7 @@ export const CodingRound = ({
                                 maxHeight: '120px',
                               }}
                             >
-                              {r.input}
+                              {formatExampleText(r.input)}
                             </pre>
                           </div>
                         )}
@@ -1297,7 +1436,7 @@ export const CodingRound = ({
                               maxHeight: '120px',
                             }}
                           >
-                            {expectedText ?? r.expected ?? '—'}
+                            {formatExampleText(expectedText ?? r.expected ?? '—')}
                           </pre>
                         </div>
 
@@ -1426,19 +1565,32 @@ export const CodingRound = ({
                     {/* CASE 1: ALL TESTS PASS */}
                     {allPass && (
                       <div className="p-5 rounded-xl border border-emerald-200 bg-emerald-50/70 space-y-3">
-                        <div className="flex items-center gap-2.5">
-                          <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
-                          <div>
-                            <h3 className="text-base font-bold text-emerald-950">
-                              ✅ {execResult.runMode === 'RUN' ? 'Passed' : 'Accepted'}
-                            </h3>
-                            <p className="text-xs font-semibold text-emerald-800 font-mono">
-                              {passedCount} / {totalCount} Test Cases Passed
-                            </p>
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2.5">
+                            <CheckCircle2 className="w-6 h-6 text-emerald-600 shrink-0" />
+                            <div>
+                              <div className="flex items-center gap-2">
+                                <h3 className="text-base font-bold text-emerald-950">
+                                  {execResult.runMode === 'RUN' ? '✅ Run Code Passed' : '✅ Accepted'}
+                                </h3>
+                                <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                                  execResult.runMode === 'RUN'
+                                    ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                    : 'bg-emerald-100 text-emerald-800 border border-emerald-300'
+                                }`}>
+                                  {execResult.runMode === 'RUN' ? 'Run Result (First 2 Tests)' : 'Official Submission'}
+                                </span>
+                              </div>
+                              <p className="text-xs font-semibold text-emerald-800 font-mono">
+                                {passedCount} / {totalCount} Test Cases Passed
+                              </p>
+                            </div>
                           </div>
                         </div>
                         <p className="text-xs text-emerald-700 leading-relaxed font-medium">
-                          All test cases passed successfully.
+                          {execResult.runMode === 'RUN'
+                            ? 'The first 2 visible test cases passed. This is a quick validation run only. Click "Submit Solution" to run all visible test cases and record your official submission.'
+                            : 'All visible test cases passed successfully. Official submission recorded.'}
                         </p>
                         {totalCount > 0 && (
                           <button
@@ -1460,14 +1612,28 @@ export const CodingRound = ({
                     {execResult.success && totalCount > 0 && !allPass && !isCompilationError && !isTle && !isRuntimeError && (
                       <div className="space-y-3">
                         <div className="p-4 rounded-xl border border-rose-200 bg-rose-50/70 space-y-2">
-                          <div className="flex items-center gap-2 text-sm font-bold text-rose-900">
-                            <XCircle className="w-5 h-5 text-rose-600 shrink-0" />
-                            <span>❌ Wrong Answer</span>
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-2 text-sm font-bold text-rose-900">
+                              <XCircle className="w-5 h-5 text-rose-600 shrink-0" />
+                              <span>{execResult.runMode === 'RUN' ? '❌ Run Code Failed' : '❌ Wrong Answer'}</span>
+                            </div>
+                            <span className={`px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                              execResult.runMode === 'RUN'
+                                ? 'bg-amber-100 text-amber-800 border border-amber-300'
+                                : 'bg-purple-100 text-purple-800 border border-purple-300'
+                            }`}>
+                              {execResult.runMode === 'RUN' ? 'Run Result (First 2 Tests)' : 'Official Submission'}
+                            </span>
                           </div>
                           <div className="flex items-center gap-4 text-xs font-semibold font-mono">
                             <span className="text-emerald-700">✓ {passedCount} / {totalCount} Test Cases Passed</span>
                             <span className="text-rose-700">✗ {totalCount - passedCount} / {totalCount} Test Cases Failed</span>
                           </div>
+                          {execResult.runMode === 'RUN' && (
+                            <p className="text-[11px] text-amber-900 font-medium pt-1">
+                              Note: Run Code evaluated only the first 2 visible test cases for quick validation. Fix issues and test again or submit your solution.
+                            </p>
+                          )}
                         </div>
 
                         {/* For EVERY failed test case, show Test Case #N, Input, Expected Output, Your Output */}

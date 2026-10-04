@@ -4,7 +4,7 @@ import { AuthGuard } from './AuthGuard';
 import { RoleGuard } from './RoleGuard';
 
 // Public & Auth Pages
-import LandingPage from '../pages/public/LandingPage';
+const LandingPage = React.lazy(() => import('../pages/public/LandingPage'));
 import Login from '../pages/auth/Login';
 import Register from '../pages/auth/Register';
 const Unauthorized = () => (
@@ -31,10 +31,6 @@ const AuthLayout = () => (
     <Outlet />
   </div>
 );
-
-// Shared Pages
-import { ComingSoon } from '../components/shared/ComingSoon';
-const Analytics = () => <ComingSoon title="Analytics" />;
 
 // Student Pages
 import StudentDashboard from '../pages/dashboard/StudentDashboard';
@@ -67,7 +63,12 @@ import { FacultyProfile } from '../pages/faculty/FacultyProfile';
 // Admin Pages
 import AdminDashboard from '../pages/dashboard/AdminDashboard';
 import { AdminUsers } from '../pages/admin/AdminUsers';
-const AdminDatasets = () => <ComingSoon title="Dataset Management" />;
+import { AdminQuestionBank } from '../pages/admin/AdminQuestionBank';
+import { AdminReports } from '../pages/admin/AdminReports';
+import { AdminSettings } from '../pages/admin/AdminSettings';
+import { AdminDatasets } from '../pages/admin/AdminDatasets';
+import { AdminSystem } from '../pages/admin/AdminSystem';
+import { AdminAnalytics } from '../pages/admin/AdminAnalytics';
 
 // Interview Pages
 import { InterviewLobby } from '../features/interview/pages/InterviewLobby';
@@ -85,7 +86,11 @@ const LoadingFallback = () => (
 const router = createBrowserRouter([
   {
     path: '/',
-    element: <LandingPage />,
+    element: (
+      <Suspense fallback={<LoadingFallback />}>
+        <LandingPage />
+      </Suspense>
+    ),
   },
   {
     element: <AuthLayout />,
@@ -145,6 +150,7 @@ const router = createBrowserRouter([
               { path: 'questions', element: <FacultyQuestionBank /> },
               { path: 'templates', element: <FacultyTemplates /> },
               { path: 'interviews', element: <FacultyInterviews /> },
+              { path: 'interviews/summary/:id', element: <InterviewSummary /> },
               { path: 'analytics', element: <FacultyAnalytics /> },
               { path: 'reports', element: <FacultyReports /> },
               { path: 'profile', element: <FacultyProfile /> },
@@ -158,7 +164,7 @@ const router = createBrowserRouter([
       // ----------------------------------------------------
       {
         path: 'admin',
-        element: <RoleGuard allowedRoles={['ADMINISTRATOR']} />,
+        element: <RoleGuard allowedRoles={['ADMINISTRATOR', 'ADMIN']} />,
         children: [
           {
             element: <PortalLayout />,
@@ -166,12 +172,15 @@ const router = createBrowserRouter([
               { index: true, element: <Navigate to="dashboard" replace /> },
               { path: 'dashboard', element: <AdminDashboard /> },
               { path: 'users', element: <AdminUsers /> },
+              { path: 'questions', element: <AdminQuestionBank /> },
+              { path: 'question-bank', element: <AdminQuestionBank /> },
+              { path: 'reports', element: <AdminReports /> },
+              { path: 'interviews/summary/:id', element: <InterviewSummary /> },
+              { path: 'students/:studentId', element: <FacultyStudentDetail /> },
               { path: 'datasets', element: <AdminDatasets /> },
-              { path: 'questions', element: <ComingSoon title="Question Bank" /> },
-              { path: 'system', element: <ComingSoon title="System Config" /> },
-              { path: 'analytics', element: <Analytics /> },
-              { path: 'reports', element: <ComingSoon title="Reports" /> },
-              { path: 'settings', element: <ComingSoon title="Settings" /> },
+              { path: 'system', element: <AdminSystem /> },
+              { path: 'analytics', element: <AdminAnalytics /> },
+              { path: 'settings', element: <AdminSettings /> },
             ],
           }
         ],

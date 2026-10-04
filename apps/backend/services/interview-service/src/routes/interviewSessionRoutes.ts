@@ -21,6 +21,10 @@ const getIdentityId = (req: express.Request): string => {
   return (req.headers['x-identity-id'] as string) || '';
 };
 
+const getUserRole = (req: express.Request): string => {
+  return (req.headers['x-user-role'] as string) || '';
+};
+
 // ─── 1. SESSION INITIALIZATION & RESUME ──────────────────────────────────────
 
 // Start or resume generic Practice Session
@@ -135,12 +139,13 @@ interviewSessionRouter.post('/:id/tab-switch', async (req, res) => {
             durationSeconds: dur,
           },
         });
-      } else if (leftAt) {
-        const awayTime = new Date(leftAt);
+      } else {
+        // Fallback: If no open event was found, create completed switch record
         const dur =
           typeof durationSeconds === 'number' && durationSeconds > 0
             ? durationSeconds
-            : Math.max(1, Math.round((returnTime.getTime() - awayTime.getTime()) / 1000));
+            : 1;
+        const awayTime = leftAt ? new Date(leftAt) : new Date(returnTime.getTime() - dur * 1000);
         await (prisma as any).interviewTabSwitchEvent.create({
           data: {
             sessionId,
@@ -159,7 +164,6 @@ interviewSessionRouter.post('/:id/tab-switch', async (req, res) => {
           { interviewId: req.params.id },
           { sessionId },
         ],
-        returnedAt: { not: null },
       },
     });
     const tabSwitchesCount = allSwitches.length;
@@ -511,7 +515,8 @@ interviewSessionRouter.post('/:id/finalize', async (req, res) => {
 interviewSessionRouter.get('/:id/report', async (req, res) => {
   try {
     const identityId = getIdentityId(req);
-    const report = await ReportService.getReport(req.params.id, identityId);
+    const userRole = getUserRole(req);
+    const report = await ReportService.getReport(req.params.id, identityId, userRole);
     res.json(report);
   } catch (err: any) {
     console.error('Failed to get report:', err);
@@ -525,12 +530,14 @@ interviewSessionRouter.get('/:id/report', async (req, res) => {
 interviewSessionRouter.post('/:id/report/chat', async (req, res) => {
   try {
     const identityId = getIdentityId(req);
+    const userRole = getUserRole(req);
     const { message, displayContent } = req.body;
     const response = await ReportChatService.handleChatQuery(
       req.params.id,
       identityId,
       message,
-      displayContent
+      displayContent,
+      userRole
     );
     res.json({ success: true, data: response });
   } catch (err: any) {
@@ -546,7 +553,8 @@ interviewSessionRouter.post('/:id/report/chat', async (req, res) => {
 interviewSessionRouter.get('/:id/report/chat', async (req, res) => {
   try {
     const identityId = getIdentityId(req);
-    const history = await ReportChatService.getChatHistory(req.params.id, identityId);
+    const userRole = getUserRole(req);
+    const history = await ReportChatService.getChatHistory(req.params.id, identityId, userRole);
     res.json({ success: true, data: history });
   } catch (err: any) {
     console.error('Failed to get report chat history:', err);

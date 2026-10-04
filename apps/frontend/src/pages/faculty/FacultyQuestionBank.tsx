@@ -10,9 +10,6 @@ import {
   AlertCircle,
   Archive,
 } from 'lucide-react';
-import { Card } from '../../components/ui/card';
-import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
 import { Skeleton } from '../../components/ui/skeleton';
 import {
   useQuestions,
@@ -44,7 +41,7 @@ export const FacultyQuestionBank: React.FC = () => {
     categoryId: category !== 'ALL' ? category : undefined,
     status: status !== 'ALL' ? status : undefined,
     page,
-    limit: 15,
+    limit: 10,
   };
 
   const { data: questionsRes, isLoading, isError, error, refetch, isFetching } = useQuestions(queryParams);
@@ -78,65 +75,74 @@ export const FacultyQuestionBank: React.FC = () => {
     }
   };
 
+  const hasActiveFilters = Boolean(search.trim() || difficulty !== 'ALL' || category !== 'ALL' || status !== 'ALL');
+
+  const handleResetFilters = () => {
+    setSearch('');
+    setDifficulty('ALL');
+    setCategory('ALL');
+    setStatus('ALL');
+    setPage(1);
+  };
+
   return (
-    <div className="space-y-6 md:space-y-8 max-w-7xl mx-auto w-full pb-12">
+    <div className="w-full max-w-7xl mx-auto space-y-6 pb-12 min-w-0">
       {/* ── 1. Page Header ─────────────────────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border/60 pb-5">
-        <div className="space-y-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-text-primary">
+      <div className="w-full flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-border pb-5">
+        <div className="space-y-1 text-left">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
               Question Bank
             </h1>
             {pagination && (
-              <span className="px-2.5 py-0.5 text-xs font-semibold bg-accent/10 border border-accent/20 text-accent rounded-full font-mono">
-                Total: {pagination.total}
+              <span className="inline-flex items-center px-2.5 py-0.5 text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200/80 rounded-full font-mono">
+                {pagination.total} Questions
               </span>
             )}
           </div>
-          <p className="text-xs md:text-sm text-text-secondary">
-            Create, manage, and organize coding questions for student assessments.
+          <p className="text-xs sm:text-sm text-slate-500 max-w-2xl leading-relaxed">
+            Create, manage, organize, and maintain the coding question library used for technical assessments.
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
-          <Button
-            variant="outline"
-            size="sm"
+        {/* Buttons aligned to right */}
+        <div className="flex items-center gap-2.5 shrink-0 self-end sm:self-center">
+          <button
+            type="button"
             onClick={() => refetch()}
             disabled={isFetching}
-            className="gap-1.5 text-xs cursor-pointer"
+            className="h-9 px-3.5 rounded-lg border border-border bg-white hover:bg-surface-hover text-text-primary inline-flex items-center justify-center gap-2 cursor-pointer shadow-2xs transition-colors disabled:opacity-50 text-xs sm:text-sm font-semibold"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
-            Refresh
-          </Button>
+            <RefreshCw className={`h-3.5 w-3.5 text-text-muted ${isFetching ? 'animate-spin' : ''}`} />
+            <span>Refresh</span>
+          </button>
 
-          <Button
-            variant="default"
-            size="sm"
+          <button
+            type="button"
             onClick={handleOpenCreate}
-            className="gap-1.5 text-xs cursor-pointer shadow-sm"
+            className="h-9 px-3.5 rounded-lg bg-blue-600 hover:bg-blue-700 text-white inline-flex items-center justify-center gap-2 cursor-pointer shadow-xs transition-colors text-xs sm:text-sm font-semibold"
           >
-            <Plus className="h-4 w-4" />
-            Create Question
-          </Button>
+            <Plus className="h-4 w-4 stroke-[2.5]" />
+            <span>Create Question</span>
+          </button>
         </div>
       </div>
 
-      {/* ── 2. Search & Filters Bar ────────────────────────────────────────── */}
-      <Card className="p-4 bg-surface border-border">
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* ── 2. Filter Bar ─────────────────────────────────────────────────── */}
+      <div className="bg-white border border-border rounded-xl shadow-xs p-3.5 w-full">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[minmax(320px,1.5fr)_160px_220px_160px] items-center gap-3 w-full">
           {/* Search Input */}
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
-            <Input
+          <div className="relative w-full">
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted pointer-events-none" />
+            <input
               type="text"
-              placeholder="Search by title, topic, or keyword..."
+              placeholder="Search questions by title, keyword, or topic..."
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
                 setPage(1);
               }}
-              className="pl-9 text-xs"
+              className="w-full h-10 pl-9 pr-4 text-xs sm:text-sm rounded-lg border border-border bg-white text-text-primary placeholder:text-text-muted focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors shadow-2xs"
             />
           </div>
 
@@ -148,9 +154,9 @@ export const FacultyQuestionBank: React.FC = () => {
                 setDifficulty(e.target.value);
                 setPage(1);
               }}
-              className="w-full h-9 rounded-lg border border-border bg-surface-elevated px-3 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+              className="w-full h-10 rounded-lg border border-border bg-white px-3 text-xs sm:text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors shadow-2xs cursor-pointer"
             >
-              <option value="ALL">All Difficulties</option>
+              <option value="ALL">Difficulty: All</option>
               <option value="EASY">Easy</option>
               <option value="MEDIUM">Medium</option>
               <option value="HARD">Hard</option>
@@ -166,9 +172,9 @@ export const FacultyQuestionBank: React.FC = () => {
                 setCategory(e.target.value);
                 setPage(1);
               }}
-              className="w-full h-9 rounded-lg border border-border bg-surface-elevated px-3 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+              className="w-full h-10 rounded-lg border border-border bg-white px-3 text-xs sm:text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors shadow-2xs cursor-pointer truncate"
             >
-              <option value="ALL">All Categories</option>
+              <option value="ALL">Category: All</option>
               {categories?.map((cat: any) => (
                 <option key={cat.id} value={cat.id}>
                   {cat.name} ({cat._count?.questions || 0})
@@ -185,39 +191,53 @@ export const FacultyQuestionBank: React.FC = () => {
                 setStatus(e.target.value);
                 setPage(1);
               }}
-              className="w-full h-9 rounded-lg border border-border bg-surface-elevated px-3 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+              className="w-full h-10 rounded-lg border border-border bg-white px-3 text-xs sm:text-sm text-text-primary focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-colors shadow-2xs cursor-pointer"
             >
-              <option value="ALL">All Statuses</option>
+              <option value="ALL">Status: All</option>
               <option value="PUBLISHED">Published</option>
               <option value="DRAFT">Draft</option>
               <option value="ARCHIVED">Archived</option>
             </select>
           </div>
         </div>
-      </Card>
+
+        {hasActiveFilters && (
+          <div className="mt-3 pt-3 border-t border-border-subtle flex items-center justify-between text-xs text-text-muted">
+            <span>Filters applied to question repository</span>
+            <button
+              onClick={handleResetFilters}
+              className="text-blue-600 hover:text-blue-700 font-medium hover:underline cursor-pointer"
+            >
+              Reset all filters
+            </button>
+          </div>
+        )}
+      </div>
 
       {/* ── 3. Loading State ──────────────────────────────────────────────── */}
       {isLoading && (
-        <Card className="p-6 space-y-4">
-          <div className="space-y-3">
-            {Array.from({ length: 5 }).map((_, i) => (
-              <Skeleton key={i} className="h-16 w-full rounded-xl" />
-            ))}
-          </div>
-        </Card>
+        <div className="rounded-xl border border-border bg-white shadow-xs p-6 space-y-4">
+          <Skeleton className="h-10 w-full rounded-lg bg-slate-100" />
+          {Array.from({ length: 6 }).map((_, i) => (
+            <Skeleton key={i} className="h-16 w-full rounded-lg bg-slate-100" />
+          ))}
+        </div>
       )}
 
       {/* ── 4. Error State ────────────────────────────────────────────────── */}
       {isError && (
-        <div className="p-8 text-center space-y-3 bg-rose-500/10 border border-rose-500/20 rounded-2xl">
-          <AlertCircle className="h-6 w-6 text-rose-400 mx-auto" />
+        <div className="p-8 text-center space-y-3 bg-rose-50 border border-rose-200 rounded-xl">
+          <AlertCircle className="h-6 w-6 text-rose-500 mx-auto" />
           <h3 className="text-sm font-semibold text-text-primary">Failed to load question repository</h3>
           <p className="text-xs text-text-secondary max-w-md mx-auto">
             {(error as any)?.response?.data?.error?.message || (error as any)?.message}
           </p>
-          <Button onClick={() => refetch()} variant="outline" size="sm" className="mt-2">
+          <button 
+            onClick={() => refetch()} 
+            className="mt-2 text-xs px-3 py-1.5 rounded-lg border border-border bg-white hover:bg-surface-hover text-text-primary cursor-pointer font-medium"
+          >
             Try Again
-          </Button>
+          </button>
         </div>
       )}
 
@@ -225,202 +245,196 @@ export const FacultyQuestionBank: React.FC = () => {
       {!isLoading && !isError && questionsRes && (
         <>
           {questions.length > 0 ? (
-            <div className="space-y-4">
-              <Card className="overflow-hidden border-border bg-surface">
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs">
-                    <thead>
-                      <tr className="border-b border-border bg-surface-elevated/60 text-text-muted uppercase text-[10px] tracking-wider font-mono">
-                        <th className="py-3 px-4 font-medium">Question</th>
-                        <th className="py-3 px-4 font-medium">Difficulty</th>
-                        <th className="py-3 px-4 font-medium">Category / Topic</th>
-                        <th className="py-3 px-4 font-medium">Execution Mode</th>
-                        <th className="py-3 px-4 font-medium">Test Cases</th>
-                        <th className="py-3 px-4 font-medium">Status</th>
-                        <th className="py-3 px-4 font-medium text-right">Actions</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-border/40">
-                      {questions.map((q: any) => {
-                        const payload = q.metadata?.jsonPayload || {};
-                        const execMode = payload.execution?.executionMode || 'STANDARD_IO';
-                        const stats = q.testCaseStats || {
-                          total: payload.testCases?.length || 0,
-                          visibleCount: payload.testCases?.filter((tc: any) => tc.visibility !== 'HIDDEN' && !tc.isHidden).length || 0,
-                          hiddenCount: payload.testCases?.filter((tc: any) => tc.visibility === 'HIDDEN' || tc.isHidden).length || 0,
-                        };
+            <div className="rounded-xl border border-border bg-white shadow-xs overflow-hidden w-full">
+              <div className="overflow-x-auto w-full">
+                <table className="w-full border-collapse table-fixed min-w-[920px]">
+                  <thead>
+                    <tr className="border-b border-border bg-surface-elevated/70 text-text-muted uppercase font-mono h-11 text-[11px] sm:text-[12px] font-semibold tracking-wider">
+                      <th className="px-4 text-left align-middle" style={{ width: '38%' }}>Question</th>
+                      <th className="px-4 text-left align-middle" style={{ width: '9%' }}>Difficulty</th>
+                      <th className="px-4 text-left align-middle" style={{ width: '15%' }}>Category</th>
+                      <th className="px-4 text-left align-middle" style={{ width: '11%' }}>Execution Mode</th>
+                      <th className="px-4 text-left align-middle" style={{ width: '10%' }}>Test Cases</th>
+                      <th className="px-4 text-left align-middle" style={{ width: '9%' }}>Status</th>
+                      <th className="px-4 text-center align-middle" style={{ width: '8%' }}>Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border/60">
+                    {questions.map((q: any) => {
+                      const payload = q.metadata?.jsonPayload || {};
+                      const execMode = payload.execution?.executionMode || 'STANDARD_IO';
+                      const stats = q.testCaseStats || {
+                        total: payload.testCases?.length || 0,
+                        visibleCount: payload.testCases?.filter((tc: any) => tc.visibility !== 'HIDDEN' && !tc.isHidden).length || 0,
+                        hiddenCount: payload.testCases?.filter((tc: any) => tc.visibility === 'HIDDEN' || tc.isHidden).length || 0,
+                      };
 
-                        return (
-                          <tr
-                            key={q.id}
-                            className="hover:bg-surface-elevated/40 transition-colors group cursor-pointer"
-                            onClick={() => handleOpenView(q)}
-                          >
-                            {/* Title & Preview */}
-                            <td className="py-3 px-4 max-w-[260px]">
-                              <div className="font-semibold text-text-primary truncate">
-                                {q.title}
-                              </div>
-                              <div className="text-[11px] text-text-muted truncate">
-                                {q.description}
-                              </div>
-                            </td>
+                      return (
+                        <tr
+                          key={q.id}
+                          className="hover:bg-slate-50/80 transition-colors group cursor-pointer h-[60px]"
+                          onClick={() => handleOpenView(q)}
+                        >
+                          {/* 1. Question (38% - left aligned) */}
+                          <td className="py-2.5 px-4 align-middle text-left">
+                            <div className="text-[14px] font-semibold text-text-primary group-hover:text-blue-600 transition-colors line-clamp-1 leading-snug">
+                              {q.title}
+                            </div>
+                            <div className="text-[12px] sm:text-[13px] text-text-muted line-clamp-1 mt-0.5 leading-normal">
+                              {q.description || 'No description provided.'}
+                            </div>
+                          </td>
 
-                            {/* Difficulty */}
-                            <td className="py-3 px-4">
-                              <span
-                                className={`inline-block px-2.5 py-0.5 text-[10px] font-bold rounded-full uppercase ${
-                                  q.difficulty === 'EASY'
-                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                    : q.difficulty === 'HARD' || q.difficulty === 'EXPERT'
-                                    ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                                    : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                                }`}
+                          {/* 2. Difficulty (9% - left aligned) */}
+                          <td className="py-2.5 px-4 align-middle text-left">
+                            <span
+                              className={`inline-flex items-center justify-center uppercase tracking-wider border rounded-full h-6 px-2.5 text-[11px] sm:text-[12px] font-semibold ${
+                                q.difficulty === 'EASY'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : q.difficulty === 'HARD' || q.difficulty === 'EXPERT'
+                                  ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                  : 'bg-amber-50 text-amber-700 border-amber-200'
+                              }`}
+                            >
+                              {q.difficulty}
+                            </span>
+                          </td>
+
+                          {/* 3. Category (15% - left aligned) */}
+                          <td className="py-2.5 px-4 align-middle text-left">
+                            <div className="text-[13px] font-medium text-text-primary leading-tight">
+                              {q.category?.name || 'Programming'}
+                            </div>
+                            <div className="text-[12px] text-text-muted leading-tight mt-0.5">
+                              {q.topic?.name || 'General'}
+                            </div>
+                          </td>
+
+                          {/* 4. Execution Mode (11% - left aligned) */}
+                          <td className="py-2.5 px-4 align-middle text-left">
+                            <span className="inline-flex items-center justify-center font-mono rounded-md bg-slate-100 border border-slate-200 text-slate-700 h-6 px-2 text-[11px] sm:text-[12px] font-medium">
+                              {execMode}
+                            </span>
+                          </td>
+
+                          {/* 5. Test Cases (10% - left aligned) */}
+                          <td className="py-2.5 px-4 align-middle text-left">
+                            <div className="text-[13px] font-medium text-text-primary leading-tight">
+                              {stats.visibleCount} Visible
+                            </div>
+                            <div className="text-[12px] text-text-muted leading-tight mt-0.5">
+                              {stats.hiddenCount} Hidden
+                            </div>
+                          </td>
+
+                          {/* 6. Status (9% - left aligned) */}
+                          <td className="py-2.5 px-4 align-middle text-left">
+                            <span
+                              className={`inline-flex items-center justify-center uppercase tracking-wider border rounded-full h-6 px-2.5 text-[11px] sm:text-[12px] font-semibold ${
+                                q.status === 'PUBLISHED'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                  : q.status === 'DRAFT'
+                                  ? 'bg-amber-50 text-amber-700 border-amber-200'
+                                  : 'bg-slate-100 text-slate-600 border-slate-200'
+                              }`}
+                            >
+                              {q.status}
+                            </span>
+                          </td>
+
+                          {/* 7. Actions (8% - center aligned) */}
+                          <td className="py-2.5 px-4 align-middle text-center">
+                            <div
+                              className="inline-flex items-center justify-center gap-1"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <button
+                                type="button"
+                                className="h-8 w-8 rounded-lg border border-transparent hover:border-border hover:bg-slate-100 text-text-muted hover:text-text-primary inline-flex items-center justify-center transition-colors cursor-pointer focus:outline-none"
+                                onClick={() => handleOpenView(q)}
+                                title="View Question Details"
+                                aria-label="View Question"
                               >
-                                {q.difficulty}
-                              </span>
-                            </td>
+                                <Eye className="h-[18px] w-[18px]" />
+                              </button>
 
-                            {/* Category / Topic */}
-                            <td className="py-3 px-4">
-                              <div className="font-medium text-text-secondary truncate max-w-[150px]">
-                                {q.category?.name || 'Programming'}
-                              </div>
-                              {q.topic?.name && (
-                                <div className="text-[11px] text-text-muted truncate max-w-[150px]">
-                                  {q.topic.name}
-                                </div>
-                              )}
-                            </td>
-
-                            {/* Execution Mode */}
-                            <td className="py-3 px-4">
-                              <span className="px-2 py-0.5 text-[10px] font-mono rounded-md bg-accent/10 border border-accent/20 text-accent">
-                                {execMode}
-                              </span>
-                            </td>
-
-                            {/* Test Cases */}
-                            <td className="py-3 px-4 font-mono text-[11px]">
-                              <span className="text-emerald-400">{stats.visibleCount} Vis</span>
-                              <span className="text-text-muted"> / </span>
-                              <span className="text-amber-400">{stats.hiddenCount} Hid</span>
-                            </td>
-
-                            {/* Status */}
-                            <td className="py-3 px-4">
-                              <span
-                                className={`inline-block px-2.5 py-0.5 text-[10px] font-semibold rounded-full uppercase tracking-wider ${
-                                  q.status === 'PUBLISHED'
-                                    ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                    : q.status === 'DRAFT'
-                                    ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                                    : 'bg-zinc-500/10 text-zinc-400 border border-zinc-500/20'
-                                }`}
+                              <button
+                                type="button"
+                                className="h-8 w-8 rounded-lg border border-transparent hover:border-blue-200 hover:bg-blue-50 text-text-muted hover:text-blue-600 inline-flex items-center justify-center transition-colors cursor-pointer focus:outline-none"
+                                onClick={() => handleOpenEdit(q)}
+                                title="Edit Question"
+                                aria-label="Edit Question"
                               >
-                                {q.status}
-                              </span>
-                            </td>
+                                <Edit2 className="h-[18px] w-[18px]" />
+                              </button>
 
-                            {/* Action Buttons */}
-                            <td className="py-3 px-4 text-right">
-                              <div
-                                className="flex items-center justify-end gap-1.5"
-                                onClick={(e) => e.stopPropagation()}
+                              <button
+                                type="button"
+                                className="h-8 w-8 rounded-lg border border-transparent hover:border-rose-200 hover:bg-rose-50 text-text-muted hover:text-rose-600 inline-flex items-center justify-center transition-colors cursor-pointer focus:outline-none"
+                                onClick={() => setDeletingQuestion(q)}
+                                title="Archive Question"
+                                aria-label="Archive Question"
                               >
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 w-7 p-0 text-text-muted hover:text-text-primary"
-                                  onClick={() => handleOpenView(q)}
-                                  title="View Question Details"
-                                >
-                                  <Eye className="h-3.5 w-3.5" />
-                                </Button>
+                                <Trash2 className="h-[18px] w-[18px]" />
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })}
+                  </tbody>
+                </table>
+              </div>
 
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 w-7 p-0 text-text-muted hover:text-accent"
-                                  onClick={() => handleOpenEdit(q)}
-                                  title="Edit Question"
-                                >
-                                  <Edit2 className="h-3.5 w-3.5" />
-                                </Button>
-
-                                <Button
-                                  variant="ghost"
-                                  size="sm"
-                                  className="h-7 w-7 p-0 text-text-muted hover:text-rose-400"
-                                  onClick={() => setDeletingQuestion(q)}
-                                  title="Archive / Delete"
-                                >
-                                  <Trash2 className="h-3.5 w-3.5" />
-                                </Button>
-                              </div>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+              {/* Pagination Footer */}
+              <div className="py-3 px-4 bg-surface-elevated/50 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs sm:text-sm text-text-secondary">
+                <div>
+                  Showing questions <span className="font-semibold text-text-primary font-mono">{(pagination.page - 1) * queryParams.limit! + 1}</span> to{' '}
+                  <span className="font-semibold text-text-primary font-mono">
+                    {Math.min(pagination.page * queryParams.limit!, pagination.total)}
+                  </span>{' '}
+                  of <span className="font-semibold text-text-primary font-mono">{pagination.total}</span> questions
                 </div>
-              </Card>
-
-              {/* Pagination Bar */}
-              {pagination.totalPages > 1 && (
-                <div className="flex items-center justify-between px-2 text-xs text-text-muted">
-                  <div>
-                    Showing page <span className="font-semibold text-text-primary">{pagination.page}</span> of{' '}
-                    <span className="font-semibold text-text-primary">{pagination.totalPages}</span>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page <= 1}
-                      onClick={() => setPage(page - 1)}
-                      className="text-xs h-8"
-                    >
-                      Previous
-                    </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      disabled={page >= pagination.totalPages}
-                      onClick={() => setPage(page + 1)}
-                      className="text-xs h-8"
-                    >
-                      Next
-                    </Button>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    disabled={page <= 1}
+                    onClick={() => setPage(page - 1)}
+                    className="h-8 px-3 rounded-lg border border-border bg-white hover:bg-surface-hover text-text-primary disabled:opacity-50 cursor-pointer shadow-2xs transition-colors text-xs font-semibold"
+                  >
+                    Previous
+                  </button>
+                  <span className="text-xs font-mono text-text-muted px-1">
+                    Page {pagination.page} of {pagination.totalPages}
+                  </span>
+                  <button
+                    type="button"
+                    disabled={page >= pagination.totalPages}
+                    onClick={() => setPage(page + 1)}
+                    className="h-8 px-3 rounded-lg border border-border bg-white hover:bg-surface-hover text-text-primary disabled:opacity-50 cursor-pointer shadow-2xs transition-colors text-xs font-semibold"
+                  >
+                    Next
+                  </button>
                 </div>
-              )}
+              </div>
             </div>
           ) : (
-            <Card className="p-12 text-center bg-surface border-border">
+            <div className="p-12 text-center bg-white border border-border rounded-xl shadow-xs">
               <div className="space-y-3 max-w-sm mx-auto">
-                <BookOpen className="h-8 w-8 text-text-muted mx-auto opacity-50" />
-                <h3 className="text-sm font-semibold text-text-primary">No questions found</h3>
-                <p className="text-xs text-text-secondary">
+                <BookOpen className="h-10 w-10 text-text-muted mx-auto opacity-50" />
+                <h3 className="text-sm sm:text-base font-semibold text-text-primary">No questions found</h3>
+                <p className="text-xs sm:text-sm text-text-secondary leading-normal">
                   No questions match your current search and filter criteria.
                 </p>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => {
-                    setSearch('');
-                    setDifficulty('ALL');
-                    setCategory('ALL');
-                    setStatus('ALL');
-                    setPage(1);
-                  }}
-                  className="text-xs"
+                <button
+                  type="button"
+                  onClick={handleResetFilters}
+                  className="text-xs sm:text-sm h-9 px-4 rounded-lg border border-border bg-white hover:bg-surface-hover text-text-primary font-medium cursor-pointer"
                 >
                   Reset Filters
-                </Button>
+                </button>
               </div>
-            </Card>
+            </div>
           )}
         </>
       )}
@@ -446,10 +460,10 @@ export const FacultyQuestionBank: React.FC = () => {
 
       {/* ── Safe Delete / Archive Confirmation Dialog ──────────────────────── */}
       {deletingQuestion && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-surface border border-border shadow-xl rounded-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95">
-            <div className="flex items-center gap-3 text-rose-400">
-              <div className="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center border border-rose-500/20 shrink-0">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-border shadow-2xl rounded-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center border border-rose-200 shrink-0">
                 <Archive className="h-5 w-5" />
               </div>
               <div>
@@ -458,30 +472,28 @@ export const FacultyQuestionBank: React.FC = () => {
               </div>
             </div>
 
-            <p className="text-xs text-text-secondary leading-relaxed">
+            <p className="text-xs sm:text-sm text-text-secondary leading-relaxed">
               Are you sure you want to archive{' '}
               <strong className="text-text-primary">"{deletingQuestion.title}"</strong>?
               Archiving disables new attempts while preserving past student evaluation history and compiler benchmarks.
             </p>
 
-            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-border/60">
-              <Button
-                variant="ghost"
-                size="sm"
-                className="text-xs"
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-border-subtle">
+              <button
+                type="button"
+                className="text-xs sm:text-sm text-text-secondary hover:text-text-primary h-9 px-4 rounded-lg cursor-pointer font-medium"
                 onClick={() => setDeletingQuestion(null)}
               >
                 Cancel
-              </Button>
-              <Button
-                variant="destructive"
-                size="sm"
-                className="text-xs gap-1.5"
+              </button>
+              <button
+                type="button"
+                className="text-xs sm:text-sm h-9 px-4 gap-1.5 bg-rose-600 hover:bg-rose-700 text-white rounded-lg cursor-pointer font-semibold"
                 disabled={deleteMutation.isPending}
                 onClick={handleConfirmDelete}
               >
                 {deleteMutation.isPending ? 'Archiving...' : 'Confirm Archive'}
-              </Button>
+              </button>
             </div>
           </div>
         </div>

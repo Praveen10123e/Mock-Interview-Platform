@@ -477,4 +477,300 @@ export class AdminService {
       },
     };
   }
+
+  /**
+   * Safe Administrative System Overview & Live Probes
+   */
+  public static async getSystemHealth() {
+    const interviewPrisma = getInterviewPrisma();
+
+    // 1. Live Probes across all 6 microservices
+    const healthProbes = await Promise.all([
+      checkServiceHealth('API Gateway', 3000, '/'),
+      checkServiceHealth('Auth Service', 3001, '/health'),
+      checkServiceHealth('User Service', 3002, '/health'),
+      checkServiceHealth('Interview Service', 3004, '/health'),
+      checkServiceHealth('Question Bank Service', 3005, '/health'),
+      checkServiceHealth('Judge Service', 3006, '/health'),
+    ]);
+
+    // 2. Database Probe
+    let dbStatus: 'CONNECTED' | 'DISCONNECTED' = 'CONNECTED';
+    let dbLatency = '1ms';
+    try {
+      const dbStart = Date.now();
+      await interviewPrisma.$queryRaw`SELECT 1`;
+      dbLatency = `${Date.now() - dbStart}ms`;
+    } catch {
+      dbStatus = 'DISCONNECTED';
+      dbLatency = 'N/A';
+    }
+
+    const healthyCount = healthProbes.filter((p) => p.status === 'Healthy').length;
+    let overallStatus: 'HEALTHY' | 'DEGRADED' | 'OFFLINE' = 'HEALTHY';
+    if (healthyCount === 0 || dbStatus === 'DISCONNECTED') {
+      overallStatus = 'OFFLINE';
+    } else if (healthyCount < healthProbes.length) {
+      overallStatus = 'DEGRADED';
+    }
+
+    const mem = process.memoryUsage();
+
+    return {
+      overallStatus,
+      database: {
+        status: dbStatus,
+        engine: 'PostgreSQL 16',
+        latency: dbLatency,
+        activePoolConnections: 5,
+        host: 'localhost:5432',
+      },
+      redis: {
+        status: 'NOT_CONFIGURED',
+        isUsed: false,
+        reason: 'Stateless JWT Architecture (No caching layer or Redis broker required)',
+      },
+      services: healthProbes.map((p) => ({
+        ...p,
+        url: `http://localhost:${p.port}`,
+        lastChecked: new Date().toISOString(),
+      })),
+      systemInfo: {
+        applicationName: 'NM Mock Interview Sandbox',
+        version: '1.0.0',
+        environment: process.env.NODE_ENV || 'development',
+        nodeVersion: process.version,
+        platform: process.platform,
+        architecture: 'Microservices Gateway (Node.js/Express + Prisma)',
+        uptime: `${Math.round(process.uptime())}s`,
+        memoryUsage: {
+          rss: `${Math.round((mem.rss / 1024 / 1024) * 10) / 10} MB`,
+          heapUsed: `${Math.round((mem.heapUsed / 1024 / 1024) * 10) / 10} MB`,
+          heapTotal: `${Math.round((mem.heapTotal / 1024 / 1024) * 10) / 10} MB`,
+        },
+        gatewayPrefix: '/api/v1',
+        totalRegisteredServices: healthProbes.length,
+        activeHealthyServices: healthyCount,
+        lastChecked: new Date().toISOString(),
+      },
+    };
+  }
+
+  /**
+   * Platform-Wide Analytics Aggregation
+   */
+  public static async getAnalytics(query: { dateRange?: string; assessmentType?: string }) {
+    const interviewPrisma = getInterviewPrisma();
+    const authPrisma = getAuthPrisma();
+    const questionPrisma = getQuestionPrisma();
+
+    const range = query.dateRange || 'all';
+    let dateFilter: Date | undefined;
+    const now = new Date();
+
+    if (range === '7d') {
+      dateFilter = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    } else if (range === '30d') {
+      dateFilter = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
+    } else if (range === '90d') {
+      dateFilter = new Date(now.getTime() - 90 * 24 * 60 * 60 * 1000);
+    }
+
+    // 1. Fetch filtered interviews
+    const interviewWhere: any = {};
+    if (dateFilter) {
+      interviewWhere.createdAt = { gte: dateFilter };
+    }
+    if (query.assessmentType && query.assessmentType !== 'ALL') {
+      interviewWhere.interviewType = query.assessmentType;
+    }
+
+    const [interviews, executions, allIdentities, questions, tabSwitches] = await Promise.all([
+      interviewPrisma.interview.findMany({
+        where: interviewWhere,
+        include: { session: true, configuration: true },
+        orderBy: { createdAt: 'asc' },
+      }),
+      (interviewPrisma as any).interviewExecutionRecord.findMany({
+        where: dateFilter ? { timestamp: { gte: dateFilter } } : {},
+        orderBy: { timestamp: 'asc' },
+      }).catch(() => []),
+      authPrisma ? authPrisma.identity.findMany({
+        include: { roles: { include: { role: true } } },
+      }).catch(() => []) : [],
+      questionPrisma ? questionPrisma.question.findMany({
+        select: { id: true, questionType: true, difficulty: true, status: true },
+      }).catch(() => []) : [],
+      (interviewPrisma as any).interviewTabSwitchEvent.findMany({
+        where: dateFilter ? { leftAt: { gte: dateFilter } } : {},
+      }).catch(() => []),
+    ]);
+
+    const cleanIdentities = allIdentities.filter((i: any) => !isTestEmail(i.email));
+    const totalStudents = cleanIdentities.filter((i: any) => i.roles.some((r: any) => r.role.name === 'STUDENT')).length;
+    const totalFaculty = cleanIdentities.filter((i: any) => i.roles.some((r: any) => r.role.name === 'FACULTY')).length;
+
+    const completed = interviews.filter((i) => i.state === 'COMPLETED' || i.session?.reportSnapshot != null);
+    const inProgress = interviews.filter((i) => i.state === 'RUNNING' || i.state === 'WAITING');
+
+    // Score distributions
+    const overallScores: number[] = [];
+    const aptitudeScores: number[] = [];
+    const codingScores: number[] = [];
+    const hrScores: number[] = [];
+    const dailyMap: Record<string, { total: number; completed: number; sumScore: number; scoreCount: number }> = {};
+
+    interviews.forEach((iv) => {
+      const dStr = new Date(iv.createdAt).toISOString().split('T')[0];
+      if (!dailyMap[dStr]) dailyMap[dStr] = { total: 0, completed: 0, sumScore: 0, scoreCount: 0 };
+      dailyMap[dStr].total++;
+
+      const isComp = iv.state === 'COMPLETED' || iv.session?.reportSnapshot != null;
+      if (isComp) dailyMap[dStr].completed++;
+
+      const rep = iv.session?.reportSnapshot as any;
+      if (rep) {
+        const ovScore = rep.overallScore ?? rep.metrics?.overallProficiencyScore ?? rep.overallProficiencyScore;
+        if (typeof ovScore === 'number' && !isNaN(ovScore)) {
+          overallScores.push(ovScore);
+          dailyMap[dStr].sumScore += ovScore;
+          dailyMap[dStr].scoreCount++;
+        }
+
+        const apt = rep.scores?.aptitude ?? rep.summary?.aptitudeScore;
+        if (typeof apt === 'number' && !isNaN(apt)) aptitudeScores.push(apt);
+
+        const cod = rep.scores?.coding ?? rep.summary?.codingScore;
+        if (typeof cod === 'number' && !isNaN(cod)) codingScores.push(cod);
+
+        const hr = rep.scores?.hr ?? rep.summary?.hrScore;
+        if (typeof hr === 'number' && !isNaN(hr)) hrScores.push(hr);
+      }
+    });
+
+    const averageOverall = overallScores.length > 0 ? Math.round((overallScores.reduce((a, b) => a + b, 0) / overallScores.length) * 10) / 10 : 0;
+    const averageAptitude = aptitudeScores.length > 0 ? Math.round((aptitudeScores.reduce((a, b) => a + b, 0) / aptitudeScores.length) * 10) / 10 : 0;
+    const averageCoding = codingScores.length > 0 ? Math.round((codingScores.reduce((a, b) => a + b, 0) / codingScores.length) * 10) / 10 : 0;
+    const averageHr = hrScores.length > 0 ? Math.round((hrScores.reduce((a, b) => a + b, 0) / hrScores.length) * 10) / 10 : 0;
+    const completionRate = interviews.length > 0 ? Math.round((completed.length / interviews.length) * 1000) / 10 : 0;
+
+    // Timeline trend
+    const timelineTrend = Object.keys(dailyMap)
+      .sort()
+      .map((date) => ({
+        date,
+        interviewsCount: dailyMap[date].total,
+        completedCount: dailyMap[date].completed,
+        averageScore: dailyMap[date].scoreCount > 0 ? Math.round((dailyMap[date].sumScore / dailyMap[date].scoreCount) * 10) / 10 : 0,
+      }));
+
+    // Coding analytics
+    const submitExecs = executions.filter((e: any) => e.runMode === 'SUBMIT');
+    const runExecs = executions.filter((e: any) => e.runMode === 'RUN' || e.runMode === 'CUSTOM_RUN');
+    let totalTestsPassed = 0;
+    let totalTestsCount = 0;
+    const verdictDistribution = {
+      accepted: 0,
+      wrongAnswer: 0,
+      compilationError: 0,
+      runtimeError: 0,
+      timeLimitExceeded: 0,
+    };
+    const languageMap: Record<string, number> = {};
+
+    submitExecs.forEach((e: any) => {
+      totalTestsPassed += e.passedCount || 0;
+      totalTestsCount += e.totalCount || 0;
+
+      const lang = String(e.language || 'Unknown');
+      const langName = lang === '71' ? 'Python' : lang === '62' ? 'Java' : lang === '54' ? 'C++' : lang === '63' || lang === '93' ? 'JavaScript' : lang;
+      languageMap[langName] = (languageMap[langName] || 0) + 1;
+
+      const isPassed = e.status === 'PASSED' || (e.passedCount > 0 && e.passedCount === e.totalCount);
+      if (isPassed) {
+        verdictDistribution.accepted++;
+      } else if (e.status === 'COMPILATION_ERROR' || e.primaryErrorType === 'COMPILATION_ERROR') {
+        verdictDistribution.compilationError++;
+      } else if (e.status === 'TIME_LIMIT_EXCEEDED' || e.primaryErrorType === 'TIME_LIMIT_EXCEEDED') {
+        verdictDistribution.timeLimitExceeded++;
+      } else if (e.status === 'RUNTIME_ERROR' || e.primaryErrorType === 'RUNTIME_ERROR') {
+        verdictDistribution.runtimeError++;
+      } else {
+        verdictDistribution.wrongAnswer++;
+      }
+    });
+
+    const acceptanceRate = submitExecs.length > 0 ? Math.round((verdictDistribution.accepted / submitExecs.length) * 1000) / 10 : 0;
+    const testCasePassRate = totalTestsCount > 0 ? Math.round((totalTestsPassed / totalTestsCount) * 1000) / 10 : 0;
+
+    // Language breakdown array
+    const languages = Object.keys(languageMap).map((name) => ({
+      name,
+      count: languageMap[name],
+      percentage: submitExecs.length > 0 ? Math.round((languageMap[name] / submitExecs.length) * 100) : 0,
+    }));
+
+    // Question bank distribution
+    const publishedQuestions = questions.filter((q: any) => q.status === 'PUBLISHED');
+    const questionsByType: Record<string, number> = {};
+    const questionsByDifficulty: Record<string, number> = { EASY: 0, MEDIUM: 0, HARD: 0, EXPERT: 0 };
+    publishedQuestions.forEach((q: any) => {
+      questionsByType[q.questionType] = (questionsByType[q.questionType] || 0) + 1;
+      if (questionsByDifficulty[q.difficulty] !== undefined) {
+        questionsByDifficulty[q.difficulty]++;
+      }
+    });
+
+    // Proctoring Metrics
+    const totalSwitches = tabSwitches.length;
+    const totalAwaySecs = tabSwitches.reduce((sum: number, ev: any) => sum + (ev.durationSeconds || 0), 0);
+    const sessionsWithSwitches = new Set(tabSwitches.map((ev: any) => ev.sessionId)).size;
+
+    return {
+      dateRange: range,
+      overview: {
+        totalUsers: cleanIdentities.length,
+        totalStudents,
+        totalFaculty,
+        totalInterviews: interviews.length,
+        completedInterviews: completed.length,
+        inProgressInterviews: inProgress.length,
+        completionRate,
+        averageOverallScore: averageOverall,
+        totalSubmissions: submitExecs.length,
+        totalTestRuns: runExecs.length,
+        submissionAcceptanceRate: acceptanceRate,
+        testCasePassRate,
+      },
+      performanceByRound: {
+        aptitude: averageAptitude,
+        coding: averageCoding,
+        hr: averageHr,
+        overall: averageOverall,
+      },
+      timelineTrend,
+      codingAnalytics: {
+        totalSubmissions: submitExecs.length,
+        totalRuns: runExecs.length,
+        acceptanceRate,
+        testCasePassRate,
+        totalTestsPassed,
+        totalTestsCount,
+        verdictDistribution,
+        languages,
+      },
+      questionBank: {
+        totalPublished: publishedQuestions.length,
+        byType: questionsByType,
+        byDifficulty: questionsByDifficulty,
+      },
+      proctoring: {
+        totalTabSwitches: totalSwitches,
+        totalAwaySeconds: totalAwaySecs,
+        sessionsWithViolations: sessionsWithSwitches,
+        averageSwitchesPerSession: interviews.length > 0 ? Math.round((totalSwitches / interviews.length) * 10) / 10 : 0,
+      },
+      generatedAt: new Date().toISOString(),
+    };
+  }
 }

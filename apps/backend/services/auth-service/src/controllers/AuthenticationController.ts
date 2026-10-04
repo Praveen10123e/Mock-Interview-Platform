@@ -20,6 +20,13 @@ export class AuthenticationController extends BaseController {
     try {
       const { email, password } = req.body;
 
+      if (!email || !password || typeof email !== 'string' || typeof password !== 'string' || !email.trim() || !password.trim()) {
+        return res.status(400).json({
+          success: false,
+          error: { code: 'ValidationError', message: 'Email and password are required' }
+        });
+      }
+
       const identity = (await this.authService.verifyCredentials(email, password)) as any;
 
       // Create session

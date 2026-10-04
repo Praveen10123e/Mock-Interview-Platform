@@ -4,6 +4,7 @@ import { motion } from 'framer-motion';
 import { Play, RotateCcw, Copy, Check, ChevronLeft, LayoutTemplate, Settings, Type, WrapText } from 'lucide-react';
 import { getDisplayName } from '../../../utils/display';
 import { extractErrorMessage } from '../../../utils/display';
+import { formatExampleText } from '../../../utils/formatExampleText';
 import { useQuestionById } from '../../../api/questions';
 import { useExecuteCode } from '../../../api/judge';
 import { useWorkspaceStore } from '../../../store/useWorkspaceStore';
@@ -160,13 +161,32 @@ export const QuestionWorkspace = () => {
           {question.metadata?.examples && (
             <div className="mt-6 space-y-4">
               <h3 className="font-semibold text-foreground">Examples</h3>
-              {question.metadata.examples.map((ex: any, i: number) => (
-                <div key={i} className="bg-muted/30 p-4 rounded-xl border border-white/5 font-mono text-sm">
-                  <div className="mb-2"><span className="text-muted-foreground">Input:</span> {ex.input}</div>
-                  <div className="mb-2"><span className="text-muted-foreground">Output:</span> {ex.output}</div>
-                  {ex.explanation && <div><span className="text-muted-foreground">Explanation:</span> {ex.explanation}</div>}
-                </div>
-              ))}
+              {question.metadata.examples.map((ex: any, i: number) => {
+                const formattedInput = formatExampleText(ex.input);
+                const formattedOutput = formatExampleText(ex.output);
+                return (
+                  <div key={i} className="bg-muted/30 p-4 rounded-xl border border-white/5 font-mono text-sm space-y-3">
+                    <div className="space-y-1">
+                      <span className="text-muted-foreground text-xs uppercase tracking-wider font-semibold block">Input:</span>
+                      <pre className="p-2.5 rounded-lg bg-black/40 border border-white/10 font-mono text-xs whitespace-pre-wrap leading-relaxed overflow-x-auto m-0">
+                        {formattedInput}
+                      </pre>
+                    </div>
+                    <div className="space-y-1">
+                      <span className="text-muted-foreground text-xs uppercase tracking-wider font-semibold block">Output:</span>
+                      <pre className="p-2.5 rounded-lg bg-emerald-950/40 border border-emerald-500/20 font-mono text-xs text-emerald-400 font-semibold whitespace-pre-wrap leading-relaxed overflow-x-auto m-0">
+                        {formattedOutput}
+                      </pre>
+                    </div>
+                    {ex.explanation && (
+                      <div className="text-xs pt-1 border-t border-white/10">
+                        <span className="text-muted-foreground font-semibold">Explanation: </span>
+                        <span className="whitespace-pre-wrap">{formatExampleText(ex.explanation)}</span>
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
 

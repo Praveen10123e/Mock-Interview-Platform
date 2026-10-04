@@ -78,19 +78,11 @@ export class CodingEvidenceService {
       payload.stdin = String(body.customInput || '');
       delete payload.testCases;
     } else if (rawTCs && Array.isArray(rawTCs) && rawTCs.length > 0) {
-      const allTC = rawTCs;
+      const visibleTestCases = rawTCs;
       if (runMode === 'RUN' || (runMode as any) === 'SAMPLE') {
-        // Sample / Visible test cases only (No hidden test case evaluation in RUN/SAMPLE mode)
-        const visibleTC = allTC.filter((tc: any) => tc.hidden === false || tc.visible === true || tc.visibility === 'VISIBLE');
-        payload.testCases =
-          visibleTC.length > 0
-            ? visibleTC
-            : question.examples?.length > 0
-            ? allTC.slice(0, Math.min(question.examples.length, allTC.length))
-            : allTC.slice(0, 1);
+        payload.testCases = visibleTestCases.slice(0, 2);
       } else {
-        // SUBMIT mode: all test cases (visible)
-        payload.testCases = allTC;
+        payload.testCases = visibleTestCases;
       }
     }
 
@@ -130,42 +122,29 @@ export class CodingEvidenceService {
     const targetSessionId = interview.session?.id || interviewId;
     const effectiveRunMode: any = isCustom ? 'CUSTOM' : runMode;
 
-    // 5. Persist official execution evidence
-    await recordExecution(
-      targetSessionId,
-      questionRefId,
-      body.languageId,
-      effectiveRunMode,
-      body.sourceCode,
-      result,
-      question
-    );
-
-    // 6. Mask hidden test cases for student-facing response (if evaluation results exist)
-    const maskedResults = (result.results || []).map((tc: any) => {
-      if (tc.hidden === true) {
-        return {
-          ...tc,
-          input: '[Protected Hidden Test Case]',
-          expected: '[Protected Hidden Test Case]',
-          expectedOutput: '[Protected Hidden Test Case]',
-          actual: tc.passed ? 'Hidden test passed' : 'Hidden test failed',
-          studentOutput: tc.passed ? 'Hidden test passed' : 'Hidden test failed',
-        };
-      }
-      return tc;
-    });
+    // 5. Persist official execution evidence ONLY for SUBMIT
+    if (effectiveRunMode === 'SUBMIT') {
+      await recordExecution(
+        targetSessionId,
+        questionRefId,
+        body.languageId,
+        effectiveRunMode,
+        body.sourceCode,
+        result,
+        question
+      );
+    }
 
     return {
       ...result,
       runMode: effectiveRunMode,
       customInput: isCustom ? String(body.customInput || '') : undefined,
-      results: result.results ? maskedResults : undefined,
+      results: result.results || undefined,
     };
   }
 
   /**
-   * Get Attempts History for a specific problem
+   * Get Attempts History for a specific problem (official submissions only)
    */
   static async getAttemptsHistory(
     interviewId: string,
@@ -179,6 +158,7 @@ export class CodingEvidenceService {
       where: {
         sessionId: { in: sessionIds },
         questionRefId,
+        runMode: 'SUBMIT',
       },
       orderBy: { timestamp: 'asc' },
     });

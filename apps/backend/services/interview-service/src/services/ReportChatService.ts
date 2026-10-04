@@ -45,14 +45,15 @@ export class ReportChatService {
     interviewId: string,
     identityId: string,
     userMessage: string,
-    displayContent?: string
+    displayContent?: string,
+    userRole?: string
   ): Promise<ChatMessage> {
     if (!userMessage || !userMessage.trim()) {
       throw new Error('Message content cannot be empty.');
     }
 
     // 1. Collect exact session evidence and synthesis (also verifies ownership)
-    const evidence = await ReportEvidenceService.collectEvidence(interviewId, identityId);
+    const evidence = await ReportEvidenceService.collectEvidence(interviewId, identityId, undefined, userRole);
     const synthesis = await ReportAnalysisService.synthesizeReport(evidence);
 
     // 2. Fetch previous chat interaction context for multi-turn coherence
@@ -224,9 +225,9 @@ export class ReportChatService {
   /**
    * Retrieve chat history for this interview session
    */
-  static async getChatHistory(interviewId: string, identityId: string): Promise<ChatMessage[]> {
+  static async getChatHistory(interviewId: string, identityId: string, userRole?: string): Promise<ChatMessage[]> {
     // Validate ownership
-    await ReportEvidenceService.collectEvidence(interviewId, identityId);
+    await ReportEvidenceService.collectEvidence(interviewId, identityId, undefined, userRole);
 
     const records = await prisma.interviewHistory.findMany({
       where: {
@@ -433,19 +434,56 @@ export class ReportChatService {
       };
     }
 
-    // 7. HR INTERVIEW FEEDBACK
-    if (qLower.includes('hr') || qLower.includes('behavioral') || qLower.includes('communication') || qLower.includes('interview')) {
+    // 7. HR INTERVIEW FEEDBACK & SCORE EXPLANATION
+    if (
+      qLower.includes('hr') ||
+      qLower.includes('behavioral') ||
+      qLower.includes('communication') ||
+      (qLower.includes('interview') && !qLower.includes('coding')) ||
+      /why did i get \d+/i.test(qLower) ||
+      /why (?:is|was) my (?:hr|score)/i.test(qLower) ||
+      /explain my (?:hr|score)/i.test(qLower)
+    ) {
       const hr = synthesis.hrAnalysis;
+
+      // Look up persisted criterion-level evidence from HR session
+      let criteriaBreakdownText = '';
+      try {
+        const hrRecord = await prisma.interviewHistory.findFirst({
+          where: { interviewId, event: 'HR_COMPLETE' },
+          orderBy: { timestamp: 'desc' },
+        });
+        const hrDetails = hrRecord?.details as any;
+        const criteriaEvidence = hrDetails?.criteriaEvidence || hrDetails?.evaluation?.criteriaEvidence || [];
+
+        if (Array.isArray(criteriaEvidence) && criteriaEvidence.length > 0) {
+          criteriaBreakdownText =
+            `\n\n**Traceable Criterion-Level Evidence**:\n` +
+            criteriaEvidence
+              .map((c: any) => {
+                const status = c.score >= c.maxScore ? '✓ Full Credit' : c.score > 0 ? '◐ Partial Credit' : '✗ No Credit';
+                const detail = c.evidence ? `Evidence: "${c.evidence}"` : `Reason: ${c.reason}`;
+                return `* **${c.criterion}** (${c.score}/${c.maxScore} pts — ${status}): ${detail}`;
+              })
+              .join('\n');
+        }
+      } catch {
+        // Fall back to standard breakdown
+      }
+
       return {
-        answer: `### Behavioral & Communication Assessment\n\n` +
-          `* **Communication Score**: **${hr.communicationScore}/100**\n` +
+        answer:
+          `### Behavioral & HR Evaluation Evidence\n\n` +
+          `* **Overall HR Score**: **${hr.communicationScore}/100**\n` +
           `* **Clarity**: **${hr.clarityScore}/100** | **Relevance**: **${hr.relevanceScore}/100**\n\n` +
-          `**Key Strengths Observed**:\n` +
-          hr.strengthsObserved.map((s) => `• ${s}`).join('\n') +
+          `**Assessment Summary**:\n${hr.overallAssessment}` +
+          criteriaBreakdownText +
+          `\n\n**Key Strengths Observed**:\n` +
+          (hr.strengthsObserved.length > 0 ? hr.strengthsObserved.map((s) => `• ${s}`).join('\n') : '• None recorded (insufficient evidence provided)') +
           `\n\n**Actionable Advice (STAR Framework)**:\n` +
           `${hr.starMethodGuidance}\n\n` +
           `**Targeted Improvements**:\n` +
-          hr.areasToImprove.map((a) => `• ${a}`).join('\n'),
+          (hr.areasToImprove.length > 0 ? hr.areasToImprove.map((a) => `• ${a}`).join('\n') : '• Practice structuring responses using STAR framework'),
         suggestedFollowups: ['How can I format answers with STAR?', 'Was my coding approach optimal?'],
       };
     }

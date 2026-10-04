@@ -17,7 +17,7 @@ export class AuthenticationService extends BaseService {
   public async verifyCredentials(email: string, plainText: string) {
     const identity = await this.identityRepo.findByEmail(email);
     if (!identity) {
-      throw ErrorFactory.unauthorized('Invalid email or password');
+      throw ErrorFactory.unauthenticated('Invalid email or password');
     }
 
     if (identity.status === IdentityStatus.LOCKED) {
@@ -48,7 +48,7 @@ export class AuthenticationService extends BaseService {
         lockedUntil: isLocked ? new Date(Date.now() + this.LOCKOUT_DURATION_MS) : null,
       });
 
-      throw ErrorFactory.unauthorized('Invalid email or password');
+      throw ErrorFactory.unauthenticated('Invalid email or password');
     }
 
     // Reset failed attempts on success

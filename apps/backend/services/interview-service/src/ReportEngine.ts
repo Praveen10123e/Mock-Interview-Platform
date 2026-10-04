@@ -173,9 +173,16 @@ function analyzeHRCommunication(hrHistory: any[], transcript: string | null | un
   reasons: string[];
 } {
   const candidateMessages = (hrHistory || []).filter((m: any) => m.role === 'candidate' || m.sender === 'candidate');
-  const fullText = candidateMessages.map((m: any) => m.content || m.text || '').join(' ') + ' ' + (transcript || '');
+  const validCandidateTexts = candidateMessages
+    .map((m: any) => m.content || m.text || '')
+    .filter((txt: string) => {
+      const lower = (txt || '').trim().toLowerCase();
+      return lower && !lower.includes('audio response recorded') && !lower.includes('no speech') && !lower.includes('no transcript') && lower !== 'silence';
+    });
 
-  if (candidateMessages.length === 0 && (!transcript || transcript.trim().length === 0)) {
+  const fullText = (validCandidateTexts.join(' ') + ' ' + (transcript || '')).trim();
+
+  if (fullText.length === 0) {
     return {
       overallScore: 0,
       clarityScore: 0,
@@ -330,7 +337,7 @@ export async function generateReport(interviewId: string, identityId: string, pr
     });
 
     const attempts = await prisma.interviewExecutionRecord.findMany({
-      where: { sessionId, questionRefId: asg.questionRefId },
+      where: { sessionId, questionRefId: asg.questionRefId, runMode: 'SUBMIT' },
       orderBy: { attemptNumber: 'asc' }
     });
 
@@ -346,16 +353,28 @@ export async function generateReport(interviewId: string, identityId: string, pr
 
     if (attempts.length > 0) {
       codingAttemptedProblems++;
-      const lastAttempt = attempts[attempts.length - 1];
-      passedCount = lastAttempt.passedCount;
-      totalCount = lastAttempt.totalCount || totalQTests;
-      lastSourceCode = '';
-
-      if (lastAttempt.runMode === 'SUBMIT') {
-        finalStatus = lastAttempt.status === 'PASSED' ? 'PASSED' : (lastAttempt.passedCount > 0 ? 'PARTIALLY_SOLVED' : 'SUBMITTED_FAILED');
-      } else {
-        finalStatus = lastAttempt.status === 'RUN_PASSED' ? 'RUN_PASSED' : 'RUN_ATTEMPTED';
+      // Deterministic Best Result rule:
+      // 1. Highest passedCount wins.
+      // 2. If passedCount is tied, latest attempt wins.
+      let bestAttempt = attempts[0];
+      for (let i = 1; i < attempts.length; i++) {
+        const att = attempts[i];
+        if (att.passedCount > bestAttempt.passedCount) {
+          bestAttempt = att;
+        } else if (att.passedCount === bestAttempt.passedCount) {
+          if (att.attemptNumber >= bestAttempt.attemptNumber) {
+            bestAttempt = att;
+          }
+        }
       }
+
+      passedCount = bestAttempt.passedCount;
+      totalCount = bestAttempt.totalCount || totalQTests;
+      lastSourceCode = bestAttempt.sourceCode || '';
+
+      finalStatus = bestAttempt.status === 'PASSED' || bestAttempt.status === 'ACCEPTED'
+        ? 'PASSED'
+        : (bestAttempt.passedCount > 0 ? 'PARTIALLY_SOLVED' : 'SUBMITTED_FAILED');
 
       if (finalStatus === 'PASSED') codingAcceptedProblems++;
       codingEarnedScore += finalScore;
@@ -365,20 +384,20 @@ export async function generateReport(interviewId: string, identityId: string, pr
 
       // Estimate time spent from timestamps
       const firstTs = new Date(attempts[0].timestamp).getTime();
-      const lastTs = new Date(lastAttempt.timestamp).getTime();
+      const lastTs = new Date(attempts[attempts.length - 1].timestamp).getTime();
       totalTimeSpentSeconds = Math.max(30, Math.round((lastTs - firstTs) / 1000));
 
       // Complexity Analysis
-      const compAnalysis = analyzeCodeComplexity(lastSourceCode, expectedComplexity, lastAttempt);
+      const compAnalysis = analyzeCodeComplexity(lastSourceCode, expectedComplexity, bestAttempt);
       complexityScoresList.push(compAnalysis.complexityScore);
 
       // Code Quality Analysis
-      const cqAnalysis = analyzeCodeQuality(lastSourceCode, lastAttempt);
+      const cqAnalysis = analyzeCodeQuality(lastSourceCode, bestAttempt);
       codeQualityScoresList.push(cqAnalysis.score);
 
       // Debugging Analysis
       if (attempts.length === 1) {
-        if (lastAttempt.status === 'PASSED' || lastAttempt.status === 'RUN_PASSED') {
+        if (bestAttempt.status === 'PASSED' || bestAttempt.status === 'RUN_PASSED') {
           debuggingScoresList.push(95);
           debuggingEvidenceList.push(`✓ First-try acceptance on ${title} (${passedCount}/${totalCount} tests passed).`);
         } else {

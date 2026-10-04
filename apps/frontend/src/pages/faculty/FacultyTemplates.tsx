@@ -90,19 +90,19 @@ export const FacultyTemplates: React.FC = () => {
   };
 
   return (
-    <div className="space-y-6 md:space-y-8 max-w-7xl mx-auto w-full pb-12">
+    <div className="w-full max-w-7xl mx-auto space-y-6 md:space-y-8 pb-12 min-w-0">
       {/* ── 1. Page Header ─────────────────────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border/60 pb-5">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border pb-5">
         <div className="space-y-1">
           <div className="flex items-center gap-3">
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-text-primary">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
               Interview Templates
             </h1>
-            <span className="px-2.5 py-0.5 text-xs font-semibold bg-accent/10 border border-accent/20 text-accent rounded-full font-mono">
+            <span className="px-2.5 py-0.5 text-xs font-semibold bg-blue-50 border border-blue-200 text-blue-700 rounded-full font-mono">
               Total: {templates.length}
             </span>
           </div>
-          <p className="text-xs md:text-sm text-text-secondary">
+          <p className="text-xs sm:text-sm text-slate-500">
             Design, customize, and manage reusable interview templates with curated questions.
           </p>
         </div>
@@ -113,9 +113,9 @@ export const FacultyTemplates: React.FC = () => {
             size="sm"
             onClick={() => refetch()}
             disabled={isFetching}
-            className="gap-1.5 text-xs cursor-pointer"
+            className="gap-1.5 text-xs font-medium border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer shadow-2xs"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin' : ''}`} />
+            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin text-blue-600' : ''}`} />
             Refresh
           </Button>
 
@@ -123,7 +123,7 @@ export const FacultyTemplates: React.FC = () => {
             variant="default"
             size="sm"
             onClick={handleOpenCreate}
-            className="gap-1.5 text-xs cursor-pointer shadow-sm"
+            className="gap-1.5 text-xs font-medium bg-blue-600 hover:bg-blue-700 text-white shadow-2xs cursor-pointer"
           >
             <Plus className="h-4 w-4" />
             Create Template
@@ -132,17 +132,17 @@ export const FacultyTemplates: React.FC = () => {
       </div>
 
       {/* ── 2. Search & Filters Bar ────────────────────────────────────────── */}
-      <Card className="p-4 bg-surface border-border">
+      <Card className="p-4 bg-white border border-slate-200/80 shadow-2xs rounded-xl">
         <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {/* Search Input */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-text-muted" />
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <Input
               type="text"
               placeholder="Search by template name or description..."
               value={search}
               onChange={(e) => setSearch(e.target.value)}
-              className="pl-9 text-xs"
+              className="pl-9 h-10 text-[13px] border-slate-200 bg-white"
             />
           </div>
 
@@ -151,9 +151,9 @@ export const FacultyTemplates: React.FC = () => {
             <select
               value={status}
               onChange={(e) => setStatus(e.target.value)}
-              className="w-full h-9 rounded-lg border border-border bg-surface-elevated px-3 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+              className="w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-600 cursor-pointer"
             >
-              <option value="ALL">All Statuses</option>
+              <option value="ALL">Status: All</option>
               <option value="PUBLISHED">Published</option>
               <option value="DRAFT">Draft</option>
             </select>
@@ -164,9 +164,9 @@ export const FacultyTemplates: React.FC = () => {
             <select
               value={interviewType}
               onChange={(e) => setInterviewType(e.target.value)}
-              className="w-full h-9 rounded-lg border border-border bg-surface-elevated px-3 text-xs text-text-primary focus:outline-none focus:ring-1 focus:ring-accent"
+              className="w-full h-10 rounded-lg border border-slate-200 bg-white px-3 text-[13px] text-slate-700 focus:outline-none focus:ring-1 focus:ring-blue-600 cursor-pointer"
             >
-              <option value="ALL">All Interview Types</option>
+              <option value="ALL">Type: All</option>
               <option value="MOCK">Mock Interview</option>
               <option value="PRACTICE">Practice Assessment</option>
               <option value="TECHNICAL">Technical Interview</option>
@@ -179,7 +179,7 @@ export const FacultyTemplates: React.FC = () => {
 
       {/* ── 3. Loading State ──────────────────────────────────────────────── */}
       {isLoading && (
-        <Card className="p-6 space-y-4">
+        <Card className="p-6 space-y-4 bg-white border border-slate-200 rounded-xl">
           <div className="space-y-3">
             {Array.from({ length: 4 }).map((_, i) => (
               <Skeleton key={i} className="h-16 w-full rounded-xl" />
@@ -190,10 +190,10 @@ export const FacultyTemplates: React.FC = () => {
 
       {/* ── 4. Error State ────────────────────────────────────────────────── */}
       {isError && (
-        <div className="p-8 text-center space-y-3 bg-rose-500/10 border border-rose-500/20 rounded-2xl">
-          <AlertCircle className="h-6 w-6 text-rose-400 mx-auto" />
-          <h3 className="text-sm font-semibold text-text-primary">Failed to load interview templates</h3>
-          <p className="text-xs text-text-secondary max-w-md mx-auto">
+        <div className="p-8 text-center space-y-3 bg-rose-50 border border-rose-200 rounded-xl">
+          <AlertCircle className="h-6 w-6 text-rose-600 mx-auto" />
+          <h3 className="text-sm font-semibold text-slate-900">Failed to load interview templates</h3>
+          <p className="text-xs text-slate-500 max-w-md mx-auto">
             {(error as any)?.response?.data?.error?.message || (error as any)?.message}
           </p>
           <Button onClick={() => refetch()} variant="outline" size="sm" className="mt-2">
@@ -206,21 +206,21 @@ export const FacultyTemplates: React.FC = () => {
       {!isLoading && !isError && (
         <>
           {templates.length > 0 ? (
-            <Card className="overflow-hidden border-border bg-surface">
+            <Card className="overflow-hidden border border-slate-200 bg-white shadow-2xs rounded-xl">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
                   <thead>
-                    <tr className="border-b border-border bg-surface-elevated/60 text-text-muted uppercase text-[10px] tracking-wider font-mono">
-                      <th className="py-3 px-4 font-medium">Template</th>
-                      <th className="py-3 px-4 font-medium">Type / Difficulty</th>
-                      <th className="py-3 px-4 font-medium">Assessment Structure</th>
-                      <th className="py-3 px-4 font-medium">Duration</th>
-                      <th className="py-3 px-4 font-medium">Status</th>
-                      <th className="py-3 px-4 font-medium">Created Date</th>
-                      <th className="py-3 px-4 font-medium text-right">Actions</th>
+                    <tr className="border-b border-slate-200 bg-slate-50/80 text-slate-500 uppercase text-[11px] sm:text-[12px] tracking-wider font-mono">
+                      <th className="py-3.5 px-4 font-semibold">Template</th>
+                      <th className="py-3.5 px-4 font-semibold">Type / Difficulty</th>
+                      <th className="py-3.5 px-4 font-semibold">Assessment Structure</th>
+                      <th className="py-3.5 px-4 font-semibold">Duration</th>
+                      <th className="py-3.5 px-4 font-semibold">Status</th>
+                      <th className="py-3.5 px-4 font-semibold">Created Date</th>
+                      <th className="py-3.5 px-4 font-semibold text-right">Actions</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-border/40">
+                  <tbody className="divide-y divide-slate-100">
                     {templates.map((tmpl) => {
                       const aptCount = tmpl.assessmentStructure?.aptitude?.count ?? tmpl.questions?.filter(q => q.questionType === 'APTITUDE').length ?? 0;
                       const codCount = tmpl.assessmentStructure?.coding?.count ?? tmpl.questions?.filter(q => q.questionType === 'CODING').length ?? 0;
@@ -228,15 +228,15 @@ export const FacultyTemplates: React.FC = () => {
                       return (
                       <tr
                         key={tmpl.id}
-                        className="hover:bg-surface-elevated/40 transition-colors group cursor-pointer"
+                        className="hover:bg-slate-50/70 transition-colors group cursor-pointer h-[58px]"
                         onClick={() => handleOpenView(tmpl)}
                       >
                         {/* Name & Description */}
                         <td className="py-3.5 px-4 max-w-[220px]">
-                          <div className="font-semibold text-text-primary truncate">
+                          <div className="text-[14px] font-semibold text-slate-900 truncate">
                             {tmpl.name}
                           </div>
-                          <div className="text-[11px] text-text-muted truncate">
+                          <div className="text-[12px] text-slate-500 truncate">
                             {tmpl.description || 'No description'}
                           </div>
                         </td>
@@ -244,16 +244,16 @@ export const FacultyTemplates: React.FC = () => {
                         {/* Type & Difficulty */}
                         <td className="py-3.5 px-4">
                           <div className="flex items-center gap-1.5 flex-wrap">
-                            <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-accent/10 border border-accent/20 text-accent uppercase">
+                            <span className="px-2.5 py-0.5 text-[11px] sm:text-[12px] font-semibold rounded-md bg-blue-50 border border-blue-200 text-blue-700 uppercase">
                               {tmpl.interviewType}
                             </span>
                             <span
-                              className={`px-2 py-0.5 text-[10px] font-bold rounded-md uppercase ${
+                              className={`px-2.5 py-0.5 text-[11px] sm:text-[12px] font-semibold rounded-md uppercase border ${
                                 tmpl.difficulty === 'EASY'
-                                  ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                                   : tmpl.difficulty === 'HARD'
-                                  ? 'bg-rose-500/10 text-rose-400 border border-rose-500/20'
-                                  : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                  ? 'bg-rose-50 text-rose-700 border-rose-200'
+                                  : 'bg-amber-50 text-amber-700 border-amber-200'
                               }`}
                             >
                               {tmpl.difficulty}
@@ -265,53 +265,53 @@ export const FacultyTemplates: React.FC = () => {
                         <td className="py-3.5 px-4 min-w-[260px]">
                           <div className="flex items-center gap-1.5 flex-wrap">
                             <span
-                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold uppercase tracking-wider flex items-center gap-1 ${
+                              className={`px-2.5 py-0.5 rounded-md text-[11px] sm:text-[12px] font-semibold uppercase tracking-wider flex items-center gap-1 ${
                                 tmpl.assessmentStructure?.selectionMode === 'RANDOM'
-                                  ? 'bg-accent/15 border border-accent/30 text-accent'
-                                  : 'bg-surface-elevated border border-border text-text-secondary'
+                                  ? 'bg-indigo-50 border border-indigo-200 text-indigo-700'
+                                  : 'bg-slate-100 border border-slate-200 text-slate-700'
                               }`}
                             >
                               {tmpl.assessmentStructure?.selectionMode === 'RANDOM' ? (
                                 <>
-                                  <Dices className="h-3 w-3" />
+                                  <Dices className="h-3.5 w-3.5" />
                                   Random
                                 </>
                               ) : (
                                 <>
-                                  <Hand className="h-3 w-3" />
+                                  <Hand className="h-3.5 w-3.5" />
                                   Manual
                                 </>
                               )}
                             </span>
-                            <span className="px-2 py-0.5 rounded-md bg-blue-500/10 border border-blue-500/20 text-blue-400 font-semibold text-[11px] flex items-center gap-1">
-                              <Brain className="h-3 w-3" />
+                            <span className="px-2.5 py-0.5 rounded-md bg-blue-50 border border-blue-200 text-blue-700 font-medium text-[12px] flex items-center gap-1">
+                              <Brain className="h-3.5 w-3.5" />
                               {aptCount} Aptitude
                             </span>
-                            <span className="px-2 py-0.5 rounded-md bg-emerald-500/10 border border-emerald-500/20 text-emerald-400 font-semibold text-[11px] flex items-center gap-1">
-                              <Code2 className="h-3 w-3" />
+                            <span className="px-2.5 py-0.5 rounded-md bg-emerald-50 border border-emerald-200 text-emerald-700 font-medium text-[12px] flex items-center gap-1">
+                              <Code2 className="h-3.5 w-3.5" />
                               {tmpl.assessmentStructure?.selectionMode === 'RANDOM'
                                 ? '2 Coding (1 Easy, 1 Med/Hard)'
                                 : `${codCount} Coding`}
                             </span>
-                            <span className="px-2 py-0.5 rounded-md bg-purple-500/10 border border-purple-500/20 text-purple-400 font-semibold text-[11px] flex items-center gap-1">
-                              <MessageSquare className="h-3 w-3" />
+                            <span className="px-2.5 py-0.5 rounded-md bg-purple-50 border border-purple-200 text-purple-700 font-medium text-[12px] flex items-center gap-1">
+                              <MessageSquare className="h-3.5 w-3.5" />
                               Conversational HR
                             </span>
                           </div>
                         </td>
 
                         {/* Duration */}
-                        <td className="py-3.5 px-4 font-mono text-text-secondary">
+                        <td className="py-3.5 px-4 font-mono text-[13px] text-slate-700">
                           {tmpl.duration} mins
                         </td>
 
                         {/* Status */}
                         <td className="py-3.5 px-4">
                           <span
-                            className={`inline-block px-2.5 py-0.5 text-[10px] font-semibold rounded-full uppercase tracking-wider ${
+                            className={`inline-block px-2.5 py-0.5 text-[12px] font-semibold rounded-full uppercase tracking-wider border ${
                               tmpl.status === 'PUBLISHED'
-                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                : 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                : 'bg-amber-50 text-amber-700 border-amber-200'
                             }`}
                           >
                             {tmpl.status}
@@ -319,7 +319,7 @@ export const FacultyTemplates: React.FC = () => {
                         </td>
 
                         {/* Created Date */}
-                        <td className="py-3.5 px-4 text-[11px] text-text-muted">
+                        <td className="py-3.5 px-4 text-[12px] text-slate-500">
                           {new Date(tmpl.createdAt).toLocaleDateString()}
                         </td>
 
@@ -332,59 +332,59 @@ export const FacultyTemplates: React.FC = () => {
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-7 w-7 p-0 text-text-muted hover:text-text-primary cursor-pointer"
+                              className="h-8 w-8 p-0 text-slate-500 hover:text-slate-900 hover:bg-slate-100 rounded-lg cursor-pointer"
                               onClick={() => handleOpenView(tmpl)}
                               title="View Template Details"
                             >
-                              <Eye className="h-3.5 w-3.5" />
+                              <Eye className="h-4 w-4" />
                             </Button>
 
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-7 w-7 p-0 text-text-muted hover:text-accent cursor-pointer"
+                              className="h-8 w-8 p-0 text-slate-500 hover:text-blue-600 hover:bg-blue-50 rounded-lg cursor-pointer"
                               onClick={() => handleOpenEdit(tmpl)}
                               title="Edit Template"
                             >
-                              <Edit2 className="h-3.5 w-3.5" />
+                              <Edit2 className="h-4 w-4" />
                             </Button>
 
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-7 w-7 p-0 text-text-muted hover:text-blue-400 cursor-pointer"
+                              className="h-8 w-8 p-0 text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 rounded-lg cursor-pointer"
                               onClick={() => handleDuplicate(tmpl)}
                               disabled={duplicateMutation.isPending}
                               title="Duplicate Template"
                             >
-                              <Copy className="h-3.5 w-3.5" />
+                              <Copy className="h-4 w-4" />
                             </Button>
 
                             <Button
                               variant="ghost"
                               size="sm"
-                              className="h-7 w-7 p-0 text-text-muted hover:text-rose-400 cursor-pointer"
+                              className="h-8 w-8 p-0 text-slate-500 hover:text-rose-600 hover:bg-rose-50 rounded-lg cursor-pointer"
                               onClick={() => setDeletingTemplate(tmpl)}
                               title="Delete Template"
                             >
-                              <Trash2 className="h-3.5 w-3.5" />
+                              <Trash2 className="h-4 w-4" />
                             </Button>
                           </div>
                         </td>
                       </tr>
-                    );
-                  })}
+                      );
+                    })}
                   </tbody>
                 </table>
               </div>
             </Card>
           ) : (
-            <Card className="p-12 text-center bg-surface border-border">
+            <Card className="p-12 text-center bg-white border border-slate-200 rounded-xl">
               <div className="space-y-4 max-w-sm mx-auto">
-                <FileText className="h-10 w-10 text-text-muted mx-auto opacity-50" />
+                <FileText className="h-10 w-10 text-slate-300 mx-auto" />
                 <div className="space-y-1">
-                  <h3 className="text-base font-bold text-text-primary">No interview templates yet</h3>
-                  <p className="text-xs text-text-secondary leading-relaxed">
+                  <h3 className="text-base font-bold text-slate-900">No interview templates yet</h3>
+                  <p className="text-xs text-slate-500 leading-relaxed">
                     Create reusable assessment workflows with customized question sequences from the Question Bank.
                   </p>
                 </div>
@@ -392,7 +392,7 @@ export const FacultyTemplates: React.FC = () => {
                   variant="default"
                   size="sm"
                   onClick={handleOpenCreate}
-                  className="text-xs gap-1.5 cursor-pointer shadow-sm"
+                  className="text-xs gap-1.5 bg-blue-600 hover:bg-blue-700 text-white cursor-pointer shadow-2xs"
                 >
                   <Plus className="h-3.5 w-3.5" />
                   Create Your First Template
@@ -425,28 +425,28 @@ export const FacultyTemplates: React.FC = () => {
 
       {/* ── Delete Confirmation Dialog ────────────────────────────────────── */}
       {deletingTemplate && (
-        <div className="fixed inset-0 z-50 bg-black/80 flex items-center justify-center p-4">
-          <div className="bg-surface border border-border shadow-xl rounded-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95">
-            <div className="flex items-center gap-3 text-rose-400">
-              <div className="w-10 h-10 rounded-xl bg-rose-500/10 flex items-center justify-center border border-rose-500/20 shrink-0">
+        <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-2xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 shadow-xl rounded-2xl max-w-md w-full p-6 space-y-4 animate-in fade-in zoom-in-95">
+            <div className="flex items-center gap-3 text-rose-600">
+              <div className="w-10 h-10 rounded-xl bg-rose-50 flex items-center justify-center border border-rose-200 shrink-0">
                 <Trash2 className="h-5 w-5" />
               </div>
               <div>
-                <h3 className="font-bold text-text-primary text-base">Delete Template?</h3>
-                <p className="text-xs text-text-muted">Permanent template removal</p>
+                <h3 className="font-bold text-slate-900 text-base">Delete Template?</h3>
+                <p className="text-xs text-slate-500">Permanent template removal</p>
               </div>
             </div>
 
-            <p className="text-xs text-text-secondary leading-relaxed">
-              <strong className="text-text-primary">"{deletingTemplate.name}"</strong> will be removed.
+            <p className="text-[13px] text-slate-600 leading-relaxed">
+              <strong className="text-slate-900">"{deletingTemplate.name}"</strong> will be removed.
               This action cannot be undone. Questions in the Question Bank will remain safe and unaffected.
             </p>
 
-            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-border/60">
+            <div className="flex items-center justify-end gap-2.5 pt-2 border-t border-slate-100">
               <Button
-                variant="ghost"
+                variant="outline"
                 size="sm"
-                className="text-xs cursor-pointer"
+                className="text-xs cursor-pointer border-slate-200 text-slate-700"
                 onClick={() => setDeletingTemplate(null)}
               >
                 Cancel
@@ -454,7 +454,7 @@ export const FacultyTemplates: React.FC = () => {
               <Button
                 variant="destructive"
                 size="sm"
-                className="text-xs gap-1.5 cursor-pointer"
+                className="text-xs gap-1.5 cursor-pointer bg-rose-600 hover:bg-rose-700 text-white"
                 disabled={deleteMutation.isPending}
                 onClick={handleConfirmDelete}
               >

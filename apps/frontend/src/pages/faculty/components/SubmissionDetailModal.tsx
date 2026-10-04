@@ -15,6 +15,7 @@ import {
   Send,
 } from 'lucide-react';
 import { Button } from '../../../components/ui/button';
+import { formatExampleText } from '../../../utils/formatExampleText';
 import type { FacultySubmissionItem } from '../../../api/faculty';
 
 interface SubmissionDetailModalProps {
@@ -62,10 +63,10 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
   const testCases = submission.testCaseResults || [];
 
   return (
-    <div className="fixed inset-0 z-60 bg-black/85 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-surface border border-border shadow-2xl rounded-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-60 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-white border border-slate-200 shadow-2xl rounded-2xl w-full max-w-3xl max-h-[92vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* ── Modal Header ─────────────────────────────────────────────────── */}
-        <div className="p-4 sm:p-5 border-b border-border bg-surface-elevated/70 flex items-center justify-between">
+        <div className="p-4 sm:p-5 border-b border-slate-200 bg-slate-50/80 flex items-center justify-between">
           <div className="space-y-1 min-w-0">
             <div className="flex items-center gap-2 flex-wrap">
               {/* Type Badge: RUN vs SUBMIT */}
@@ -356,31 +357,27 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
                           <span className="text-text-muted block text-[10px] font-sans font-semibold mb-0.5">
                             Input:
                           </span>
-                          <span className="text-text-primary break-all">
-                            {typeof tc.input === 'object' ? JSON.stringify(tc.input) : tc.input || '<Empty>'}
-                          </span>
+                          <pre className="text-text-primary whitespace-pre-wrap font-mono text-[11px] leading-relaxed break-all m-0">
+                            {formatExampleText(tc.input) || '<Empty>'}
+                          </pre>
                         </div>
 
                         <div className="p-2 rounded-lg bg-surface border border-border/60">
                           <span className="text-text-muted block text-[10px] font-sans font-semibold mb-0.5">
                             Expected Output:
                           </span>
-                          <span className="text-emerald-400 break-all">
-                            {typeof tc.expectedOutput === 'object'
-                              ? JSON.stringify(tc.expectedOutput)
-                              : tc.expectedOutput || '<Empty>'}
-                          </span>
+                          <pre className="text-emerald-400 whitespace-pre-wrap font-mono text-[11px] leading-relaxed break-all m-0">
+                            {formatExampleText(tc.expectedOutput) || '<Empty>'}
+                          </pre>
                         </div>
 
                         <div className="p-2 rounded-lg bg-surface border border-border/60">
                           <span className="text-text-muted block text-[10px] font-sans font-semibold mb-0.5">
                             Student Output:
                           </span>
-                          <span className={tc.passed ? 'text-emerald-400 break-all' : 'text-rose-400 break-all'}>
-                            {typeof tc.studentOutput === 'object'
-                              ? JSON.stringify(tc.studentOutput)
-                              : tc.studentOutput || '<No output>'}
-                          </span>
+                          <pre className={`${tc.passed ? 'text-emerald-400' : 'text-rose-400'} whitespace-pre-wrap font-mono text-[11px] leading-relaxed break-all m-0`}>
+                            {formatExampleText(tc.studentOutput) || '<No output>'}
+                          </pre>
                         </div>
                       </div>
 
@@ -404,12 +401,12 @@ export const SubmissionDetailModal: React.FC<SubmissionDetailModalProps> = ({
         </div>
 
         {/* ── Modal Footer ─────────────────────────────────────────────────── */}
-        <div className="p-3.5 border-t border-border bg-surface-elevated/50 flex items-center justify-between text-xs">
-          <div className="text-[11px] text-text-muted flex items-center gap-1.5">
-            <ShieldCheck className="h-3.5 w-3.5 text-accent" />
+        <div className="p-4 border-t border-slate-200 bg-slate-50/80 flex items-center justify-between text-xs">
+          <div className="text-xs text-slate-500 font-mono flex items-center gap-1.5">
+            <ShieldCheck className="h-3.5 w-3.5 text-blue-600" />
             Protected Faculty Execution Inspector
           </div>
-          <Button variant="outline" size="sm" onClick={onClose} className="text-xs">
+          <Button variant="outline" size="sm" onClick={onClose} className="border-slate-200 hover:bg-slate-100 text-slate-700 text-xs sm:text-sm font-semibold rounded-lg h-9 px-4">
             Close
           </Button>
         </div>

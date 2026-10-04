@@ -705,17 +705,16 @@ export class FacultyInterviewService {
           submissions: executions.map((e: any) => {
             const rawCases = Array.isArray(e.testCaseResults) ? e.testCaseResults : [];
             const safeCases = rawCases.map((tc: any, idx: number) => {
-              const isHidden = tc.hidden === true || tc.isHidden === true;
               const isPassed = tc.passed === true || tc.status?.id === 3 || tc.status === 'Passed';
               return {
                 id: tc.id || tc.testCaseId || `tc-${idx + 1}`,
                 order: idx + 1,
                 status: isPassed ? 'PASSED' : 'FAILED',
                 passed: isPassed,
-                hidden: isHidden,
-                input: isHidden ? '[Protected Hidden Input]' : (tc.input !== undefined ? tc.input : tc.stdin || ''),
-                expectedOutput: isHidden ? '[Protected Hidden Output]' : (tc.expectedOutput !== undefined ? tc.expectedOutput : tc.expected || ''),
-                studentOutput: isHidden ? (isPassed ? '[Protected Hidden Output]' : 'Hidden test case failed') : (tc.actualOutput !== undefined ? tc.actualOutput : tc.stdout || ''),
+                hidden: false,
+                input: tc.input !== undefined ? tc.input : (tc.stdin !== undefined ? tc.stdin : ''),
+                expectedOutput: tc.expectedOutput !== undefined ? tc.expectedOutput : (tc.expected !== undefined ? tc.expected : ''),
+                studentOutput: tc.actualOutput !== undefined ? tc.actualOutput : (tc.stdout !== undefined ? tc.stdout : (tc.studentOutput !== undefined ? tc.studentOutput : '')),
                 executionTime: tc.time ? parseFloat(tc.time) : 0,
                 memory: tc.memory || 0,
                 errorMessage: tc.error || tc.errorMessage || null,
@@ -787,17 +786,16 @@ export class FacultyInterviewService {
 
     const rawCases = Array.isArray(execution.testCaseResults) ? execution.testCaseResults : [];
     const safeCases = rawCases.map((tc: any, idx: number) => {
-      const isHidden = tc.hidden === true || tc.isHidden === true;
       const isPassed = tc.passed === true || tc.status?.id === 3 || tc.status === 'Passed';
       return {
         id: tc.id || tc.testCaseId || `tc-${idx + 1}`,
         order: idx + 1,
         status: isPassed ? 'PASSED' : 'FAILED',
         passed: isPassed,
-        hidden: isHidden,
-        input: isHidden ? '[Protected Hidden Input]' : (tc.input !== undefined ? tc.input : tc.stdin || ''),
-        expectedOutput: isHidden ? '[Protected Hidden Output]' : (tc.expectedOutput !== undefined ? tc.expectedOutput : tc.expected || ''),
-        studentOutput: isHidden ? (isPassed ? '[Protected Hidden Output]' : 'Hidden test case failed') : (tc.actualOutput !== undefined ? tc.actualOutput : tc.stdout || ''),
+        hidden: false,
+        input: tc.input !== undefined ? tc.input : (tc.stdin !== undefined ? tc.stdin : ''),
+        expectedOutput: tc.expectedOutput !== undefined ? tc.expectedOutput : (tc.expected !== undefined ? tc.expected : ''),
+        studentOutput: tc.actualOutput !== undefined ? tc.actualOutput : (tc.stdout !== undefined ? tc.stdout : (tc.studentOutput !== undefined ? tc.studentOutput : '')),
         executionTime: tc.time ? parseFloat(tc.time) : 0,
         memory: tc.memory || 0,
         errorMessage: tc.error || tc.errorMessage || null,

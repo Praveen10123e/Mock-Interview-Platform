@@ -6,9 +6,14 @@ import { Button } from '../../../components/ui/button';
 import { PageHeader } from '../../../components/shared/PageHeader';
 import { ReportWorkspace } from '../components/ReportWorkspace';
 
+import { useAuthStore } from '../../../store/AuthStore';
+
 export const InterviewSummary: React.FC = () => {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
+  const { user } = useAuthStore();
+  const isFaculty = user?.roles?.[0] === 'FACULTY';
+  const roleBase = isFaculty ? '/faculty' : '/student';
 
   if (!id) {
     return null;
@@ -25,13 +30,13 @@ export const InterviewSummary: React.FC = () => {
         title="Assessment Report"
         description="Detailed competency breakdown and skill evidence across all assessment rounds."
         breadcrumbs={[
-          { label: 'Dashboard', href: '/student/dashboard' }, 
-          { label: 'Interviews', href: '/student/interviews' },
+          { label: 'Dashboard', href: `${roleBase}/dashboard` }, 
+          { label: isFaculty ? 'Reports' : 'Interviews', href: `${roleBase}/${isFaculty ? 'reports' : 'interviews'}` },
           { label: 'Report' }
         ]}
         actions={
-          <Button variant="outline" onClick={() => navigate('/student/interviews')} className="gap-2 cursor-pointer">
-            <ChevronLeft className="h-4 w-4" /> Return to Interviews
+          <Button variant="outline" onClick={() => navigate(isFaculty ? '/faculty/reports' : '/student/interviews')} className="gap-2 cursor-pointer">
+            <ChevronLeft className="h-4 w-4" /> Return to {isFaculty ? 'Reports' : 'Interviews'}
           </Button>
         }
       />

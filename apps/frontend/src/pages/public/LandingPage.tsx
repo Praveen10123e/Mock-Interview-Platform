@@ -3,13 +3,17 @@ import { useNavigate } from 'react-router-dom';
 import { useAuthStore } from '../../store/AuthStore';
 import { LandingNavbar } from './components/LandingNavbar';
 import { LandingHero } from './components/LandingHero';
-import { HeroProductPreview } from './components/HeroProductPreview';
-import { LandingPlatformStats } from './components/LandingPlatformStats';
-import { LandingFeatureGrid } from './components/LandingFeatureGrid';
-import { LandingHowItWorks } from './components/LandingHowItWorks';
-import { LandingCategoryShowcase } from './components/LandingCategoryShowcase';
-import { LandingExperiencePreview } from './components/LandingExperiencePreview';
-import { LandingCTA } from './components/LandingCTA';
+import { LandingRoundsTimeline } from './components/LandingRoundsTimeline';
+import { LandingAptitudePreview } from './components/LandingAptitudePreview';
+import { LandingCodingPreview } from './components/LandingCodingPreview';
+import { LandingMultiFactorScoring } from './components/LandingMultiFactorScoring';
+import { LandingHRInterviewPreview } from './components/LandingHRInterviewPreview';
+import { LandingEvidenceLineage } from './components/LandingEvidenceLineage';
+import { LandingReportPreview } from './components/LandingReportPreview';
+import { LandingCodingInsights } from './components/LandingCodingInsights';
+import { LandingPracticeDomains } from './components/LandingPracticeDomains';
+import { LandingPipelineJourney } from './components/LandingPipelineJourney';
+import { LandingFinalCTA } from './components/LandingFinalCTA';
 import { LandingFooter } from './components/LandingFooter';
 
 export const LandingPage: React.FC = () => {
@@ -27,52 +31,70 @@ export const LandingPage: React.FC = () => {
     }
   };
 
-  const handleExplorePracticeBank = () => {
+  const handleExplorePracticeBank = (category?: string) => {
     if (user) {
-      navigate('/student/practice');
+      if (category) {
+        navigate(`/student/practice?category=${encodeURIComponent(category)}`);
+      } else {
+        navigate('/student/practice');
+      }
     } else {
       navigate('/login');
     }
   };
 
   return (
-    <div className="min-h-screen bg-bg text-text-primary flex flex-col selection:bg-accent/30 font-sans">
-      {/* 1. Sticky Navigation */}
+    <div className="min-h-screen bg-white text-slate-900 font-geist antialiased selection:bg-slate-900 selection:text-white overflow-x-hidden flex flex-col">
+      {/* 1. Header Navigation */}
       <LandingNavbar />
 
       <main className="flex-1 flex flex-col">
-        {/* 2. Hero Section */}
+        {/* 2. Hero Section with Natural Water Caustics WebGL & 3D Emerge IDE */}
         <LandingHero
           onStartMockInterview={handleStartMockInterview}
-          onExplorePracticeBank={handleExplorePracticeBank}
+          onExplorePracticeBank={() => handleExplorePracticeBank()}
         />
 
-        {/* 3. Hero Product Preview IDE */}
-        <HeroProductPreview />
+        {/* 3. Section 01: The Complete Mock Interview (Three Rounds) */}
+        <LandingRoundsTimeline />
 
-        {/* 4. Platform Overview & Real Metrics */}
-        <LandingPlatformStats />
+        {/* 4. Section 02: Round 01 Aptitude Assessment UI */}
+        <LandingAptitudePreview />
 
-        {/* 5. Supported Feature Architecture Grid */}
-        <LandingFeatureGrid />
+        {/* 5. Section 03: Round 02 Live Coding Judge0 Environment */}
+        <LandingCodingPreview />
 
-        {/* 6. Assessment Flow (How It Works) */}
-        <LandingHowItWorks />
+        {/* 6. Section 04: Multi-Factor Coding Scoring Dashboard */}
+        <LandingMultiFactorScoring />
 
-        {/* 7. Curriculum Domain Showcase */}
-        <LandingCategoryShowcase />
+        {/* 7. Section 05: Round 03 AI Behavioral HR Interview with Voice Telemetry */}
+        <LandingHRInterviewPreview />
 
-        {/* 8. Assessment Experience & Analytics Preview */}
-        <LandingExperiencePreview />
+        {/* 8. Section 06: Evidence-Based Evaluation Lineage */}
+        <LandingEvidenceLineage />
 
-        {/* 9. Final Call to Action */}
-        <LandingCTA
+        {/* 9. Section 07: Candidate Performance Report */}
+        <LandingReportPreview />
+
+        {/* 10. Section 08: Coding Insights & Anti-Pattern Diagnostic Telemetry */}
+        <LandingCodingInsights />
+
+        {/* 11. Section 09: Practice Before You Perform */}
+        <LandingPracticeDomains
+          onExplorePractice={(category) => handleExplorePracticeBank(category)}
+        />
+
+        {/* 12. Section 10: End-to-End Pipeline Journey */}
+        <LandingPipelineJourney />
+
+        {/* 13. Final Call to Action with Water Shader */}
+        <LandingFinalCTA
           onStartMockInterview={handleStartMockInterview}
-          onExplorePracticeBank={handleExplorePracticeBank}
+          onExplorePracticeBank={() => handleExplorePracticeBank()}
         />
       </main>
 
-      {/* 10. Minimal Footer */}
+      {/* 14. Footer */}
       <LandingFooter />
     </div>
   );

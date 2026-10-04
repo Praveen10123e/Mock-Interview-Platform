@@ -56,11 +56,11 @@
       ],
       "hidden_test_cases": [
         {
-          "input": "4 3\n-5 2 7 -1\n0 0",
+          "input": "4 1\n-5 2 7 -1\n0 0",
           "expected_output": "-5"
         },
         {
-          "input": "4 3\n-5 2 7 -1\n1 3",
+          "input": "4 1\n-5 2 7 -1\n1 3",
           "expected_output": "8"
         },
         {

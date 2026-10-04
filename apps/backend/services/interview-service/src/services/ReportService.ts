@@ -19,9 +19,10 @@ export class ReportService {
     interviewId: string,
     identityId: string,
     telemetryOverride?: any,
-    completionReasonOverride?: 'MANUAL_SUBMISSION' | 'TIME_EXPIRED'
+    completionReasonOverride?: 'MANUAL_SUBMISSION' | 'TIME_EXPIRED',
+    userRole?: string
   ) {
-    const interview = await InterviewSessionService.getInterviewScoped(interviewId, identityId);
+    const interview = await InterviewSessionService.getInterviewScoped(interviewId, identityId, userRole);
 
     if (!interview.session) {
       throw new Error('Interview session record not found.');
@@ -51,7 +52,8 @@ export class ReportService {
     const evidence = await ReportEvidenceService.collectEvidence(
       interviewId,
       identityId,
-      telemetryOverride
+      telemetryOverride,
+      userRole
     );
 
     // 2. Synthesize rich analysis & 7-dimension scoring
@@ -144,8 +146,8 @@ export class ReportService {
   /**
    * Get Report for session (returns snapshot if finalized, denies if active/running)
    */
-  static async getReport(interviewId: string, identityId: string) {
-    const interview = await InterviewSessionService.getInterviewScoped(interviewId, identityId);
+  static async getReport(interviewId: string, identityId: string, userRole?: string) {
+    const interview = await InterviewSessionService.getInterviewScoped(interviewId, identityId, userRole);
 
     if (interview.session?.finalizedAt && interview.session?.reportSnapshot) {
       const snap = interview.session.reportSnapshot as any;
@@ -169,10 +171,10 @@ export class ReportService {
         throw err;
       }
       // Dead/expired session: finalize with TIME_EXPIRED
-      return this.finalizeSession(interviewId, identityId, undefined, 'TIME_EXPIRED');
+      return this.finalizeSession(interviewId, identityId, undefined, 'TIME_EXPIRED', userRole);
     }
 
     // Fallback finalization for completed session missing snapshot
-    return this.finalizeSession(interviewId, identityId);
+    return this.finalizeSession(interviewId, identityId, undefined, undefined, userRole);
   }
 }

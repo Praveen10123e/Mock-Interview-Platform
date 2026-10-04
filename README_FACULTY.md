@@ -6,13 +6,13 @@ This guide provides login credentials, available routes, and architecture detail
 
 ## 🔑 Faculty Login Credentials
 
-Faculty credentials are configured through the development environment seed data.
+Use the following credentials to access the Faculty Portal:
 
 | Field | Value |
 | :--- | :--- |
 | **Portal URL** | [http://localhost:5173/login](http://localhost:5173/login) |
 | **Email** | `faculty@nm.edu` |
-| **Password** | *(see development environment setup)* |
+| **Password** | `Password123!` |
 | **Assigned Role** | `FACULTY` |
 | **Faculty Name** | Prof. Arun Kumar |
 | **Designation** | Associate Professor / Faculty Instructor |
@@ -27,7 +27,7 @@ Faculty credentials are configured through the development environment seed data
    - **Frontend**: `http://localhost:5173`
    - **API Gateway**: `http://localhost:3000`
 2. Navigate to the login page: [http://localhost:5173/login](http://localhost:5173/login).
-3. Enter `faculty@nm.edu` and the password configured during development environment setup.
+3. Enter `faculty@nm.edu` and password `Password123!`.
 4. Upon successful authentication, you will be automatically redirected to the **Faculty Dashboard**:  
    👉 [http://localhost:5173/faculty/dashboard](http://localhost:5173/faculty/dashboard)
 

@@ -70,31 +70,28 @@ The application is structured as a scalable monorepo comprising a React Single-P
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │                                   Client Frontend                                      │
-│                      React + TypeScript + Vite + Tailwind CSS                          │
+│                React 18 + TypeScript + Vite + Tailwind CSS (Port 5173)                 │
 └───────────────────────────────────────────┬────────────────────────────────────────────┘
-                                            │ HTTP / WebSocket
+                                            │ HTTP / WebSocket (/api/v1)
                                             ▼
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │                                 API Gateway (Port 3000)                                │
-│                     Reverse Proxy, Authentication, Rate Limiting                       │
-└──────┬──────────────┬──────────────┬──────────────┬──────────────┬──────────────┬──────┘
-       │              │              │              │              │              │
-       ▼              ▼              ▼              ▼              ▼              ▼
-┌──────────────┐┌──────────────┐┌──────────────┐┌──────────────┐┌──────────────┐┌──────────────┐
-│ Auth Service ││ User Service ││  Interview   ││ Question     ││ Scoring &    ││ Recommend-   │
-│ (Port 3001)  ││ (Port 3002)  ││   Service    ││ Bank Service ││ Analytics    ││ ation Engine │
-│ JWT & RBAC   ││ Profile Mgmt ││ (Port 3004)  ││ (Port 3005)  ││ (Port 3007)  ││ (Port 3008)  │
-└──────┬───────┘└──────┬───────┘└──────┬───────┘└──────┬───────┘└──────┬───────┘└──────┬───────┘
-       │               │               │               │               │               │
-       └───────────────┼───────────────┴───────────────┼───────────────┴───────────────┘
-                       ▼                               ▼
-┌──────────────────────────────────────────────┐┌──────────────────────────────────────────────┐
-│                Judge Service                 ││      Naan Mudhalvan Course Engine            │
-│ (Port 3006) - Multi-Language Sandbox Engine  ││ Weak Topic Mapping & Govt Course Alignment   │
-└──────────────────────┬───────────────────────┘└──────────────────────┬───────────────────────┘
-                       ▼                                               ▼
+│            Reverse Proxy, Asymmetric RS256 JWT Verification, Rate Limiting             │
+└───────┬─────────────────┬─────────────────┬─────────────────┬──────────────────────────┘
+        │                 │                 │                 │                 │
+        ▼                 ▼                 ▼                 ▼                 ▼
+ ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
+ │ Auth Service │  │ User Service │  │  Interview   │  │   Question   │  │    Judge     │
+ │ (Port 3001)  │  │ (Port 3002)  │  │   Service    │  │ Bank Service │  │   Service    │
+ │ RS256 Issuer │  │ Profile Mgmt │  │ (Port 3004)  │  │ (Port 3005)  │  │ (Port 3006)  │
+ │ Bcrypt Auth  │  │ Admin Users  │  │ Engine/Report│  │ Catalog & DS │  │ Sandbox Node │
+ └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘  └──────┬───────┘
+        │                 │                 │                 │                 │
+        └─────────────────┴─────────────────┼─────────────────┴─────────────────┘
+                                            ▼
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
 │                              PostgreSQL Database (Prisma ORM)                          │
+│                                (Host: localhost, Port: 5432)                           │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -252,11 +249,11 @@ npm run dev
 
 For development and evaluation, use the following pre-configured credentials:
 
-| Role | Email | Password |
-|---|---|---|
-| **Student** | `student@example.com` | `password123` |
-| **Faculty** | `faculty@example.com` | `password123` |
-| **Admin** | `admin@example.com` | `password123` |
+| Role | Email | Password | Details |
+|---|---|---|---|
+| **Student** | `student@example.com` | `Password123!` | Active student candidate (Practice & Template assessments) |
+| **Faculty** | `faculty@nm.edu` | `Password123!` | CSE Faculty lead (Cohort analytics, student reports, question bank) |
+| **Admin** | `admin@nm.edu` | `Password123!` | System Administrator (Full platform access, datasets, telemetry) |
 
 ---
 

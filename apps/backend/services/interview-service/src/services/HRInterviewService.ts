@@ -12,6 +12,7 @@ import { PrismaClient } from '../generated/client';
 import { InterviewSessionService } from './InterviewSessionService';
 import { InterviewAIService } from './InterviewAIService';
 import { HRMessage } from '../types/interviewTypes';
+import { HRTranscriptValidator } from './HRTranscriptValidator';
 import path from 'path';
 import fs from 'fs';
 
@@ -132,10 +133,6 @@ export class HRInterviewService {
   ) {
     await InterviewSessionService.requireActiveSession(interviewId, identityId);
 
-    if (!transcript || !transcript.trim()) {
-      throw Object.assign(new Error('Transcript cannot be empty.'), { statusCode: 400 });
-    }
-
     const hrSession = await this.requireHRSession(interviewId);
     const question = await (prisma as any).hRInterviewQuestion.findFirst({
       where: { id: questionId, hrSessionId: hrSession.id },
@@ -145,33 +142,48 @@ export class HRInterviewService {
       throw Object.assign(new Error('Question not found in this HR session.'), { statusCode: 404 });
     }
 
+    // Evidence-based transcript validation
+    const valResult = HRTranscriptValidator.validate(transcript, {
+      question: question.question,
+      category: question.category,
+    });
+
+    const storedTranscript = valResult.verifiedTranscript;
+    const wordCount = valResult.wordCount;
+
     // Save or update the response
-    const wordCount = transcript.trim().split(/\s+/).filter(Boolean).length;
     await (prisma as any).hRInterviewResponse.upsert({
       where: { questionId },
       create: {
         hrSessionId: hrSession.id,
         questionId,
-        transcript: transcript.trim(),
+        transcript: storedTranscript,
         durationSeconds,
         wordCount,
       },
       update: {
-        transcript: transcript.trim(),
+        transcript: storedTranscript,
         durationSeconds,
         wordCount,
         submittedAt: new Date(),
       },
     });
 
-    // Log in interview history
+    // Log in interview history with full auditability (both raw and verified transcripts)
     await prisma.interviewHistory.create({
       data: {
         interviewId,
         event: 'HR_MESSAGE',
         details: {
           role: 'candidate',
-          content: transcript.trim(),
+          content: storedTranscript,
+          rawTranscript: valResult.rawTranscript,
+          verifiedTranscript: valResult.verifiedTranscript,
+          isEmpty: valResult.isEmpty,
+          isFillerOnly: valResult.isFillerOnly,
+          isNonResponsive: valResult.isNonResponsive,
+          normalizedTerms: valResult.normalizedTerms,
+          rejectionReason: valResult.rejectionReason,
           questionId,
           durationSeconds,
         } as any,
@@ -182,7 +194,7 @@ export class HRInterviewService {
     const followUpText = await InterviewAIService.generateFollowUp(
       question.question,
       question.category,
-      transcript,
+      storedTranscript,
       'Software Engineer'
     );
 
@@ -294,42 +306,83 @@ export class HRInterviewService {
       data: { status: 'ANALYZING' },
     });
 
-    // Fetch all questions with their responses
-    const questions = await (prisma as any).hRInterviewQuestion.findMany({
-      where: { hrSessionId: hrSession.id, questionType: 'MAIN' },
+    // Fetch ALL questions (MAIN + FOLLOW_UP) with their responses for multi-turn context
+    const allQuestionsWithResponses = await (prisma as any).hRInterviewQuestion.findMany({
+      where: { hrSessionId: hrSession.id },
       include: { response: true },
       orderBy: { sequence: 'asc' },
     });
 
-    const questionsWithTranscripts = questions
-      .filter((q: any) => q.response?.transcript)
-      .map((q: any) => ({
-        question: q.question,
-        category: q.category,
-        transcript: q.response.transcript as string,
-        durationSeconds: q.response.durationSeconds as number,
-      }));
+    const mainQuestions = allQuestionsWithResponses.filter((q: any) => q.questionType === 'MAIN');
+    const followUpQuestions = allQuestionsWithResponses.filter((q: any) => q.questionType === 'FOLLOW_UP');
 
-    // Run holistic AI evaluation
+    // Aggregate FOLLOW_UP responses into their parent MAIN question for multi-turn evaluation.
+    // This ensures "Python project" + "Python for backend and React for frontend" are
+    // combined and evaluated as one coherent answer against the parent question's rubric.
+    const questionsToEvaluate = mainQuestions.map((mainQ: any) => {
+      const mainTranscript = (mainQ.response?.transcript || '').trim();
+      const mainDuration = (mainQ.response?.durationSeconds || 0) as number;
+
+      // Collect all follow-up responses for this parent question
+      const followUps = followUpQuestions.filter(
+        (fu: any) => fu.isFollowUpToId === mainQ.id && fu.response?.transcript
+      );
+
+      // Build a combined transcript that includes main + all follow-up candidate turns.
+      // Skip placeholder/empty/silence strings so they don't pollute the combined text.
+      const silencePlaceholders = [
+        '[candidate audio response recorded]',
+        '[candidate audio response]',
+        '[no speech]',
+        '[no speech detected]',
+      ];
+
+      const allTurns: string[] = [];
+      if (mainTranscript && !silencePlaceholders.some(p => mainTranscript.toLowerCase() === p)) {
+        allTurns.push(mainTranscript);
+      }
+      for (const fu of followUps) {
+        const fuText = (fu.response.transcript || '').trim();
+        if (fuText && !silencePlaceholders.some(p => fuText.toLowerCase() === p)) {
+          allTurns.push(fuText);
+        }
+      }
+
+      const combinedTranscript = allTurns.join(' ');
+      const totalDuration = mainDuration + followUps.reduce(
+        (sum: number, fu: any) => sum + (fu.response?.durationSeconds || 0), 0
+      );
+
+      return {
+        question: mainQ.question,
+        category: mainQ.category,
+        transcript: combinedTranscript,
+        durationSeconds: totalDuration,
+      };
+    });
+
+    // Run holistic AI evaluation across all main questions (with combined multi-turn context)
     const evaluation = await InterviewAIService.evaluateFinalSession(
-      questionsWithTranscripts.length > 0
-        ? questionsWithTranscripts
-        : [{ question: 'General Introduction', category: 'Self Introduction', transcript: 'No transcript recorded.', durationSeconds: 0 }]
+      questionsToEvaluate.length > 0
+        ? questionsToEvaluate
+        : [{ question: 'General Introduction', category: 'Self Introduction', transcript: '', durationSeconds: 0 }]
     );
 
-    // Persist evaluation
+    const { criteriaEvidence, ...dbEval } = evaluation;
+
+    // Persist evaluation in DB
     await (prisma as any).hRInterviewEvaluation.upsert({
       where: { hrSessionId: hrSession.id },
       create: {
         hrSessionId: hrSession.id,
-        ...evaluation,
-        strengths: evaluation.strengths as any,
-        improvements: evaluation.improvements as any,
+        ...dbEval,
+        strengths: dbEval.strengths as any,
+        improvements: dbEval.improvements as any,
       },
       update: {
-        ...evaluation,
-        strengths: evaluation.strengths as any,
-        improvements: evaluation.improvements as any,
+        ...dbEval,
+        strengths: dbEval.strengths as any,
+        improvements: dbEval.improvements as any,
         evaluatedAt: new Date(),
       },
     });

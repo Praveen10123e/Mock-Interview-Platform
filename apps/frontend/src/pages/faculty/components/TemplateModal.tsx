@@ -322,26 +322,26 @@ export const TemplateModal: React.FC<TemplateModalProps> = ({
   const maxStep = currentWizardSteps.length;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-surface border border-border shadow-2xl rounded-2xl w-full max-w-4xl max-h-[94vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-white border border-slate-200 shadow-2xl rounded-2xl w-full max-w-4xl max-h-[94vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* ── Header ────────────────────────────────────────────────────────── */}
-        <div className="p-4 sm:p-5 border-b border-border flex items-center justify-between bg-surface-elevated/50">
+        <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
           <div className="space-y-0.5">
-            <h2 className="text-base sm:text-lg font-bold text-text-primary flex items-center gap-2">
-              <FileText className="h-5 w-5 text-accent" />
+            <h2 className="text-base sm:text-lg font-bold text-slate-900 flex items-center gap-2">
+              <FileText className="h-5 w-5 text-blue-600" />
               {initialData ? `Edit Template: ${initialData.name}` : 'Create Interview Template'}
             </h2>
-            <p className="text-xs text-text-secondary">
+            <p className="text-xs text-slate-500">
               Configure 3-stage mock interview structure: Aptitude (5 Qs) → Coding (1 Easy + 1 Med/Hard) → HR Conversational.
             </p>
           </div>
-          <Button variant="ghost" size="sm" onClick={onClose} className="h-8 w-8 p-0 rounded-lg">
+          <Button variant="ghost" size="sm" onClick={onClose} className="h-8 w-8 p-0 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100">
             <X className="h-4 w-4" />
           </Button>
         </div>
 
         {/* ── Dynamic Wizard Steps Navigation ───────────────────────────────── */}
-        <div className={`grid grid-cols-${currentWizardSteps.length} border-b border-border bg-surface-elevated/20 text-xs font-medium text-center`}>
+        <div className={`grid grid-cols-${currentWizardSteps.length} border-b border-slate-200 bg-slate-50/50 text-xs sm:text-sm font-medium text-center`}>
           {currentWizardSteps.map((s) => (
             <button
               key={s.stepNum}
@@ -349,10 +349,10 @@ export const TemplateModal: React.FC<TemplateModalProps> = ({
               onClick={() => setStep(s.stepNum)}
               className={`py-3 px-2 border-b-2 flex items-center justify-center gap-1.5 transition-colors cursor-pointer ${
                 step === s.stepNum
-                  ? 'border-accent text-accent font-bold bg-accent/5'
+                  ? 'border-blue-600 text-blue-600 font-bold bg-blue-50/50'
                   : s.valid
-                  ? 'border-emerald-500/50 text-emerald-400'
-                  : 'border-transparent text-text-muted hover:text-text-primary'
+                  ? 'border-emerald-500 text-emerald-600'
+                  : 'border-transparent text-slate-500 hover:text-slate-800'
               }`}
             >
               <s.icon className="h-3.5 w-3.5 shrink-0" />
@@ -1011,7 +1011,7 @@ export const TemplateModal: React.FC<TemplateModalProps> = ({
         </div>
 
         {/* ── Footer ────────────────────────────────────────────────────────── */}
-        <div className="p-4 border-t border-border bg-surface-elevated/50 flex items-center justify-between">
+        <div className="p-4 border-t border-slate-200 bg-slate-50/80 flex items-center justify-between">
           <div>
             {step > 1 && (
               <Button
@@ -1019,7 +1019,7 @@ export const TemplateModal: React.FC<TemplateModalProps> = ({
                 variant="outline"
                 size="sm"
                 onClick={() => setStep(step - 1)}
-                className="text-xs cursor-pointer"
+                className="text-xs sm:text-sm font-semibold border-slate-200 hover:bg-slate-100 text-slate-700 cursor-pointer rounded-lg h-9 px-3.5"
               >
                 Previous Step
               </Button>
@@ -1027,7 +1027,7 @@ export const TemplateModal: React.FC<TemplateModalProps> = ({
           </div>
 
           <div className="flex items-center gap-2">
-            <Button type="button" variant="ghost" size="sm" onClick={onClose} className="text-xs cursor-pointer">
+            <Button type="button" variant="ghost" size="sm" onClick={onClose} className="text-xs sm:text-sm font-semibold text-slate-600 hover:bg-slate-100 cursor-pointer rounded-lg h-9 px-3.5">
               Cancel
             </Button>
 
@@ -1044,7 +1044,7 @@ export const TemplateModal: React.FC<TemplateModalProps> = ({
                   setFormError(null);
                   setStep(step + 1);
                 }}
-                className="text-xs cursor-pointer"
+                className="bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-semibold cursor-pointer rounded-lg h-9 px-4"
               >
                 Next Step
               </Button>
@@ -1055,7 +1055,7 @@ export const TemplateModal: React.FC<TemplateModalProps> = ({
                 size="sm"
                 onClick={handleSave}
                 disabled={isSaving || (status === 'PUBLISHED' && !canPublish)}
-                className="text-xs gap-1.5 cursor-pointer"
+                className="bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-semibold gap-1.5 cursor-pointer rounded-lg h-9 px-4"
               >
                 {isSaving ? 'Saving...' : initialData ? 'Update Template' : 'Save Template'}
               </Button>

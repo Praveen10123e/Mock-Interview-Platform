@@ -310,7 +310,7 @@ export const HRInterviewRoom: React.FC<HRInterviewRoomProps> = ({
     setAvatarState('THINKING');
     setIsSubmittingAnswer(true);
 
-    const finalTranscript = (transcript || liveTranscript || '').trim() || '[Candidate audio response recorded]';
+    const finalTranscript = (transcript || liveTranscript || '').trim();
 
     try {
       if (!currentQuestion) {

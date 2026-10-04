@@ -352,3 +352,270 @@ export const useUpdateAdminUserStatus = () => {
     },
   });
 };
+
+// ─── ADMIN DATASETS QUERIES & MUTATIONS ──────────────────────────────────────
+
+export interface AdminDatasetItem {
+  id: string;
+  name: string;
+  type: string;
+  category: string;
+  questionCount: number;
+  difficultyDistribution: Record<string, number>;
+  status: 'ACTIVE' | 'ARCHIVED';
+  version: string;
+  source: string;
+  lastUpdated: string;
+  description: string;
+}
+
+export interface AdminDatasetsResponse {
+  summary: {
+    totalDatasets: number;
+    totalQuestions: number;
+    codingQuestions: number;
+    aptitudeQuestions: number;
+    hrQuestions: number;
+    sqlQuestions: number;
+  };
+  datasets: AdminDatasetItem[];
+}
+
+export interface AdminDatasetDetailResponse {
+  dataset: {
+    id: string;
+    name: string;
+    questionCount: number;
+    difficultyDistribution: Record<string, number>;
+    typeDistribution: Record<string, number>;
+    status: string;
+  };
+  questions: Array<{
+    id: string;
+    title: string;
+    description: string;
+    questionType: string;
+    difficulty: string;
+    status: string;
+    category: string;
+    topic?: string;
+    marks: number;
+    estimatedTime: number;
+    testCasesCount: number;
+    testCases: Array<{
+      testCaseId: string;
+      input: string;
+      expectedOutput: string;
+      visibility: string;
+    }>;
+    executionMode: string;
+    constraints: string[];
+    examples: Array<{
+      input: string;
+      output: string;
+      explanation?: string;
+    }>;
+  }>;
+}
+
+export interface AdminImportBatch {
+  id: string;
+  filename: string;
+  status: string;
+  totalRecords: number;
+  importedCount: number;
+  skippedCount: number;
+  failedCount: number;
+  errorMessage?: string | null;
+  startedAt: string;
+  completedAt?: string | null;
+}
+
+export const getAdminDatasets = async (): Promise<AdminDatasetsResponse> => {
+  const res = await api.get<{ success: boolean; data: AdminDatasetsResponse }>('/questions/datasets');
+  return (res.data as any).data || res.data;
+};
+
+export const useAdminDatasets = () => {
+  return useQuery<AdminDatasetsResponse>({
+    queryKey: ['admin', 'datasets'],
+    queryFn: getAdminDatasets,
+    staleTime: 30000,
+  });
+};
+
+export const getAdminDatasetDetail = async (id: string): Promise<AdminDatasetDetailResponse> => {
+  const res = await api.get<{ success: boolean; data: AdminDatasetDetailResponse }>(`/questions/datasets/${id}`);
+  return (res.data as any).data || res.data;
+};
+
+export const useAdminDatasetDetail = (id: string | null) => {
+  return useQuery<AdminDatasetDetailResponse>({
+    queryKey: ['admin', 'datasets', 'detail', id],
+    queryFn: () => getAdminDatasetDetail(id!),
+    enabled: Boolean(id),
+  });
+};
+
+export const getAdminDatasetBatches = async (): Promise<AdminImportBatch[]> => {
+  const res = await api.get<{ success: boolean; data: AdminImportBatch[] }>('/questions/datasets/batches');
+  return (res.data as any).data || res.data;
+};
+
+export const useAdminDatasetBatches = () => {
+  return useQuery<AdminImportBatch[]>({
+    queryKey: ['admin', 'datasets', 'batches'],
+    queryFn: getAdminDatasetBatches,
+    staleTime: 30000,
+  });
+};
+
+export const validateDatasetQuestions = async (questions: any[]) => {
+  const res = await api.post('/questions/datasets/validate', { questions });
+  return (res.data as any).data || res.data;
+};
+
+export const exportDatasetQuestions = async (id: string) => {
+  const res = await api.get(`/questions/datasets/${id}/export`);
+  return (res.data as any).data || res.data;
+};
+
+// ─── ADMIN SYSTEM QUERIES ────────────────────────────────────────────────────
+
+export interface SystemServiceProbe {
+  name: string;
+  port: number;
+  status: 'Healthy' | 'Degraded' | 'Unreachable';
+  latency: string;
+  url: string;
+  lastChecked: string;
+}
+
+export interface SystemHealthData {
+  overallStatus: 'HEALTHY' | 'DEGRADED' | 'OFFLINE';
+  database: {
+    status: 'CONNECTED' | 'DISCONNECTED';
+    engine: string;
+    latency: string;
+    activePoolConnections: number;
+    host: string;
+  };
+  redis: {
+    status: string;
+    isUsed: boolean;
+    reason: string;
+  };
+  services: SystemServiceProbe[];
+  systemInfo: {
+    applicationName: string;
+    version: string;
+    environment: string;
+    nodeVersion: string;
+    platform: string;
+    architecture: string;
+    uptime: string;
+    memoryUsage: {
+      rss: string;
+      heapUsed: string;
+      heapTotal: string;
+    };
+    gatewayPrefix: string;
+    totalRegisteredServices: number;
+    activeHealthyServices: number;
+    lastChecked: string;
+  };
+}
+
+export const getAdminSystemHealth = async (): Promise<SystemHealthData> => {
+  const res = await api.get<{ success: boolean; data: SystemHealthData }>('/admin/system');
+  return (res.data as any).data || res.data;
+};
+
+export const useAdminSystemHealth = () => {
+  return useQuery<SystemHealthData>({
+    queryKey: ['admin', 'system', 'health'],
+    queryFn: getAdminSystemHealth,
+    staleTime: 10000,
+    refetchInterval: 30000, // Safe background polling every 30s
+  });
+};
+
+// ─── ADMIN ANALYTICS QUERIES ─────────────────────────────────────────────────
+
+export interface AdminAnalyticsData {
+  dateRange: string;
+  overview: {
+    totalUsers: number;
+    totalStudents: number;
+    totalFaculty: number;
+    totalInterviews: number;
+    completedInterviews: number;
+    inProgressInterviews: number;
+    completionRate: number;
+    averageOverallScore: number;
+    totalSubmissions: number;
+    totalTestRuns: number;
+    submissionAcceptanceRate: number;
+    testCasePassRate: number;
+  };
+  performanceByRound: {
+    aptitude: number;
+    coding: number;
+    hr: number;
+    overall: number;
+  };
+  timelineTrend: Array<{
+    date: string;
+    interviewsCount: number;
+    completedCount: number;
+    averageScore: number;
+  }>;
+  codingAnalytics: {
+    totalSubmissions: number;
+    totalRuns: number;
+    acceptanceRate: number;
+    testCasePassRate: number;
+    totalTestsPassed: number;
+    totalTestsCount: number;
+    verdictDistribution: {
+      accepted: number;
+      wrongAnswer: number;
+      compilationError: number;
+      runtimeError: number;
+      timeLimitExceeded: number;
+    };
+    languages: Array<{
+      name: string;
+      count: number;
+      percentage: number;
+    }>;
+  };
+  questionBank: {
+    totalPublished: number;
+    byType: Record<string, number>;
+    byDifficulty: Record<string, number>;
+  };
+  proctoring: {
+    totalTabSwitches: number;
+    totalAwaySeconds: number;
+    sessionsWithViolations: number;
+    averageSwitchesPerSession: number;
+  };
+  generatedAt: string;
+}
+
+export const getAdminAnalytics = async (params: {
+  dateRange?: string;
+  assessmentType?: string;
+} = {}): Promise<AdminAnalyticsData> => {
+  const res = await api.get<{ success: boolean; data: AdminAnalyticsData }>('/admin/analytics', { params });
+  return (res.data as any).data || res.data;
+};
+
+export const useAdminAnalytics = (params: { dateRange?: string; assessmentType?: string } = {}) => {
+  return useQuery<AdminAnalyticsData>({
+    queryKey: ['admin', 'analytics', params],
+    queryFn: () => getAdminAnalytics(params),
+    staleTime: 15000,
+  });
+};

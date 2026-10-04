@@ -598,19 +598,8 @@ export class ExecutionEngine {
     // Determine active test cases based on RUN vs SUBMIT
     let activeCases: TestCase[] = [];
     if (rawTestCases && rawTestCases.length > 0) {
-      if (runMode === 'RUN') {
-        const hasVisibilityMeta = rawTestCases.some(
-          (tc) => typeof tc.hidden === 'boolean' || typeof tc.visible === 'boolean' || (tc as any).visibility === 'VISIBLE'
-        );
-        if (hasVisibilityMeta) {
-          activeCases = rawTestCases.filter(
-            (tc: any) => tc.hidden === false || tc.visible === true || tc.visibility === 'VISIBLE'
-          );
-        } else if (examples && examples.length > 0) {
-          activeCases = rawTestCases.slice(0, Math.min(examples.length, rawTestCases.length));
-        } else {
-          activeCases = rawTestCases.slice(0, Math.min(3, rawTestCases.length));
-        }
+      if (runMode === 'RUN' || (runMode as any) === 'SAMPLE') {
+        activeCases = rawTestCases.slice(0, 2);
       } else {
         activeCases = rawTestCases;
       }

@@ -5,6 +5,7 @@ import { PrismaClient } from './generated/client';
 import { ImportService } from './services/ImportService';
 import { SearchService } from './services/SearchService';
 import { QuestionManagementService } from './services/QuestionManagementService';
+import { DatasetService } from './services/DatasetService';
 import path from 'path';
 
 const app = express();
@@ -54,7 +55,7 @@ const sendError = (res: express.Response, error: any, statusCode = 500) => {
 const isFacultyOrAdmin = (req: express.Request): boolean => {
   const roleHeader = (req.headers['x-user-role'] as string) || '';
   const roles = roleHeader.split(',').map((r) => r.trim().toUpperCase());
-  return roles.includes('FACULTY') || roles.includes('ADMINISTRATOR');
+  return roles.includes('FACULTY') || roles.includes('ADMINISTRATOR') || roles.includes('ADMIN');
 };
 
 // Helper: Enforce Faculty authorization
@@ -151,6 +152,57 @@ app.get('/', async (req, res) => {
     sendSuccess(res, data, pagination);
   } catch (err: any) {
     sendError(res, err);
+  }
+});
+
+// ── DATASET MANAGEMENT (ADMIN & FACULTY) ───────────────────────────────────
+
+app.get('/datasets', requireFaculty, async (req, res) => {
+  try {
+    const data = await DatasetService.listDatasets();
+    sendSuccess(res, data);
+  } catch (err: any) {
+    sendError(res, err);
+  }
+});
+
+app.get('/datasets/batches', requireFaculty, async (req, res) => {
+  try {
+    const data = await DatasetService.listBatches();
+    sendSuccess(res, data);
+  } catch (err: any) {
+    sendError(res, err);
+  }
+});
+
+app.post('/datasets/validate', requireFaculty, async (req, res) => {
+  try {
+    const questions = req.body?.questions || req.body;
+    const data = DatasetService.validateQuestions(questions);
+    sendSuccess(res, data);
+  } catch (err: any) {
+    sendError(res, err);
+  }
+});
+
+app.get('/datasets/:id/export', requireFaculty, async (req, res) => {
+  try {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const data = await DatasetService.exportDatasetQuestions(id);
+    sendSuccess(res, data);
+  } catch (err: any) {
+    sendError(res, err);
+  }
+});
+
+app.get('/datasets/:id', requireFaculty, async (req, res) => {
+  try {
+    const id = Array.isArray(req.params.id) ? req.params.id[0] : req.params.id;
+    const limit = req.query.limit ? parseInt(req.query.limit as string, 10) : 50;
+    const data = await DatasetService.getDatasetDetail(id, limit);
+    sendSuccess(res, data);
+  } catch (err: any) {
+    sendError(res, err, err.message === 'Dataset not found' ? 404 : 500);
   }
 });
 

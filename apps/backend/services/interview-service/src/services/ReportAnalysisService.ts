@@ -393,7 +393,7 @@ export class ReportAnalysisService {
         include: { hrSession: true },
       });
 
-      if (hrEval && hrEval.overallScore > 0) {
+      if (hrEval) {
         hrScore = Math.round(hrEval.overallScore);
         clarityScore = Math.round(hrEval.clarityScore);
         relevanceScore = Math.round(hrEval.relevanceScore);
@@ -401,28 +401,26 @@ export class ReportAnalysisService {
         hrImprovements = Array.isArray(hrEval.improvements) ? hrEval.improvements as string[] : [];
         hrAiSummary = hrEval.aiSummary || '';
         hrStarGuidance = hrEval.starGuidance || hrStarGuidance;
-        hrFeedback = hrEval.feedback || '';
+        hrFeedback = hrEval.feedback || (hrScore === 0 ? 'No response was provided, so there was insufficient evidence to evaluate this question.' : '');
       } else if (evidence.hr.status === 'COMPLETED') {
-        // Heuristic fallback when HR was completed but no AI evaluation exists yet
+        // Fallback when HR was completed but no AI evaluation record exists.
+        // Do NOT fabricate scores — reward based only on actual words spoken.
         if (avgWordsPerResponse >= 30) {
-          hrScore = 88; clarityScore = 90; relevanceScore = 86;
-        } else if (avgWordsPerResponse >= 10) {
-          hrScore = 75; clarityScore = 78; relevanceScore = 72;
+          hrScore = 0; // Will be re-evaluated; no fabricated credit without actual AI scoring
+          hrFeedback = `Candidate participated in HR interview (${hrCandidateResponses.length} responses) but evaluation record is missing. Please re-run evaluation.`;
+          hrStrengths = ['Participated in behavioral interview dialogue'];
+          hrImprovements = ['Re-run HR evaluation to obtain scored feedback'];
         } else {
-          hrScore = 60; clarityScore = 65; relevanceScore = 60;
+          hrScore = 0; clarityScore = 0; relevanceScore = 0;
+          hrFeedback = 'HR evaluation record not found. Score cannot be determined without evidence.';
+          hrStrengths = [];
+          hrImprovements = ['Provide audible, structured answers to behavioral questions.'];
         }
-        hrFeedback = `Candidate participated in a behavioral interview dialogue (${hrCandidateResponses.length} responses recorded).`;
-        hrStrengths = ['Engaged across multiple dialogue turns', 'Maintained professional tone throughout'];
-        hrImprovements = ['Structure responses using the STAR framework', 'Quantify outcomes with specific metrics'];
       }
     } catch (hrEvalErr) {
-      // If DB lookup fails, use heuristic
-      if (evidence.hr.status === 'COMPLETED') {
-        hrScore = avgWordsPerResponse >= 30 ? 88 : avgWordsPerResponse >= 10 ? 75 : 60;
-        clarityScore = avgWordsPerResponse >= 30 ? 90 : avgWordsPerResponse >= 10 ? 78 : 65;
-        relevanceScore = avgWordsPerResponse >= 30 ? 86 : avgWordsPerResponse >= 10 ? 72 : 60;
-        hrFeedback = `Candidate participated in a behavioral interview dialogue (${hrCandidateResponses.length} responses recorded).`;
-      }
+      // If DB lookup fails, do not fabricate scores
+      hrScore = 0; clarityScore = 0; relevanceScore = 0;
+      hrFeedback = 'HR evaluation could not be retrieved. Please re-run evaluation.';
     }
 
     const hrAnalysis: DetailedHRAnalysis = {
@@ -483,7 +481,7 @@ export class ReportAnalysisService {
     const complexityScore = codingAnalysis.some((c) => c.approachClassification === 'Optimal') ? 92 : (codingScore > 0 ? 75 : 40);
     const codeQualityScore = evidence.coding.problems.some((p) => p.submittedCode && p.submittedCode.length > 30) ? 85 : 50;
     const debuggingScore = evidence.coding.totalRunCount > 0 ? 80 : 60;
-    const communicationDimScore = hrScore > 0 ? hrScore : 50;
+    const communicationDimScore = hrScore;
     const problemSolvingScore = Math.round((aptScore * 0.5) + (codingScore * 0.5));
     const stressResilienceScore = evidence.coding.problemsSubmitted === evidence.coding.totalProblems ? 90 : 75;
 

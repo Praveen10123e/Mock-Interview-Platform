@@ -65,7 +65,7 @@ export const Header: FC<HeaderProps> = ({ onMenuToggle }) => {
   }
 
   return (
-    <header className="flex h-16 shrink-0 items-center justify-between border-b border-border bg-white px-4 md:px-8 z-30 sticky top-0 shadow-xs">
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border bg-white px-4 md:px-8 z-30 sticky top-0 shadow-xs">
       <div className="flex items-center gap-3 md:gap-4">
         {/* Mobile Menu Button */}
         {onMenuToggle && (
@@ -79,18 +79,18 @@ export const Header: FC<HeaderProps> = ({ onMenuToggle }) => {
         )}
 
         {/* Dynamic Breadcrumbs */}
-        <nav className="hidden sm:flex items-center text-xs font-medium text-text-muted" aria-label="Breadcrumb">
-          <ol className="inline-flex items-center space-x-1.5">
+        <nav className="hidden sm:flex items-center text-[13px] leading-[18px] font-medium text-slate-500" aria-label="Breadcrumb">
+          <ol className="inline-flex items-center space-x-2">
             {paths.map((path, index) => {
               const isLast = index === paths.length - 1;
               const href = '/' + paths.slice(0, index + 1).join('/');
               return (
-                <li key={path} className="inline-flex items-center gap-1.5">
-                  {index > 0 && <ChevronRight className="h-3.5 w-3.5 text-text-muted opacity-40" />}
+                <li key={path} className="inline-flex items-center gap-2">
+                  {index > 0 && <ChevronRight className="h-4 w-4 text-slate-400 opacity-60" />}
                   {isLast ? (
-                    <span className="text-text-primary capitalize font-semibold">{path.replace(/-/g, ' ')}</span>
+                    <span className="text-slate-900 capitalize font-semibold">{path.replace(/-/g, ' ')}</span>
                   ) : (
-                    <Link to={href} className="capitalize hover:text-text-primary transition-colors text-text-secondary">
+                    <Link to={href} className="capitalize hover:text-slate-900 transition-colors text-slate-500">
                       {path.replace(/-/g, ' ')}
                     </Link>
                   )}
@@ -104,28 +104,28 @@ export const Header: FC<HeaderProps> = ({ onMenuToggle }) => {
       <div className="flex items-center gap-3 sm:gap-4">
         {/* User Profile Cluster */}
         <div className="relative" ref={profileRef}>
-          <button 
+          <button
             onClick={() => setProfileOpen(!profileOpen)}
-            className="flex items-center gap-2.5 pl-1.5 pr-2.5 py-1.5 rounded-xl hover:bg-surface-hover border border-border-card transition-colors focus:outline-none cursor-pointer group shadow-xs"
+            className="flex items-center gap-2.5 pl-2 pr-3 py-1.5 rounded-xl hover:bg-surface-hover border border-border-card transition-colors focus:outline-none cursor-pointer group shadow-xs"
             aria-expanded={profileOpen}
             aria-haspopup="true"
           >
             {/* Circular Avatar */}
-            <div className="h-7 w-7 rounded-full bg-accent/20 border border-accent/40 text-accent flex items-center justify-center font-bold text-xs uppercase shadow-xs">
+            <div className="h-8 w-8 rounded-full bg-accent/20 border border-accent/40 text-accent flex items-center justify-center font-bold text-xs uppercase shadow-xs shrink-0">
               {initial}
             </div>
 
             {/* Name + Role Label */}
             <div className="hidden sm:flex flex-col items-start text-left">
-              <span className="text-xs font-semibold text-text-primary leading-tight group-hover:text-accent transition-colors truncate max-w-[130px]">
+              <span className="text-sm font-semibold text-text-primary leading-tight group-hover:text-accent transition-colors truncate max-w-[150px]">
                 {displayName}
               </span>
-              <span className="text-[10px] font-mono uppercase tracking-wider text-text-muted leading-tight">
+              <span className="text-xs font-mono uppercase tracking-wider text-text-muted leading-tight">
                 {roleName}
               </span>
             </div>
 
-            <ChevronDown className="h-3.5 w-3.5 text-text-muted group-hover:text-text-primary transition-colors" />
+            <ChevronDown className="h-4 w-4 text-text-muted group-hover:text-text-primary transition-colors shrink-0" />
           </button>
 
           <AnimatePresence>
@@ -143,24 +143,32 @@ export const Header: FC<HeaderProps> = ({ onMenuToggle }) => {
                 </div>
 
                 <div className="flex flex-col space-y-0.5">
-                  <button 
-                    onClick={() => { setProfileOpen(false); navigate('/student/profile'); }}
+                  <button
+                    onClick={() => {
+                      setProfileOpen(false);
+                      const base = roleName.toUpperCase() === 'FACULTY' ? '/faculty' : roleName.toUpperCase() === 'ADMIN' ? '/admin' : '/student';
+                      navigate(`${base}/profile`);
+                    }}
                     className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors text-left cursor-pointer"
                   >
                     <UserIcon className="h-3.5 w-3.5 opacity-80" />
                     <span>My Profile</span>
                   </button>
-                  <button 
-                    onClick={() => { setProfileOpen(false); navigate('/student/settings'); }}
+                  <button
+                    onClick={() => {
+                      setProfileOpen(false);
+                      const base = roleName.toUpperCase() === 'FACULTY' ? '/faculty' : roleName.toUpperCase() === 'ADMIN' ? '/admin' : '/student';
+                      navigate(`${base}/settings`);
+                    }}
                     className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-text-secondary hover:bg-surface-hover hover:text-text-primary transition-colors text-left cursor-pointer"
                   >
                     <Settings className="h-3.5 w-3.5 opacity-80" />
                     <span>Settings</span>
                   </button>
-                  
+
                   <div className="my-1 h-px bg-border" />
-                  
-                  <button 
+
+                  <button
                     onClick={handleLogout}
                     className="flex w-full items-center gap-2.5 rounded-lg px-2.5 py-1.5 text-xs text-rose-500 hover:bg-rose-500/10 transition-colors text-left cursor-pointer"
                   >

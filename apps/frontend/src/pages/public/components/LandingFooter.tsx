@@ -1,51 +1,40 @@
-import type { FC } from 'react';
-import { Link } from 'react-router-dom';
-import { Briefcase } from 'lucide-react';
+import React from 'react';
+import { NMSandboxLogo } from './NMSandboxLogo';
 
-export const LandingFooter: FC = () => {
+export const LandingFooter: React.FC = () => {
   return (
-    <footer className="border-t border-border bg-surface-deep/60 py-12 px-4 sm:px-6 lg:px-8 text-xs text-text-muted">
-      <div className="max-w-6xl mx-auto flex flex-col md:flex-row items-center justify-between gap-6">
-        {/* Brand Description */}
-        <div className="flex flex-col items-center md:items-start space-y-2 text-center md:text-left">
-          <div className="flex items-center gap-2">
-            <div className="h-6 w-6 rounded-lg bg-accent/15 border border-accent/30 flex items-center justify-center text-accent">
-              <Briefcase className="h-3.5 w-3.5" />
-            </div>
-            <span className="font-bold text-sm text-text-primary tracking-tight">
-              NM Mock Interview Sandbox
-            </span>
+    <footer className="w-full py-16 px-6 sm:px-12 bg-white border-t border-slate-200 text-slate-500 font-mono text-xs">
+      <div className="max-w-7xl mx-auto flex flex-col md:flex-row items-baseline justify-between gap-8">
+        <div className="space-y-2">
+          <div className="text-slate-950 font-bold text-base flex items-center gap-2.5">
+            <NMSandboxLogo size={24} />
+            <span>NM Sandbox</span>
           </div>
-          <p className="max-w-sm text-text-secondary leading-relaxed">
-            AI-driven technical interview simulation and proctored assessment platform built for the Naan Mudhalvan engineering initiative.
+          <p className="font-sans text-xs text-slate-500 max-w-md leading-relaxed">
+            Naan Mudhalvan Aligned Automated Technical Mock Interview Sandbox with Multi-Factor Coding Proficiency Metric Scoring.
           </p>
         </div>
-
-        {/* Navigation & Auth Links */}
-        <div className="flex flex-wrap items-center justify-center gap-6 font-semibold text-text-secondary">
-          <a href="#features" className="hover:text-text-primary transition-colors">
-            Features
+        <div className="flex flex-wrap gap-8 text-xs font-sans">
+          <a className="hover:text-slate-950 transition-colors" href="#how-it-works">
+            How It Works
           </a>
-          <a href="#workflow" className="hover:text-text-primary transition-colors">
-            Workflow
+          <a className="hover:text-slate-950 transition-colors" href="#aptitude">
+            Assessment
           </a>
-          <a href="#categories" className="hover:text-text-primary transition-colors">
-            Categories
+          <a className="hover:text-slate-950 transition-colors" href="#practice">
+            Practice
           </a>
-          <Link to="/login" className="hover:text-text-primary transition-colors">
-            Sign In
-          </Link>
-          <Link to="/register" className="hover:text-text-primary transition-colors">
-            Create Account
-          </Link>
+          <a className="hover:text-slate-950 transition-colors" href="#reports">
+            Reports
+          </a>
+          <a className="hover:text-slate-950 transition-colors" href="#start">
+            Start
+          </a>
         </div>
       </div>
-
-      <div className="max-w-6xl mx-auto mt-8 pt-6 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3 text-center sm:text-left">
-        <p>&copy; {new Date().getFullYear()} NM Mock Interview Sandbox. Naan Mudhalvan Initiative.</p>
-        <p className="text-[11px] text-text-muted">
-          All mock assessments, code executions, and evaluation reports are proctored and protected.
-        </p>
+      <div className="max-w-7xl mx-auto mt-12 pt-6 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-4 text-[11px] text-slate-400">
+        <div>© 2025 Naan Mudhalvan Technical Platform. Government of Tamil Nadu.</div>
+        <div>Judge0 v1.13.0 API Attached · Sandbox Latency: 18ms</div>
       </div>
     </footer>
   );

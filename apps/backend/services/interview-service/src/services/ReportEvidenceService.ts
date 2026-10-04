@@ -195,15 +195,17 @@ export class ReportEvidenceService {
   static async collectEvidence(
     interviewId: string,
     identityId: string,
-    telemetryOverride?: any
+    telemetryOverride?: any,
+    userRole?: string
   ): Promise<CompleteSessionEvidence> {
-    const interview = await InterviewSessionService.getInterviewScoped(interviewId, identityId);
+    const interview = await InterviewSessionService.getInterviewScoped(interviewId, identityId, userRole);
     const sessionId = interview.session?.id || interviewId;
 
     // 1. Fetch assigned questions
     const { aptitude, coding, hr } = await InterviewSessionService.getSessionQuestions(
       interviewId,
-      identityId
+      identityId,
+      userRole
     );
 
     // 2. Fetch all session history events
@@ -368,7 +370,8 @@ export class ReportEvidenceService {
       const authoritativeTestCases = Array.isArray(q.testCases) ? q.testCases : (Array.isArray(q.metadata?.jsonPayload?.testCases) ? q.metadata.jsonPayload.testCases : []);
 
       // 2. Deterministic Best Result Calculation (highest passedCount, tie-breaker: latest attempt)
-      const candidateRecords = submits.length > 0 ? submits : runs;
+      // Only official SUBMIT records count as candidate submission attempts
+      const candidateRecords = submits;
       let bestAttempt = candidateRecords.length > 0 ? candidateRecords[0] : null;
       for (const att of candidateRecords) {
         if (!bestAttempt) {
@@ -389,7 +392,7 @@ export class ReportEvidenceService {
       const testsPassed = bestAttempt ? bestAttempt.passedCount : 0;
       const testsTotal = bestAttempt
         ? bestAttempt.totalCount
-        : (Array.isArray(authoritativeTestCases) && authoritativeTestCases.length > 0 ? authoritativeTestCases.length : 2);
+        : (Array.isArray(authoritativeTestCases) && authoritativeTestCases.length > 0 ? authoritativeTestCases.length : 0);
 
       totalTestsPassedSum += testsPassed;
       totalTestsCountSum += testsTotal;
@@ -401,8 +404,6 @@ export class ReportEvidenceService {
           problemsAcceptedCount++;
           finalVerdict = 'ACCEPTED';
         }
-      } else if (latestRun) {
-        finalVerdict = 'RUN_ONLY';
       }
 
       const bestResult = bestAttempt ? {
@@ -504,7 +505,7 @@ export class ReportEvidenceService {
         testsTotal,
         runCount: runs.length,
         submitCount: submits.length,
-        totalAttempts: qRecords.length,
+        totalAttempts: submits.length,
         language: latestRecord?.language || 'Python',
         submittedCode: latestSubmit?.sourceCode || latestRun?.sourceCode || null,
         compileOutput,

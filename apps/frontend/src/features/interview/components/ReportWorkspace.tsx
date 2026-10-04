@@ -36,6 +36,7 @@ import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, Responsi
 import api from '../../../api/axios/instance';
 import { Button } from '../../../components/ui/button';
 import { HRReportTab } from './hr/HRReportTab';
+import { useAuthStore } from '../../../store/AuthStore';
 
 const formatCategory = (cat: any): string => {
   if (!cat) return 'Quantitative';
@@ -604,12 +605,12 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
   ];
 
   const scoreBreakdown = report.scoreBreakdown || {
-    formula: `Overall (${overallProficiencyScore}/100) = Aptitude (${summary.aptitudeScore}% × 40%) + Coding (${summary.codingScore}% × 40%) + HR (${summary.hrStatus === 'COMPLETED' ? 85 : 0}% × 20%)`,
+    formula: `Overall (${overallProficiencyScore}/100) = Aptitude (${summary.aptitudeScore}% × 40%) + Coding (${summary.codingScore}% × 40%) + HR (${report.scoreBreakdown?.hrScore ?? 0}% × 20%)`,
     aptitudeScore: summary.aptitudeScore,
     aptitudeWeight: '40%',
     codingScore: summary.codingScore,
     codingWeight: '40%',
-    hrScore: summary.hrStatus === 'COMPLETED' ? 85 : 0,
+    hrScore: report.scoreBreakdown?.hrScore ?? 0,
     hrWeight: '20%',
   };
 
@@ -736,7 +737,14 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
         </div>
 
         <Button
-          onClick={() => navigate('/student/interviews')}
+          onClick={() => {
+            const role = useAuthStore.getState().user?.roles?.[0];
+            if (role === 'FACULTY') {
+              navigate('/faculty/reports');
+            } else {
+              navigate('/student/interviews');
+            }
+          }}
           variant="secondary"
           size="sm"
         >
@@ -2429,15 +2437,15 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 text-center">
                     <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
                       <div className="text-[10px] text-slate-500 uppercase tracking-wider">Overall Communication</div>
-                      <div className="text-lg font-bold text-purple-600 font-mono mt-0.5">{hrAnalysis.communicationScore || 85} / 100</div>
+                      <div className="text-lg font-bold text-purple-600 font-mono mt-0.5">{hrAnalysis.communicationScore ?? 0} / 100</div>
                     </div>
                     <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
                       <div className="text-[10px] text-slate-500 uppercase tracking-wider">Clarity Score</div>
-                      <div className="text-lg font-bold text-slate-900 font-mono mt-0.5">{hrAnalysis.clarityScore || 88} / 100</div>
+                      <div className="text-lg font-bold text-slate-900 font-mono mt-0.5">{hrAnalysis.clarityScore ?? 0} / 100</div>
                     </div>
                     <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200">
                       <div className="text-[10px] text-slate-500 uppercase tracking-wider">Relevance Score</div>
-                      <div className="text-lg font-bold text-slate-900 font-mono mt-0.5">{hrAnalysis.relevanceScore || 84} / 100</div>
+                      <div className="text-lg font-bold text-slate-900 font-mono mt-0.5">{hrAnalysis.relevanceScore ?? 0} / 100</div>
                     </div>
                   </div>
 

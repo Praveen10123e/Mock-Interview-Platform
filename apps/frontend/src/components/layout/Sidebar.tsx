@@ -54,11 +54,20 @@ const roleConfigs: Record<string, NavItem[]> = {
   ADMINISTRATOR: [
     { name: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
     { name: 'Users', path: '/admin/users', icon: Users },
-    { name: 'Datasets', path: '/admin/datasets', icon: Database, disabled: true },
-    { name: 'Question Bank', path: '/admin/questions', icon: BookOpen, badge: '5' },
-    { name: 'System', path: '/admin/system', icon: Server, disabled: true },
-    { name: 'Analytics', path: '/admin/analytics', icon: Activity, disabled: true },
-    { name: 'Reports', path: '/admin/reports', icon: BarChart3, disabled: true },
+    { name: 'Question Bank', path: '/admin/questions', icon: BookOpen },
+    { name: 'Reports', path: '/admin/reports', icon: BarChart3 },
+    { name: 'Datasets', path: '/admin/datasets', icon: Database },
+    { name: 'System', path: '/admin/system', icon: Server },
+    { name: 'Analytics', path: '/admin/analytics', icon: Activity },
+  ],
+  ADMIN: [
+    { name: 'Dashboard', path: '/admin/dashboard', icon: LayoutDashboard },
+    { name: 'Users', path: '/admin/users', icon: Users },
+    { name: 'Question Bank', path: '/admin/questions', icon: BookOpen },
+    { name: 'Reports', path: '/admin/reports', icon: BarChart3 },
+    { name: 'Datasets', path: '/admin/datasets', icon: Database },
+    { name: 'System', path: '/admin/system', icon: Server },
+    { name: 'Analytics', path: '/admin/analytics', icon: Activity },
   ]
 };
 
@@ -80,34 +89,34 @@ export const Sidebar: FC<SidebarProps> = ({ isOpen = false, onClose }) => {
 
   const primaryRole = user?.roles?.[0] || 'STUDENT';
   const navItems = roleConfigs[primaryRole] || roleConfigs.STUDENT;
-  const settingsPath = primaryRole === 'ADMINISTRATOR' ? '/admin/settings' : primaryRole === 'FACULTY' ? '/faculty/settings' : '/student/settings';
+  const settingsPath = (primaryRole === 'ADMINISTRATOR' || primaryRole === 'ADMIN') ? '/admin/settings' : primaryRole === 'FACULTY' ? '/faculty/settings' : '/student/settings';
 
   return (
     <>
       {/* Mobile Backdrop */}
       {isOpen && (
-        <div 
+        <div
           className="fixed inset-0 bg-black/60 backdrop-blur-xs z-40 lg:hidden"
           onClick={onClose}
         />
       )}
 
       <aside className={`
-        fixed top-0 bottom-0 left-0 z-50 w-[240px] flex flex-col bg-sidebar-bg border-r border-border transition-transform duration-200 ease-out
+        fixed top-0 bottom-0 left-0 z-50 w-[195px] shrink-0 flex flex-col bg-white border-r border-border transition-transform duration-200 ease-out
         lg:static lg:translate-x-0
         ${isOpen ? 'translate-x-0' : '-translate-x-full'}
       `}>
         {/* Brand Header */}
-        <div className="flex h-16 shrink-0 items-center justify-between px-5 border-b border-border">
+        <div className="flex h-14 shrink-0 items-center justify-between px-4 border-b border-border">
           <div className="flex items-center gap-2.5">
-            <div className="h-8 w-8 rounded-lg bg-accent/15 border border-accent/30 flex items-center justify-center text-accent shadow-xs">
+            <div className="h-8 w-8 rounded-lg bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center shadow-2xs shrink-0">
               <Briefcase className="h-4 w-4" />
             </div>
             <div className="flex flex-col">
-              <span className="font-bold text-sm tracking-tight text-text-primary leading-tight">
+              <span className="font-bold text-[14px] tracking-tight text-slate-900 leading-tight">
                 NM Sandbox
               </span>
-              <span className="text-[10px] font-mono text-text-muted uppercase tracking-wider">
+              <span className="text-[10px] font-mono font-semibold text-slate-400 uppercase tracking-wider">
                 {primaryRole}
               </span>
             </div>
@@ -116,7 +125,7 @@ export const Sidebar: FC<SidebarProps> = ({ isOpen = false, onClose }) => {
           {onClose && (
             <button
               onClick={onClose}
-              className="lg:hidden p-1.5 rounded-lg text-text-muted hover:text-text-primary hover:bg-surface-hover cursor-pointer"
+              className="lg:hidden p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
               aria-label="Close sidebar"
             >
               <X className="h-4 w-4" />
@@ -125,25 +134,25 @@ export const Sidebar: FC<SidebarProps> = ({ isOpen = false, onClose }) => {
         </div>
 
         {/* Main Navigation Section */}
-        <div className="flex-1 overflow-y-auto py-4 px-3 space-y-6">
+        <div className="flex-1 overflow-y-auto py-4 px-2.5 space-y-4">
           <div className="space-y-1">
-            <div className="px-3 mb-2 text-[10px] font-semibold text-text-muted uppercase tracking-wider font-mono">
+            <div className="px-2.5 mb-2 text-[11px] font-semibold text-slate-400 uppercase tracking-wider font-mono">
               Main Navigation
             </div>
-            
+
             <nav className="space-y-0.5">
               {navItems.map((item) =>
                 item.disabled ? (
                   <div
                     key={item.name}
-                    className="group flex cursor-not-allowed items-center justify-between rounded-lg px-3 py-2 text-xs font-medium text-text-muted/50"
+                    className="group flex cursor-not-allowed items-center justify-between rounded-lg h-[40px] px-2.5 text-[14px] font-medium text-slate-500 opacity-75"
                     title="Coming Soon"
                   >
                     <div className="flex items-center gap-2.5">
-                      <item.icon className="h-4 w-4 shrink-0 opacity-40" />
+                      <item.icon className="h-[18px] w-[18px] shrink-0 text-slate-400" />
                       <span>{item.name}</span>
                     </div>
-                    <span className="text-[10px] text-text-muted/40 uppercase tracking-wide">Soon</span>
+                    <span className="text-[10px] font-semibold text-slate-500 bg-slate-100 border border-slate-200 px-1.5 py-0.5 rounded uppercase tracking-wider">Soon</span>
                   </div>
                 ) : (
                   <NavLink
@@ -151,28 +160,25 @@ export const Sidebar: FC<SidebarProps> = ({ isOpen = false, onClose }) => {
                     to={item.path}
                     onClick={onClose}
                     className={({ isActive }) =>
-                      `group flex items-center justify-between rounded-lg px-3 py-2 text-xs font-medium transition-colors duration-150 ${
-                        isActive
-                          ? 'bg-accent/12 text-accent font-semibold'
-                          : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'
+                      `group flex items-center justify-between h-[40px] px-2.5 text-[14px] font-medium transition-colors duration-150 outline-none focus:outline-none focus:ring-0 focus-visible:outline-none ring-0 ${isActive
+                        ? 'bg-blue-50 text-blue-600 font-[600] border-l-[3px] border-blue-600 rounded-r-lg rounded-l-none'
+                        : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-lg'
                       }`
                     }
                   >
                     {({ isActive }) => (
                       <>
                         <div className="flex items-center gap-2.5 min-w-0">
-                          <item.icon 
-                            className={`h-4 w-4 shrink-0 transition-colors ${
-                              isActive ? 'text-accent' : 'text-text-muted group-hover:text-text-secondary'
-                            }`} 
+                          <item.icon
+                            className={`h-[18px] w-[18px] shrink-0 transition-colors ${isActive ? 'text-blue-600' : 'text-slate-400 group-hover:text-slate-600'
+                              }`}
                           />
                           <span className="truncate">{item.name}</span>
                         </div>
-                        
+
                         {item.badge && (
-                          <span className={`ml-auto rounded-md px-1.5 py-0.5 text-[10px] font-semibold ${
-                            isActive ? 'bg-accent/20 text-accent' : 'bg-surface text-text-muted border border-border'
-                          }`}>
+                          <span className={`ml-auto rounded-md px-1.5 py-0.5 text-[11px] font-semibold ${isActive ? 'bg-blue-100 text-blue-700' : 'bg-slate-100 text-slate-600 border border-slate-200'
+                            }`}>
                             {item.badge}
                           </span>
                         )}
@@ -186,8 +192,8 @@ export const Sidebar: FC<SidebarProps> = ({ isOpen = false, onClose }) => {
         </div>
 
         {/* Separated Bottom Secondary Actions */}
-        <div className="border-t border-border p-3 space-y-1 bg-sidebar-bg shrink-0">
-          <div className="flex items-center justify-between px-3 py-1.5 text-[11px] font-medium text-text-muted">
+        <div className="border-t border-border p-2.5 space-y-1 bg-white shrink-0">
+          <div className="flex items-center justify-between px-2.5 py-1 text-[11px] font-medium text-slate-500">
             <span>Interface</span>
             <span className="text-[10px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded border border-slate-200">Light</span>
           </div>
@@ -196,26 +202,25 @@ export const Sidebar: FC<SidebarProps> = ({ isOpen = false, onClose }) => {
             to={settingsPath}
             onClick={onClose}
             className={({ isActive }) =>
-              `flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium transition-colors duration-150 ${
-                isActive
-                  ? 'bg-accent/12 text-accent font-semibold'
-                  : 'text-text-secondary hover:bg-surface-hover hover:text-text-primary'
+              `flex w-full items-center gap-2.5 h-[40px] px-2.5 text-[14px] font-medium transition-colors duration-150 outline-none focus:outline-none focus:ring-0 focus-visible:outline-none ring-0 ${isActive
+                ? 'bg-blue-50 text-blue-600 font-[600] border-l-[3px] border-blue-600 rounded-r-lg rounded-l-none'
+                : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900 rounded-lg'
               }`
             }
           >
             {primaryRole === 'ADMINISTRATOR' ? (
-              <Shield className="h-4 w-4 shrink-0 text-text-muted" />
+              <Shield className="h-[18px] w-[18px] shrink-0 text-slate-400" />
             ) : (
-              <Settings className="h-4 w-4 shrink-0 text-text-muted" />
+              <Settings className="h-[18px] w-[18px] shrink-0 text-slate-400" />
             )}
             <span>Settings</span>
           </NavLink>
 
           <button
             onClick={handleLogout}
-            className="flex w-full items-center gap-2.5 rounded-lg px-3 py-2 text-xs font-medium text-text-secondary transition-colors duration-150 hover:bg-rose-500/10 hover:text-rose-500 cursor-pointer"
+            className="flex w-full items-center gap-2.5 h-[40px] px-2.5 text-[14px] font-medium text-slate-600 transition-colors duration-150 hover:bg-rose-50 hover:text-rose-600 cursor-pointer rounded-lg outline-none focus:outline-none"
           >
-            <LogOut className="h-4 w-4 shrink-0 opacity-70" />
+            <LogOut className="h-[18px] w-[18px] shrink-0 opacity-70" />
             <span>Sign Out</span>
           </button>
         </div>

@@ -19,13 +19,13 @@ export const PortalLayout: FC = () => {
       <div className="flex flex-1 flex-col overflow-hidden relative min-w-0">
         <Header onMenuToggle={() => setMobileSidebarOpen(prev => !prev)} />
         
-        <main className={`flex-1 ${isInterviewSession ? 'overflow-hidden p-0' : 'overflow-y-auto bg-slate-50 p-4 sm:p-6 md:p-8'} relative selection:bg-blue-100`}>
+        <main className={`flex-1 ${isInterviewSession ? 'overflow-hidden p-0' : 'overflow-y-auto bg-slate-50 px-6 py-6 sm:px-8 sm:py-8 lg:px-9 lg:py-8'} relative selection:bg-blue-100`}>
           <motion.div
             initial={{ opacity: 0, y: 4 }}
             animate={{ opacity: 1, y: 0 }}
             exit={{ opacity: 0, y: -4 }}
             transition={{ duration: 0.15, ease: 'easeOut' }}
-            className={`h-full w-full ${isInterviewSession ? '' : 'max-w-7xl mx-auto'} relative z-10 flex flex-col`}
+            className="h-full w-full relative z-10 flex flex-col"
           >
             <Outlet />
           </motion.div>

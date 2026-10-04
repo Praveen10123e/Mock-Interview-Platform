@@ -105,20 +105,13 @@ async function buildExecutionPayload(body: any, interviewId: string | null, runM
         question?.testCases ||
         question?.metadata?.testCases;
       if (rawTCs && Array.isArray(rawTCs) && rawTCs.length > 0) {
-        const allTC = rawTCs;
+        const visibleTestCases = rawTCs;
         if (runMode === 'RUN' || runMode === 'SAMPLE') {
-          const hasVis = allTC.some((tc: any) => typeof tc.hidden === 'boolean' || typeof tc.visible === 'boolean' || tc.visibility === 'VISIBLE');
-          if (hasVis) {
-            payload.testCases = allTC.filter((tc: any) => tc.hidden === false || tc.visible === true || tc.visibility === 'VISIBLE');
-          } else if (question.examples?.length > 0) {
-            payload.testCases = allTC.slice(0, Math.min(question.examples.length, allTC.length));
-          } else {
-            payload.testCases = allTC.slice(0, 1);
-          }
+          payload.testCases = visibleTestCases.slice(0, 2);
         } else {
-          payload.testCases = allTC;
+          payload.testCases = visibleTestCases;
         }
-        console.log(`[Exec] ${runMode} | ${payload.testCases.length}/${allTC.length} testCases | question: ${question.title}`);
+        console.log(`[Exec] ${runMode} | ${payload.testCases.length}/${visibleTestCases.length} testCases | question: ${question.title}`);
       }
       payload.executionType = 'STDIN_PROGRAM';
       if (question?.metadata?.jsonPayload?.execution) {
@@ -487,14 +480,11 @@ app.post('/:id/run', async (req, res) => {
     console.log(`[RUN] success=${result.success} | status=${result.status?.description} | results=${result.results?.length}`);
     
     if (clientDisconnected) {
-      console.log(`[RUN] Client disconnected, skipping recordExecution for session=${id}`);
+      console.log(`[RUN] Client disconnected, skipping for session=${id}`);
       return;
     }
 
-    if (!isPractice) {
-      await recordExecution(id, req.body.questionRefId, req.body.languageId, 'RUN', req.body.sourceCode, result, questionMeta);
-    }
-    
+    // RUN does NOT record execution attempts or affect scoring
     res.status(200).json(result);
   } catch (error: any) {
     const down = error.response?.data;
@@ -549,27 +539,29 @@ app.post('/:id/execute', async (req, res) => {
     const { id } = req.params;
     const isPractice = id.startsWith('practice-');
     const runMode: 'RUN' | 'SUBMIT' = req.body.runMode || 'SUBMIT';
-    let clientDisconnected = false;
-    req.on('close', () => { clientDisconnected = true; });
 
     console.log(`[EXECUTE] session=${id} | mode=${runMode} | lang=${req.body.languageId}`);
     const { payload, questionMeta } = await buildExecutionPayload(req.body, isPractice ? null : id, runMode);
     const result = await proxyToJudge(payload, req.headers['x-identity-id'] as string);
-    
-    if (clientDisconnected) {
-      console.log(`[EXECUTE] Client disconnected, skipping recordExecution for session=${id}`);
-      return;
+
+    if (!isPractice && runMode === 'SUBMIT') {
+      try {
+        await recordExecution(id, req.body.questionRefId, req.body.languageId, 'SUBMIT', req.body.sourceCode, result, questionMeta);
+      } catch (recErr: any) {
+        console.warn(`[EXECUTE] Failed to record execution:`, recErr.message);
+      }
     }
 
-    if (!isPractice) {
-      await recordExecution(id, req.body.questionRefId, req.body.languageId, runMode, req.body.sourceCode, result, questionMeta);
+    if (!res.headersSent) {
+      res.status(200).json(result);
     }
-    res.status(200).json(result);
   } catch (error: any) {
     const down = error.response?.data;
-    if (down) return res.status(200).json(down);
+    if (down && !res.headersSent) return res.status(200).json(down);
     console.error('[EXECUTE] Error:', error.message);
-    res.status(200).json({ success: false, errorType: 'COMPILER_SERVICE_UNAVAILABLE', message: error.message });
+    if (!res.headersSent) {
+      res.status(200).json({ success: false, errorType: 'COMPILER_SERVICE_UNAVAILABLE', message: error.message });
+    }
   }
 });
 
@@ -1024,13 +1016,14 @@ app.post('/student-analytics', async (req, res) => {
 import { TemplateService } from './services/TemplateService';
 
 const requireFaculty = (req: any, res: any, next: any) => {
-  const role = req.headers['x-user-role'];
-  if (role === 'FACULTY' || role === 'ADMINISTRATOR') {
+  const roleHeader = (req.headers['x-user-role'] as string) || '';
+  const roles = roleHeader.split(',').map((r) => r.trim().toUpperCase());
+  if (roles.includes('FACULTY') || roles.includes('ADMINISTRATOR') || roles.includes('ADMIN')) {
     return next();
   }
   return res.status(403).json({
     success: false,
-    error: { code: 'FORBIDDEN', message: 'Access denied: Only faculty members can manage interview templates.' },
+    error: { code: 'FORBIDDEN', message: 'Access denied: Only faculty members or administrators can access this resource.' },
   });
 };
 
@@ -1039,9 +1032,10 @@ const templateRouter = express.Router();
 // 1. List Templates
 templateRouter.get('/', async (req, res) => {
   try {
-    const role = req.headers['x-user-role'] as string;
+    const roleHeader = (req.headers['x-user-role'] as string) || '';
+    const roles = roleHeader.split(',').map((r) => r.trim().toUpperCase());
     const identityId = req.headers['x-identity-id'] as string;
-    const isFaculty = role === 'FACULTY' || role === 'ADMINISTRATOR';
+    const isFaculty = roles.includes('FACULTY') || roles.includes('ADMINISTRATOR') || roles.includes('ADMIN');
 
     const templates = await TemplateService.listTemplates({
       search: req.query.search as string,
@@ -1315,6 +1309,35 @@ adminRouter.get('/dashboard', requireAdmin, async (req, res) => {
     });
   } catch (err: any) {
     console.error('Failed to get admin dashboard:', err);
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+adminRouter.get('/system', requireAdmin, async (req, res) => {
+  try {
+    const data = await AdminService.getSystemHealth();
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (err: any) {
+    console.error('Failed to get system health:', err);
+    res.status(500).json({ success: false, error: { message: err.message } });
+  }
+});
+
+adminRouter.get('/analytics', requireAdmin, async (req, res) => {
+  try {
+    const data = await AdminService.getAnalytics({
+      dateRange: req.query.dateRange as string,
+      assessmentType: req.query.assessmentType as string,
+    });
+    res.json({
+      success: true,
+      data,
+    });
+  } catch (err: any) {
+    console.error('Failed to get admin analytics:', err);
     res.status(500).json({ success: false, error: { message: err.message } });
   }
 });

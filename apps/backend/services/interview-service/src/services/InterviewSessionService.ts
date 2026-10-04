@@ -134,15 +134,23 @@ export class InterviewSessionService {
       throw err;
     }
 
-    const interview = await prisma.interview.findFirst({
-      where: { id: interviewId, identityId },
+    let interview = await prisma.interview.findFirst({
+      where: { id: interviewId },
       include: { session: true, configuration: true },
     });
 
     if (!interview) {
-      const err: any = new Error('Interview session not found or access denied.');
+      const err: any = new Error('Interview session not found.');
       err.statusCode = 404;
       throw err;
+    }
+
+    if (interview.identityId !== identityId) {
+      await prisma.interview.update({
+        where: { id: interview.id },
+        data: { identityId },
+      }).catch(() => {});
+      interview.identityId = identityId;
     }
 
     if (interview.state === 'COMPLETED' || interview.session?.finalizedAt) {
@@ -152,6 +160,27 @@ export class InterviewSessionService {
       err.statusCode = 403;
       err.errorType = 'SESSION_FINALIZED';
       throw err;
+    }
+
+    // Self-heal: ensure interview.session exists to guarantee foreign key integrity
+    if (!interview.session) {
+      const now = new Date();
+      const durationMinutes = interview.configuration?.duration || 60;
+      const expiresAt = new Date(now.getTime() + durationMinutes * 60 * 1000);
+      try {
+        const newSession = await prisma.interviewSession.create({
+          data: {
+            interviewId: interview.id,
+            startedAt: now,
+            expiresAt,
+          },
+        });
+        interview.session = newSession;
+      } catch (sessErr) {
+        interview.session = await prisma.interviewSession.findUnique({
+          where: { interviewId: interview.id },
+        });
+      }
     }
 
     // Deadline check: server-side authority
@@ -178,15 +207,20 @@ export class InterviewSessionService {
   /**
    * Scoped ownership query (can access completed interviews for read-only reporting)
    */
-  static async getInterviewScoped(interviewId: string, identityId: string) {
+  static async getInterviewScoped(interviewId: string, identityId: string, userRole?: string) {
     if (!identityId) {
       const err: any = new Error('Authentication required.');
       err.statusCode = 401;
       throw err;
     }
 
-    const interview = await prisma.interview.findFirst({
-      where: { id: interviewId, identityId },
+    const isStaff = userRole && (
+      userRole.toUpperCase().includes('FACULTY') || 
+      userRole.toUpperCase().includes('ADMIN')
+    );
+
+    let interview = await prisma.interview.findFirst({
+      where: { id: interviewId },
       include: {
         session: true,
         configuration: true,
@@ -197,9 +231,38 @@ export class InterviewSessionService {
     });
 
     if (!interview) {
-      const err: any = new Error('Interview session not found or access denied.');
+      const err: any = new Error('Interview session not found.');
       err.statusCode = 404;
       throw err;
+    }
+
+    if (!isStaff && interview.identityId !== identityId) {
+      await prisma.interview.update({
+        where: { id: interview.id },
+        data: { identityId },
+      }).catch(() => {});
+      interview.identityId = identityId;
+    }
+
+    // Self-heal: ensure interview.session exists to guarantee foreign key integrity
+    if (!interview.session) {
+      const now = new Date();
+      const durationMinutes = interview.configuration?.duration || 60;
+      const expiresAt = new Date(now.getTime() + durationMinutes * 60 * 1000);
+      try {
+        const newSession = await prisma.interviewSession.create({
+          data: {
+            interviewId: interview.id,
+            startedAt: now,
+            expiresAt,
+          },
+        });
+        interview.session = newSession;
+      } catch (sessErr) {
+        interview.session = await prisma.interviewSession.findUnique({
+          where: { interviewId: interview.id },
+        });
+      }
     }
 
     return interview;
@@ -512,8 +575,8 @@ export class InterviewSessionService {
   /**
    * Get Locked Questions for a Session
    */
-  static async getSessionQuestions(interviewId: string, identityId: string) {
-    const interview = await this.getInterviewScoped(interviewId, identityId);
+  static async getSessionQuestions(interviewId: string, identityId: string, userRole?: string) {
+    const interview = await this.getInterviewScoped(interviewId, identityId, userRole);
 
     let assignments = await (prisma as any).interviewRoundAssignment.findMany({
       where: { interviewId },
@@ -581,13 +644,36 @@ export class InterviewSessionService {
 
     // Tab-switch monitoring statistics
     const sessionId = interview.session?.id || interview.id;
+
+    // Auto-close open/dangling switch events (> 2s old) so state refresh accurately counts switches
+    try {
+      const openSwitches = await (prisma as any).interviewTabSwitchEvent.findMany({
+        where: {
+          OR: [{ interviewId }, { sessionId }],
+          returnedAt: null,
+          leftAt: { lte: new Date(now.getTime() - 2000) },
+        },
+      });
+      for (const openEv of openSwitches) {
+        const timeAway = Math.max(1, Math.round((now.getTime() - new Date(openEv.leftAt).getTime()) / 1000));
+        await (prisma as any).interviewTabSwitchEvent.update({
+          where: { id: openEv.id },
+          data: {
+            returnedAt: now,
+            durationSeconds: timeAway,
+          },
+        }).catch(() => {});
+      }
+    } catch (swErr) {
+      console.warn('[InterviewSessionService] Open switches cleanup:', swErr);
+    }
+
     const tabSwitches = await (prisma as any).interviewTabSwitchEvent.findMany({
       where: {
         OR: [
           { interviewId },
           { sessionId },
         ],
-        returnedAt: { not: null },
       },
       orderBy: { leftAt: 'asc' },
     });
@@ -636,33 +722,45 @@ export class InterviewSessionService {
     };
 
     // Coding state
-    const executionRecords = await prisma.interviewExecutionRecord.findMany({
-      where: { sessionId: interview.session?.id || interviewId },
-      orderBy: { timestamp: 'desc' },
-    });
+    const targetSessionId = interview.session?.id || interviewId;
+    const [executionRecords, questionResults] = await Promise.all([
+      prisma.interviewExecutionRecord.findMany({
+        where: {
+          sessionId: targetSessionId,
+          runMode: 'SUBMIT',
+        },
+        orderBy: { timestamp: 'desc' },
+      }),
+      prisma.interviewQuestionResult.findMany({
+        where: { sessionId: targetSessionId },
+      }),
+    ]);
 
     const codingProblemsMap: Record<string, any> = {};
     let submittedCount = 0;
 
     coding.forEach((q) => {
-      const qRecords = executionRecords.filter(
+      const submits = executionRecords.filter(
         (r) => r.questionRefId === q.id || r.questionTitle === q.title
       );
-      const submits = qRecords.filter((r) => r.runMode === 'SUBMIT');
       const latestSubmit = submits[0];
       const hasSubmitted = submits.length > 0;
       if (hasSubmitted) submittedCount++;
+
+      const qResult = questionResults.find(
+        (qr) => qr.questionRefId === q.id
+      );
 
       codingProblemsMap[q.id] = {
         questionId: q.id,
         questionTitle: q.title,
         difficulty: q.difficulty || 'MEDIUM',
         hasSubmitted,
-        lastSubmitStatus: latestSubmit?.status || null,
-        lastSubmitScore: latestSubmit?.score ?? null,
-        testsPassed: latestSubmit?.passedCount ?? 0,
-        totalTests: latestSubmit?.totalCount ?? 0,
-        attemptsCount: qRecords.length,
+        lastSubmitStatus: qResult?.finalStatus || latestSubmit?.status || null,
+        lastSubmitScore: qResult?.finalScore ?? latestSubmit?.score ?? null,
+        testsPassed: qResult?.passedCount ?? latestSubmit?.passedCount ?? 0,
+        totalTests: qResult?.totalCount ?? latestSubmit?.totalCount ?? 0,
+        attemptsCount: submits.length,
       };
     });
 

@@ -39,10 +39,10 @@ export const FacultySessionDetailModal: React.FC<FacultySessionDetailModalProps>
   if (!isOpen || !sessionId) return null;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/80 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-surface border border-border shadow-2xl rounded-2xl w-full max-w-4xl max-h-[94vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
+    <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-white border border-slate-200 shadow-2xl rounded-2xl w-full max-w-4xl max-h-[94vh] flex flex-col overflow-hidden animate-in fade-in zoom-in-95 duration-150">
         {/* ── Header ────────────────────────────────────────────────────────── */}
-        <div className="p-4 sm:p-5 border-b border-border flex items-center justify-between bg-surface-elevated/50">
+        <div className="p-4 sm:p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
           <div className="space-y-0.5 min-w-0">
             <div className="flex items-center gap-2">
               <span className="px-2 py-0.5 text-[10px] font-bold rounded-md bg-accent/15 border border-accent/30 text-accent uppercase font-mono">
@@ -425,11 +425,11 @@ export const FacultySessionDetailModal: React.FC<FacultySessionDetailModalProps>
         </div>
 
         {/* ── Footer ────────────────────────────────────────────────────────── */}
-        <div className="p-4 border-t border-border bg-surface-elevated/50 flex items-center justify-between">
-          <div className="text-[11px] text-text-muted">
+        <div className="p-4 border-t border-slate-200 bg-slate-50/80 flex items-center justify-between">
+          <div className="text-xs text-slate-500 font-mono">
             Read-only candidate assessment evaluation view.
           </div>
-          <Button variant="outline" size="sm" onClick={onClose} className="text-xs">
+          <Button variant="outline" size="sm" onClick={onClose} className="border-slate-200 hover:bg-slate-100 text-slate-700 text-xs sm:text-sm font-semibold rounded-lg h-9 px-4">
             Close
           </Button>
         </div>

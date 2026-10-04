@@ -28,9 +28,15 @@ export class TestCaseRunner {
     languageId: number,
     stdin?: string
   ): Promise<SingleExecutionResult> {
+    // For Java (62), Judge0 requires the public class to be named 'Main'
+    let effectiveCode = sourceCode;
+    if (languageId === 62 && !effectiveCode.includes('public class Main')) {
+      effectiveCode = effectiveCode.replace(/public\s+class\s+([A-Za-z0-9_]+)/g, 'public class Main');
+    }
+
     let token: string;
     try {
-      token = await Judge0Client.submitCode(sourceCode, languageId, stdin);
+      token = await Judge0Client.submitCode(effectiveCode, languageId, stdin);
     } catch (error: any) {
       console.error('[Judge] Judge0 submission error:', error.response?.data || error.message);
       return {

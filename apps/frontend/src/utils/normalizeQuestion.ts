@@ -1,3 +1,5 @@
+import { formatExampleText } from './formatExampleText';
+
 export const normalizeInterviewQuestion = (question: any) => {
   if (!question) return null;
 
@@ -33,7 +35,12 @@ export const normalizeInterviewQuestion = (question: any) => {
     options,
     correctOptionIndex: valid ? correctOptionIndex : -1,
     explanation,
-    examples: payload.examples || question?.examples || [],
+    examples: (payload.examples || question?.examples || []).map((ex: any) => ({
+      ...ex,
+      input: formatExampleText(ex.input),
+      output: formatExampleText(ex.output),
+      explanation: ex.explanation ? formatExampleText(ex.explanation) : '',
+    })),
     constraints: (payload.constraints || question?.constraints || []).map((c: any) => typeof c === 'string' ? c : (c.constraint || JSON.stringify(c))),
     hints: (payload.hints || question?.hints || []).map((h: any) => typeof h === 'string' ? h : (h.hint || JSON.stringify(h))),
     evaluationCriteria: payload.evaluationCriteria || [],

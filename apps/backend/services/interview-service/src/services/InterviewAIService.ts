@@ -4,10 +4,18 @@
  * Core AI engine for the HR Behavioral Interview Module.
  * - Question generation from curated bank (20+ placement behavioral questions)
  * - Dynamic follow-up generation via Groq LLM with deterministic fallback
- * - 10-factor behavioral evaluation (Communication 20%, Problem Solving 15%, ...)
+ * - Evidence-based question-specific rubric evaluation
+ * - Deterministic scoring engine with traceable criterion evidence
  */
 
 import axios from 'axios';
+import { HRTranscriptValidator } from './HRTranscriptValidator';
+import {
+  HRRubricService,
+  QuestionRubric,
+  CriterionEvidenceResult,
+  DeterministicEvaluationResult,
+} from './HRRubrics';
 
 const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'GROQ').toUpperCase();
 const LLM_API_KEY = process.env.LLM_API_KEY || '';
@@ -164,6 +172,7 @@ export interface BehavioralEvaluation {
   improvements: string[];
   starGuidance: string;
   aiSummary: string;
+  criteriaEvidence?: CriterionEvidenceResult[];
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -172,14 +181,14 @@ function isLLMAvailable(): boolean {
   return LLM_PROVIDER === 'GROQ' && !!LLM_API_KEY && LLM_API_KEY.length > 10;
 }
 
-async function callGroq(messages: Array<{ role: string; content: string }>, maxTokens = 512): Promise<string> {
+async function callGroq(messages: Array<{ role: string; content: string }>, maxTokens = 600): Promise<string> {
   const response = await axios.post(
     GROQ_API_URL,
     {
       model: GROQ_MODEL,
       messages,
       max_tokens: maxTokens,
-      temperature: 0.6,
+      temperature: 0.2, // Low temperature for deterministic scoring consistency
     },
     {
       headers: {
@@ -196,56 +205,209 @@ function clamp(score: number): number {
   return Math.min(100, Math.max(0, Math.round(score)));
 }
 
-function heuristicEvaluation(transcript: string, durationSeconds: number): Partial<BehavioralEvaluation> {
-  const words = transcript.trim().split(/\s+/).filter(Boolean);
+/**
+ * Deterministic Heuristic Evaluator (used when LLM is offline or fails).
+ * Strictly evidence-based: NO arbitrary base 48! Points are awarded strictly
+ * based on verified evidence matching the question's rubric criteria.
+ */
+function heuristicEvaluation(
+  question: string,
+  category: string,
+  verifiedTranscript: string,
+  durationSeconds: number
+): DeterministicEvaluationResult {
+  const rubric = HRRubricService.getRubricForQuestion(question, category);
+  const words = verifiedTranscript.trim().split(/\s+/).filter(Boolean);
   const wordCount = words.length;
-  const wpm = durationSeconds > 0 ? (wordCount / durationSeconds) * 60 : wordCount;
 
-  const hasSTAR = /\b(situation|task|action|result|worked|resolved|led|achieved|completed|improved|reduced)\b/i.test(transcript);
-  const hasNumbers = /\b\d+[\d%xX]*\b/.test(transcript);
-  const hasTeamRef = /\b(team|colleague|collaborate|together|we|group|member)\b/i.test(transcript);
-  const hasIRef = /\b(I|my|me|myself)\b/.test(transcript);
-  const isLong = wordCount >= 80;
-  const isMedium = wordCount >= 40;
+  if (wordCount === 0) {
+    return HRRubricService.calculateDeterministicScore(
+      rubric,
+      rubric.criteria.map((c) => ({
+        criterion: c.name,
+        maxScore: c.maxScore,
+        score: 0,
+        evidence: null,
+        reason: 'No response was provided, so there was insufficient evidence to evaluate this question.',
+      })),
+      'NO_RESPONSE',
+      durationSeconds,
+      0
+    );
+  }
 
-  const base = isLong ? 72 : isMedium ? 62 : 48;
-  const bonus = (hasSTAR ? 8 : 0) + (hasNumbers ? 5 : 0) + (hasTeamRef ? 4 : 0) + (hasIRef ? 3 : 0);
+  // Check for Direct Concise Question (e.g. "What programming language did you use?" -> "Java.")
+  if (rubric.isDirectEntityQuestion) {
+    const isKnownEntity = /\b(java|python|javascript|typescript|c\+\+|c#|go|rust|sql|html|css|react|node|docker|aws)\b/i.test(verifiedTranscript);
+    if (isKnownEntity) {
+      const criteriaResults: CriterionEvidenceResult[] = [
+        {
+          criterion: rubric.criteria[0].name,
+          maxScore: rubric.criteria[0].maxScore,
+          score: rubric.criteria[0].maxScore,
+          evidence: `Candidate explicitly stated: "${verifiedTranscript}"`,
+          reason: 'Directly and accurately answered the specific entity question.',
+        },
+        {
+          criterion: rubric.criteria[1].name,
+          maxScore: rubric.criteria[1].maxScore,
+          score: rubric.criteria[1].maxScore,
+          evidence: `Candidate communicated clearly without confusion.`,
+          reason: 'Clear and concise answer.',
+        },
+      ];
+      return HRRubricService.calculateDeterministicScore(rubric, criteriaResults, 'ON_TOPIC', durationSeconds, wordCount);
+    }
+  }
 
-  const communication = clamp(base + bonus + (wpm > 80 && wpm < 180 ? 5 : 0));
-  const problemSolving = clamp(base + (hasSTAR ? 10 : 0) + (hasNumbers ? 5 : 0));
-  const teamwork = clamp(base + (hasTeamRef ? 12 : 0));
-  const professionalism = clamp(base + 5);
-  const relevance = clamp(base + (hasSTAR ? 8 : 0));
-  const clarity = clamp(base + (isLong ? 8 : 0));
-  const ownership = clamp(base + (hasIRef ? 8 : 0));
-  const leadership = clamp(base + (hasIRef && hasTeamRef ? 5 : 0));
-  const confidence = clamp(base + (isLong ? 5 : 0));
-  const structure = clamp(base + (hasSTAR ? 12 : 0));
+  // Off-topic detection
+  const qLower = question.toLowerCase();
+  const tLower = verifiedTranscript.toLowerCase();
 
-  const strengths: string[] = [];
-  const improvements: string[] = [];
+  const isTechnicalQuestion = /challeng|problem|project|bug|debug|error|solution|scale/i.test(qLower);
+  const hasTechnicalEvidence = /(model|segment|object|threshold|watershed|detect|yolo|algorithm|database|api|backend|frontend|code|server|pipeline|accuracy|loss|mask|split|feature|system|service|deploy)/i.test(tLower);
+  const isPureAcademicOffTopic = /(diploma|marks|percentage|cgpa|school|college|hobbies|cricket|sports)/i.test(tLower) && !hasTechnicalEvidence;
 
-  if (isLong) strengths.push('Provided a detailed, comprehensive response');
-  if (hasSTAR) strengths.push('Used structured behavioral framing in the response');
-  if (hasTeamRef) strengths.push('Referenced collaborative team experience');
-  if (!isLong) improvements.push('Expand your response with more detail and specific examples');
-  if (!hasSTAR) improvements.push('Structure your answer using the STAR framework (Situation, Task, Action, Result)');
-  if (!hasNumbers) improvements.push('Quantify your outcomes with specific metrics (e.g., "improved by 30%")');
+  if (isTechnicalQuestion && isPureAcademicOffTopic) {
+    return HRRubricService.calculateDeterministicScore(
+      rubric,
+      rubric.criteria.map((c) => ({
+        criterion: c.name,
+        maxScore: c.maxScore,
+        score: 0,
+        evidence: null,
+        reason: 'Response did not address the technical challenge or problem asked in the question.',
+      })),
+      'OFF_TOPIC',
+      durationSeconds,
+      wordCount
+    );
+  }
 
-  return {
-    communicationScore: communication,
-    problemSolvingScore: problemSolving,
-    teamworkScore: teamwork,
-    professionalismScore: professionalism,
-    relevanceScore: relevance,
-    clarityScore: clarity,
-    ownershipScore: ownership,
-    leadershipScore: leadership,
-    confidenceScore: confidence,
-    structureScore: structure,
-    strengths,
-    improvements,
-  };
+  // Semantic evidence extraction across standard dimensions.
+  // NOTE: For Self Introduction, 'approach evidence' = technical skill/stack mentions (Python, React, etc.)
+  //       For Project Challenge, 'approach evidence' = verbs like 'implemented', 'built', etc.
+  const hasProblemEvidence = /\b(fail\w*|error\w*|bug\w*|issue\w*|problem\w*|difficult\w*|challeng\w*|obstacle\w*|bottleneck\w*|slow\w*|crash\w*|touching|overlap\w*|broken|limit\w*|timeout\w*|timing\s+out|project\w*|task\w*|deadline|require\w*)\b/i.test(verifiedTranscript);
+  const hasApproachEvidence = /\b(used|implement\w*|built|appli\w*|algorithm\w*|method\w*|model\w*|approach\w*|solution\w*|watershed|split\w*|morphological|fix\w*|adjust\w*|threshold|cache|caching|index\w*|refactor\w*|optimi\w*|investigat\w*|add\w*|tun\w*|quer\w*|plan|database|python|java(?:script)?|react|node|django|flask|fastapi|spring|sql|html|css|angular|vue|typescript|c\+\+|c#|go\b|rust\b|kotlin|swift|php|ruby|scala|tensorflow|pytorch|scikit|pandas|numpy|docker|kubernetes|aws|azure|git\b|linux|back.?end|front.?end|full.?stack|api\b|machine.learning|deep.learning|neural|computer.vision|nlp|specification\w*|develop\w*|creat\w*|design\w*)\b/i.test(verifiedTranscript);
+  const hasReasoningEvidence = /\b(because|why|reason\w*|initial\w*|tried|instead|since|tradeoff\w*|analy\w*|cause\w*|root|so that|in order to|due to|as a result of|to improv|wanted to|decided to|chose|prefer\w*)\b/i.test(verifiedTranscript);
+  const hasResultEvidence = /\b(result\w*|outcome\w*|improv\w*|resolv\w*|success\w*|accura\w*|separat\w*|solv\w*|reduc\w*|percent|%|final\w*|deliver\w*|boost\w*|gain\w*|complet\w*|achiev\w*|finish\w*)\b/i.test(verifiedTranscript);
+  const hasLearningEvidence = /\b(learn\w*|takeaway\w*|realiz\w*|future|growth|reflection|interest\w*|passion\w*|motivat\w*|aspir\w*|career\w*|pursu\w*)\b/i.test(verifiedTranscript);
+
+  const criteriaResults: CriterionEvidenceResult[] = rubric.criteria.map((crit) => {
+    const id = crit.id;
+    const maxScore = crit.maxScore;
+
+    if (id.includes('problem') || id.includes('obstacle') || id.includes('disagree') || id.includes('change')) {
+      if (hasProblemEvidence) {
+        const score = wordCount >= 15 ? maxScore : Math.max(1, maxScore - 1);
+        return {
+          criterion: crit.name,
+          maxScore,
+          score,
+          evidence: `Candidate described the obstacle or challenge: "${verifiedTranscript.slice(0, 100)}..."`,
+          reason: 'Clear problem identification communicated.',
+        };
+      }
+      return {
+        criterion: crit.name,
+        maxScore,
+        score: 0,
+        evidence: null,
+        reason: 'Candidate did not clearly define the specific obstacle or problem.',
+      };
+    }
+
+    if (id.includes('approach') || id.includes('solution') || id.includes('contribution') || id.includes('action') || id.includes('technical_skills')) {
+      if (hasApproachEvidence) {
+        const score = wordCount >= 20 ? maxScore : Math.max(1, Math.floor(maxScore / 2));
+        return {
+          criterion: crit.name,
+          maxScore,
+          score,
+          evidence: `Candidate explained technical approach and implementation.`,
+          reason: score === maxScore ? 'Detailed solution approach articulated.' : 'Partial solution mentioned without full technical detail.',
+        };
+      }
+      return {
+        criterion: crit.name,
+        maxScore,
+        score: 0,
+        evidence: null,
+        reason: 'Candidate did not describe the technical approach or specific actions taken.',
+      };
+    }
+
+    if (id.includes('reasoning') || id.includes('analysis') || id.includes('consensus') || id.includes('strategy')) {
+      if (hasReasoningEvidence) {
+        return {
+          criterion: crit.name,
+          maxScore,
+          score: maxScore,
+          evidence: `Candidate provided technical reasoning and explanation of why choices were made.`,
+          reason: 'Solid cause-and-effect reasoning demonstrated.',
+        };
+      } else if (hasApproachEvidence && wordCount >= 25) {
+        // Partial credit for implicit technical rationale
+        return {
+          criterion: crit.name,
+          maxScore,
+          score: Math.max(1, Math.floor(maxScore / 2)),
+          evidence: `Candidate described steps taken with partial implicit reasoning.`,
+          reason: 'Partial technical reasoning; could articulate tradeoffs more explicitly.',
+        };
+      }
+      return {
+        criterion: crit.name,
+        maxScore,
+        score: 0,
+        evidence: null,
+        reason: 'Candidate did not explain the technical reasoning or root cause.',
+      };
+    }
+
+    if (id.includes('result') || id.includes('outcome') || id.includes('impact') || id.includes('delivery')) {
+      if (hasResultEvidence) {
+        return {
+          criterion: crit.name,
+          maxScore,
+          score: maxScore,
+          evidence: `Candidate stated measurable impact or final resolution.`,
+          reason: 'Clear outcome and resolution provided.',
+        };
+      }
+      return {
+        criterion: crit.name,
+        maxScore,
+        score: 0,
+        evidence: null,
+        reason: 'Candidate did not describe the final outcome or impact of their work.',
+      };
+    }
+
+    // Communication / reflection
+    const commScore = wordCount >= 15 ? maxScore : Math.max(1, Math.floor(maxScore / 2));
+    return {
+      criterion: crit.name,
+      maxScore,
+      score: commScore,
+      evidence: `Response was coherent and understandable (${wordCount} words).`,
+      reason: 'Communicated in an intelligible and structured manner.',
+    };
+  });
+
+  const relevanceStatus = wordCount >= 15 && hasProblemEvidence && hasApproachEvidence
+    ? 'ON_TOPIC'
+    : (hasProblemEvidence || hasApproachEvidence)
+    ? 'PARTIALLY_RELEVANT'
+    : 'OFF_TOPIC';
+
+  return HRRubricService.calculateDeterministicScore(
+    rubric,
+    criteriaResults,
+    relevanceStatus,
+    durationSeconds,
+    wordCount
+  );
 }
 
 // ─── Public API ────────────────────────────────────────────────────────────────
@@ -273,8 +435,9 @@ export class InterviewAIService {
     candidateTranscript: string,
     role = 'Software Engineer'
   ): Promise<string> {
-    if (!candidateTranscript || candidateTranscript.trim().length < 10) {
-      return 'Could you elaborate a bit more with a specific example?';
+    const val = HRTranscriptValidator.validate(candidateTranscript, { question: mainQuestion, category });
+    if (val.isEmpty || val.isFillerOnly || val.isNonResponsive || val.wordCount < 4) {
+      return 'Could you elaborate a bit more with a specific technical example?';
     }
     if (!isLLMAvailable()) {
       const pool = DETERMINISTIC_FOLLOWUPS[category] || DETERMINISTIC_FOLLOWUPS['Project Challenge'];
@@ -282,7 +445,7 @@ export class InterviewAIService {
     }
 
     const systemPrompt = `You are a professional technical HR interviewer for a ${role} position. Your tone is professional, empathetic, and precise.`;
-    const userPrompt = `You just asked: "${mainQuestion}"\n\nThe candidate responded: "${candidateTranscript.substring(0, 800)}"\n\nGenerate ONE targeted follow-up question (1–2 sentences) probing deeper into a specific aspect of their answer — a concrete example, measurable outcome, or technical detail. Output ONLY the question, nothing else.`;
+    const userPrompt = `You just asked: "${mainQuestion}"\n\nThe candidate responded: "${val.verifiedTranscript.substring(0, 800)}"\n\nGenerate ONE targeted follow-up question (1–2 sentences) probing deeper into a specific aspect of their answer — a concrete example, measurable outcome, or technical detail. Output ONLY the question, nothing else.`;
 
     try {
       const result = await callGroq([
@@ -297,90 +460,209 @@ export class InterviewAIService {
   }
 
   /**
-   * Evaluate a single candidate response across all 10 behavioral dimensions.
+   * Evaluate a single candidate response across all behavioral dimensions
+   * with evidence-based rubric scoring.
    */
   static async evaluateResponse(
     question: string,
     category: string,
-    transcript: string,
+    rawTranscript: string,
     durationSeconds: number
-  ): Promise<Partial<BehavioralEvaluation>> {
-    if (!isLLMAvailable()) {
-      return heuristicEvaluation(transcript, durationSeconds);
+  ): Promise<BehavioralEvaluation> {
+    // 1. STEP 1: Validate transcript and check for empty / silence / filler
+    const val = HRTranscriptValidator.validate(rawTranscript, { question, category });
+    const rubric = HRRubricService.getRubricForQuestion(question, category);
+
+    // CRITICAL GUARD: If empty, filler-only, or non-responsive, score is strictly 0.
+    // Do NOT call scoring LLM for empty response.
+    if (val.isEmpty || val.isFillerOnly || val.isNonResponsive) {
+      const zeroResult = HRRubricService.calculateDeterministicScore(
+        rubric,
+        rubric.criteria.map((c) => ({
+          criterion: c.name,
+          maxScore: c.maxScore,
+          score: 0,
+          evidence: null,
+          reason: val.rejectionReason || 'No response was provided, so there was insufficient evidence to evaluate this question.',
+        })),
+        'NO_RESPONSE',
+        durationSeconds,
+        0
+      );
+
+      return {
+        ...zeroResult.dimensions,
+        overallScore: 0,
+        feedback: zeroResult.feedback,
+        strengths: zeroResult.strengths,
+        improvements: zeroResult.improvements,
+        starGuidance: zeroResult.starGuidance,
+        aiSummary: `Question: "${question}" — Score: 0/100. Insufficient evidence: ${val.rejectionReason}`,
+        criteriaEvidence: zeroResult.criteriaResults,
+      };
     }
 
-    const systemPrompt = `You are a senior HR behavioral interview evaluator using STAR framework assessment. Return ONLY valid JSON, no markdown.`;
-    const userPrompt = `Evaluate this candidate response.
-Question: "${question}"
-Category: ${category}
-Response: "${transcript.substring(0, 1200)}"
-Duration: ${durationSeconds}s
+    // 2. STEP 2: Candidate provided speech -> Evaluate against question-specific rubric
+    if (!isLLMAvailable()) {
+      const heuristic = heuristicEvaluation(question, category, val.verifiedTranscript, durationSeconds);
+      return {
+        ...heuristic.dimensions,
+        overallScore: heuristic.overallScore,
+        feedback: heuristic.feedback,
+        strengths: heuristic.strengths,
+        improvements: heuristic.improvements,
+        starGuidance: heuristic.starGuidance,
+        aiSummary: `Candidate response evaluated via deterministic rubric. Score: ${heuristic.overallScore}/100.`,
+        criteriaEvidence: heuristic.criteriaResults,
+      };
+    }
 
-Return ONLY JSON:
+    // 3. STEP 3: LLM Evidence Extraction
+    const criteriaDescriptionList = rubric.criteria
+      .map(
+        (c) =>
+          `- Criterion "${c.name}" (id: "${c.id}", maxScore: ${c.maxScore}): ${c.description}. Semantic signals: ${c.semanticExpectations.join('; ')}`
+      )
+      .join('\n');
+
+    const systemPrompt = `You are an expert technical and HR interview evaluator assessing a candidate's spoken response.
+Your evaluation MUST BE EVIDENCE-BASED, adhering strictly to these rules:
+1. NO EVIDENCE -> NO CREDIT. If the candidate did not mention something, award 0 points for that criterion. Never assume or fabricate.
+2. PARTIAL CREDIT: If the candidate partially addressed the criterion or lacked technical detail, award partial points (e.g. 1 out of 2).
+3. SEMANTIC POINT DETECTION: Do NOT require rigid keyword matches. Accept semantic equivalence (e.g., "touching objects were detected as one" is equivalent to "overlapping object segmentation error").
+4. NATURAL SPEECH: Do not penalize natural pauses, informal phrasing, or minor grammatical imperfections if the technical/behavioral information was communicated.
+5. OFF-TOPIC ANSWERS: If the candidate answer does NOT address the question (e.g., talking about academic percentages when asked about a technical bug), mark "relevanceStatus": "OFF_TOPIC" and give 0 points for content criteria.
+6. Return ONLY valid JSON matching the exact schema specified. No markdown, no explanations outside JSON.`;
+
+    const userPrompt = `EVALUATION TASK:
+Question: "${question}"
+Category: "${category}"
+Candidate's Verified Transcript: "${val.verifiedTranscript}"
+Response Duration: ${durationSeconds} seconds
+
+RUBRIC CRITERIA:
+${criteriaDescriptionList}
+
+Return JSON with this schema:
 {
-  "communicationScore": <0-100>,
-  "problemSolvingScore": <0-100>,
-  "teamworkScore": <0-100>,
-  "professionalismScore": <0-100>,
-  "relevanceScore": <0-100>,
-  "clarityScore": <0-100>,
-  "ownershipScore": <0-100>,
-  "leadershipScore": <0-100>,
-  "confidenceScore": <0-100>,
-  "structureScore": <0-100>,
-  "strengths": ["<string>", "<string>"],
-  "improvements": ["<string>", "<string>"],
-  "starFeedback": "<1-2 sentence STAR feedback>"
+  "relevanceStatus": "ON_TOPIC" | "PARTIALLY_RELEVANT" | "OFF_TOPIC",
+  "criteriaResults": [
+    {
+      "id": "<criterion id>",
+      "criterion": "<criterion name>",
+      "score": <number between 0 and maxScore>,
+      "maxScore": <maxScore>,
+      "evidence": "<exact quote or semantic phrase from transcript supporting the score, or null if missing>",
+      "reason": "<1 concise sentence explaining the score awarded>"
+    }
+  ]
 }`;
 
     try {
       const llmText = await callGroq([
         { role: 'system', content: systemPrompt },
         { role: 'user', content: userPrompt },
-      ], 600);
+      ], 700);
 
       const jsonStart = llmText.indexOf('{');
       const jsonEnd = llmText.lastIndexOf('}');
       if (jsonStart !== -1 && jsonEnd !== -1) {
         const parsed = JSON.parse(llmText.substring(jsonStart, jsonEnd + 1));
+        const relevanceStatus = parsed.relevanceStatus || 'ON_TOPIC';
+        const rawResults = Array.isArray(parsed.criteriaResults) ? parsed.criteriaResults : [];
+
+        // Map and validate criteria results against the rubric
+        const alignedResults: CriterionEvidenceResult[] = rubric.criteria.map((c) => {
+          const matched = rawResults.find((r: any) => r.id === c.id || r.criterion === c.name);
+          const score = typeof matched?.score === 'number' ? Math.min(c.maxScore, Math.max(0, matched.score)) : 0;
+          return {
+            criterion: c.name,
+            maxScore: c.maxScore,
+            score,
+            evidence: matched?.evidence || null,
+            reason: matched?.reason || (score === 0 ? 'No evidence identified in answer.' : 'Evidence identified.'),
+          };
+        });
+
+        // Deterministically compute final score and dimensions from evidence
+        const detResult = HRRubricService.calculateDeterministicScore(
+          rubric,
+          alignedResults,
+          relevanceStatus,
+          durationSeconds,
+          val.wordCount
+        );
+
         return {
-          communicationScore: clamp(parsed.communicationScore),
-          problemSolvingScore: clamp(parsed.problemSolvingScore),
-          teamworkScore: clamp(parsed.teamworkScore),
-          professionalismScore: clamp(parsed.professionalismScore),
-          relevanceScore: clamp(parsed.relevanceScore),
-          clarityScore: clamp(parsed.clarityScore),
-          ownershipScore: clamp(parsed.ownershipScore),
-          leadershipScore: clamp(parsed.leadershipScore),
-          confidenceScore: clamp(parsed.confidenceScore),
-          structureScore: clamp(parsed.structureScore),
-          strengths: Array.isArray(parsed.strengths) ? parsed.strengths.slice(0, 3) : [],
-          improvements: Array.isArray(parsed.improvements) ? parsed.improvements.slice(0, 3) : [],
-          starGuidance: parsed.starFeedback || '',
+          ...detResult.dimensions,
+          overallScore: detResult.overallScore,
+          feedback: detResult.feedback,
+          strengths: detResult.strengths,
+          improvements: detResult.improvements,
+          starGuidance: detResult.starGuidance,
+          aiSummary: `Evaluated via ${rubric.category} rubric. Score: ${detResult.overallScore}/100. Status: ${relevanceStatus}.`,
+          criteriaEvidence: detResult.criteriaResults,
         };
       }
     } catch {
-      // fall through to heuristic
+      // Fallback to deterministic heuristic
     }
 
-    return heuristicEvaluation(transcript, durationSeconds);
+    const heuristic = heuristicEvaluation(question, category, val.verifiedTranscript, durationSeconds);
+    return {
+      ...heuristic.dimensions,
+      overallScore: heuristic.overallScore,
+      feedback: heuristic.feedback,
+      strengths: heuristic.strengths,
+      improvements: heuristic.improvements,
+      starGuidance: heuristic.starGuidance,
+      aiSummary: `Candidate response evaluated via deterministic rubric fallback. Score: ${heuristic.overallScore}/100.`,
+      criteriaEvidence: heuristic.criteriaResults,
+    };
   }
 
   /**
-   * Synthesize final holistic HR evaluation from all session responses.
+   * Synthesize final holistic HR evaluation across ALL session responses.
+   * Real mathematical aggregation: NEVER filters out 0s! If all responses are empty, overallScore = 0.
    */
   static async evaluateFinalSession(
     questionsWithTranscripts: Array<{ question: string; category: string; transcript: string; durationSeconds: number }>
   ): Promise<BehavioralEvaluation> {
+    if (!questionsWithTranscripts || questionsWithTranscripts.length === 0) {
+      return {
+        communicationScore: 0,
+        problemSolvingScore: 0,
+        teamworkScore: 0,
+        professionalismScore: 0,
+        relevanceScore: 0,
+        clarityScore: 0,
+        ownershipScore: 0,
+        leadershipScore: 0,
+        confidenceScore: 0,
+        structureScore: 0,
+        overallScore: 0,
+        feedback: 'No response was provided, so there was insufficient evidence to evaluate this question.',
+        strengths: [],
+        improvements: ['Participate actively in the HR interview and speak clearly into the microphone.'],
+        starGuidance: 'Ensure your microphone is functioning and speak clearly to structure your response.',
+        aiSummary: 'HR round had 0 recorded responses. Final score: 0/100.',
+        criteriaEvidence: [],
+      };
+    }
+
+    // Evaluate each question individually
     const perResponse = await Promise.all(
       questionsWithTranscripts.map((q) =>
         this.evaluateResponse(q.question, q.category, q.transcript, q.durationSeconds)
       )
     );
 
+    const totalQuestions = perResponse.length;
+
+    // True mathematical average across all questions asked — zeroes are preserved!
     const avgDim = (key: keyof BehavioralEvaluation): number => {
-      const vals = perResponse.map((r) => (r[key] as number) || 0).filter((v) => v > 0);
-      return vals.length > 0 ? Math.round(vals.reduce((a, b) => a + b, 0) / vals.length) : 55;
+      const sum = perResponse.reduce((acc, r) => acc + ((r[key] as number) || 0), 0);
+      return Math.round(sum / totalQuestions);
     };
 
     const communicationScore = avgDim('communicationScore');
@@ -394,51 +676,94 @@ Return ONLY JSON:
     const confidenceScore = avgDim('confidenceScore');
     const structureScore = avgDim('structureScore');
 
-    const overallScore = Math.round(
-      communicationScore * 0.20 +
-      problemSolvingScore * 0.15 +
-      teamworkScore * 0.15 +
+    // Authoritative overall score is the weighted sum of the dimension averages.
+    // Weights match SCORING_DIMENSIONS in the frontend (communication=20, problemSolving=15,
+    // teamwork=15, professionalism=15, relevance=15, clarity=10, ownership=5, leadership=5).
+    // This guarantees overallScore always matches what the report UI displays.
+    const weightedOverall =
+      communicationScore   * 0.20 +
+      problemSolvingScore  * 0.15 +
+      teamworkScore        * 0.15 +
       professionalismScore * 0.15 +
-      relevanceScore * 0.15 +
-      clarityScore * 0.10 +
-      ownershipScore * 0.05 +
-      leadershipScore * 0.05
+      relevanceScore       * 0.15 +
+      clarityScore         * 0.10 +
+      ownershipScore       * 0.05 +
+      leadershipScore      * 0.05;
+    const overallScore = Math.min(100, Math.max(0, Math.round(weightedOverall)));
+
+    // Collect all criteria evidence across all questions
+    const allCriteriaEvidence: CriterionEvidenceResult[] = perResponse.flatMap(
+      (r) => r.criteriaEvidence || []
     );
 
     const allStrengths = perResponse.flatMap((r) => r.strengths || []);
     const allImprovements = perResponse.flatMap((r) => r.improvements || []);
-    const uniqueStrengths = [...new Set(allStrengths)].slice(0, 4);
-    const uniqueImprovements = [...new Set(allImprovements)].slice(0, 4);
+    const uniqueStrengths = [...new Set(allStrengths)].filter(Boolean).slice(0, 4);
+    const uniqueImprovements = [...new Set(allImprovements)].filter(Boolean).slice(0, 4);
 
-    let aiSummary = `Candidate completed ${questionsWithTranscripts.length} behavioral interview questions. Overall performance score: ${overallScore}/100. Focus: apply STAR framework with measurable outcomes.`;
-    if (isLLMAvailable() && questionsWithTranscripts.length > 0) {
+    // Check if ANY question had actual candidate words
+    const hadAnyActualResponse = questionsWithTranscripts.some((q) => {
+      const words = (q.transcript || '').trim().split(/\s+/).filter(Boolean);
+      return words.length >= 2;
+    });
+
+    let aiSummary = `Candidate completed ${totalQuestions} behavioral interview question${totalQuestions > 1 ? 's' : ''}. Overall score: ${overallScore}/100.`;
+
+    if (!hadAnyActualResponse) {
+      // Truly no responses at all — silent interview
+      aiSummary = 'No audible or substantive responses were provided during the HR interview. Score: 0/100. Insufficient evidence to award credit.';
+    } else if (overallScore === 0) {
+      // Candidate spoke but responses were off-topic, very short, or non-substantive
+      aiSummary = `Candidate provided responses across ${totalQuestions} question${totalQuestions > 1 ? 's' : ''} but did not substantively address the behavioral questions asked. Score: ${overallScore}/100. Focus on directly answering with concrete examples.`;
+    } else if (isLLMAvailable()) {
       try {
         const transcriptSample = questionsWithTranscripts
-          .map((q, i) => `Q${i + 1} [${q.category}]: ${q.transcript.substring(0, 300)}`)
+          .map((q, i) => `Q${i + 1} [Score: ${perResponse[i].overallScore}/100]: "${q.transcript.substring(0, 200)}"`)
           .join('\n');
         const summaryText = await callGroq([
-          { role: 'system', content: 'You are a professional HR evaluator. Be concise and specific.' },
-          { role: 'user', content: `Based on these behavioral interview responses:\n${transcriptSample}\n\nWrite a 2-3 sentence professional HR evaluation summary highlighting the candidate's overall behavioral competency and key recommendation. Be specific and evidence-based.` },
-        ], 200);
+          { role: 'system', content: 'You are a professional HR evaluator. Write a concise 2-sentence evaluation summary based strictly on the candidate actual responses.' },
+          { role: 'user', content: `Candidate interview evaluation summary:\nOverall Score: ${overallScore}/100\nResponses:\n${transcriptSample}\n\nWrite a 2-sentence evidence-based summary.` },
+        ], 160);
         if (summaryText) aiSummary = summaryText;
-      } catch { /* use default summary */ }
+      } catch {
+        // keep default aiSummary
+      }
     }
 
-    const starGuidance = 'STAR Framework: (1) **Situation** — context and constraints; (2) **Task** — your specific responsibility; (3) **Action** — what YOU specifically did; (4) **Result** — quantifiable outcome (%, time, team size).';
-    const feedback = overallScore >= 80
-      ? 'Excellent behavioral competency demonstrated with strong communication and professional articulation.'
-      : overallScore >= 65
-      ? 'Good performance with clear opportunities for structured improvement. Focus on STAR framework and quantifying outcomes.'
-      : 'The candidate should develop more structured behavioral responses. Practice the STAR framework with concrete, measurable examples.';
+    const starGuidance =
+      'STAR Framework: (1) Situation — context and constraints; (2) Task — your specific responsibility; (3) Action — what YOU specifically did; (4) Result — quantifiable outcome (%, time, team size).';
+
+    let feedback = '';
+    if (!hadAnyActualResponse) {
+      feedback = 'No response was provided, so there was insufficient evidence to evaluate this interview.';
+    } else if (overallScore === 0) {
+      feedback = 'Responses were provided but did not sufficiently address the behavioral questions. Focus on direct, structured answers with concrete project examples.';
+    } else if (overallScore >= 80) {
+      feedback = 'Strong behavioral competency demonstrated with structured articulation and evidence-based problem solving.';
+    } else if (overallScore >= 50) {
+      feedback = 'Solid performance with partial credit earned across criteria. To improve, explicitly articulate technical trade-offs and quantifiable results.';
+    } else {
+      feedback = 'Limited substantive technical or behavioral evidence provided. Focus on structuring answers with concrete project examples.';
+    }
 
     return {
-      communicationScore, problemSolvingScore, teamworkScore, professionalismScore,
-      relevanceScore, clarityScore, ownershipScore, leadershipScore, confidenceScore, structureScore,
-      overallScore, feedback,
-      strengths: uniqueStrengths.length > 0 ? uniqueStrengths : ['Completed structured behavioral round', 'Maintained professional tone throughout'],
-      improvements: uniqueImprovements.length > 0 ? uniqueImprovements : ['Use STAR framework for responses', 'Quantify results with metrics'],
+      communicationScore,
+      problemSolvingScore,
+      teamworkScore,
+      professionalismScore,
+      relevanceScore,
+      clarityScore,
+      ownershipScore,
+      leadershipScore,
+      confidenceScore,
+      structureScore,
+      overallScore,
+      feedback,
+      strengths: uniqueStrengths.length > 0 ? uniqueStrengths : (overallScore > 0 ? ['Participated in interview session'] : []),
+      improvements: uniqueImprovements.length > 0 ? uniqueImprovements : ['Practice structuring answers with STAR framework'],
       starGuidance,
       aiSummary,
+      criteriaEvidence: allCriteriaEvidence,
     };
   }
 }

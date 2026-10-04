@@ -16,8 +16,14 @@ export default {
     fontFamily: {
       sans: ['Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
       mono: ['JetBrains Mono', 'monospace'],
+      geist: ['Geist', 'Inter', '-apple-system', 'BlinkMacSystemFont', 'Segoe UI', 'Roboto', 'sans-serif'],
+      'geist-mono': ['Geist Mono', 'JetBrains Mono', 'monospace'],
     },
     extend: {
+      boxShadow: {
+        'elevation-card': '0 35px 90px -20px rgba(10, 25, 45, 0.18), 0 15px 35px -15px rgba(0, 0, 0, 0.08)',
+        'elevation-hero': '0 45px 120px -20px rgba(12, 32, 60, 0.25), 0 0 0 1px rgba(255, 255, 255, 0.6)',
+      },
       colors: {
         border: "var(--border)",
         'border-subtle': "var(--border-subtle)",

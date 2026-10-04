@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
-  CheckCircle2, Lock, Clock, AlertCircle, ChevronLeft, ChevronRight,
+  CheckCircle2, Lock, Clock, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight,
   RotateCcw, Shield, XCircle, Loader2
 } from 'lucide-react';
 import { ReportWorkspace } from '../components/ReportWorkspace';
@@ -178,11 +178,19 @@ const InterviewHeader = ({
       {/* Right: Monitoring + Timer + End Interview + Candidate Info */}
       <div className="flex items-center gap-2.5 shrink-0">
         {/* Monitoring Pill */}
-        <div className="hidden xl:flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#F8FAFC] border border-[#E2E8F0] text-xs text-[#475569]">
-          <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse shrink-0" />
+        <div className={`hidden sm:flex items-center gap-1.5 px-2.5 py-1 rounded-md border text-xs transition-colors ${
+          tabSwitchesCount > 0
+            ? 'bg-amber-50 border-amber-200 text-amber-800'
+            : 'bg-[#F8FAFC] border-[#E2E8F0] text-[#475569]'
+        }`}>
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${
+            tabSwitchesCount > 0 ? 'bg-amber-500' : 'bg-emerald-500 animate-pulse'
+          }`} />
           <span className="font-medium">Monitoring Active</span>
           <span className="text-slate-300">•</span>
-          <span>Visibility Events: <strong className="font-mono text-[#0F172A] font-bold">{tabSwitchesCount}</strong></span>
+          <span>Visibility Events: <strong className={`font-mono font-bold ${
+            tabSwitchesCount > 0 ? 'text-amber-900' : 'text-[#0F172A]'
+          }`}>{tabSwitchesCount}</strong></span>
         </div>
 
         {/* Timer */}
@@ -710,6 +718,7 @@ export const InterviewSession = () => {
   const [tabSwitchesCount, setTabSwitchesCount] = useState<number>(0);
   const [isTimeExpired, setIsTimeExpired] = useState<boolean>(false);
   const [showAutoSubmitModal, setShowAutoSubmitModal] = useState<boolean>(false);
+  const [showTabSwitchAlert, setShowTabSwitchAlert] = useState<boolean>(false);
   const [focusLostToast, setFocusLostToast] = useState<string | null>(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showFinishDialog, setShowFinishDialog] = useState(false);
@@ -776,7 +785,7 @@ export const InterviewSession = () => {
   useEffect(() => {
     if (sessionStateRes) {
       if (typeof sessionStateRes.tabSwitchesCount === 'number') {
-        setTabSwitchesCount(sessionStateRes.tabSwitchesCount);
+        setTabSwitchesCount((prev) => Math.max(prev, sessionStateRes.tabSwitchesCount));
       }
       if (sessionStateRes.isFinalized || sessionStateRes.state === 'COMPLETED') {
         setIsTimeExpired(true);
@@ -844,53 +853,128 @@ export const InterviewSession = () => {
     return () => clearInterval(interval);
   }, [expiresAtTime, activeRound, isTimeExpired, handleAutoExpire]);
 
-  // Real Page Visibility API listener (only actual detected events)
+  // Real Page Visibility & Window Focus listener (detects tab switches and app defocus)
   const hiddenTimestampRef = useRef<number | null>(null);
+  const isAwayRef = useRef<boolean>(false);
+
+  useEffect(() => {
+    if (!focusLostToast) return;
+    const timer = setTimeout(() => {
+      setFocusLostToast(null);
+    }, 6000);
+    return () => clearTimeout(timer);
+  }, [focusLostToast]);
 
   useEffect(() => {
     if (!id || activeRound === 'report' || isTimeExpired) return;
 
-    const handleVisibility = async () => {
-      if (document.visibilityState === 'hidden') {
-        hiddenTimestampRef.current = Date.now();
-        try {
-          await api.post(`/interviews/${id}/tab-switch`, {
-            eventType: 'SWITCH_AWAY',
-            leftAt: new Date().toISOString(),
-          });
-        } catch (e) {
-          console.warn('Tab switch away log error:', e);
-        }
-      } else if (document.visibilityState === 'visible') {
-        const leftTime = hiddenTimestampRef.current || Date.now() - 1000;
-        const durationSec = Math.max(1, Math.round((Date.now() - leftTime) / 1000));
-        hiddenTimestampRef.current = null;
+    const handleAway = async () => {
+      if (isAwayRef.current) return;
+      isAwayRef.current = true;
+      const now = Date.now();
+      hiddenTimestampRef.current = now;
 
-        try {
-          const res = await api.post(`/interviews/${id}/tab-switch`, {
-            eventType: 'RETURN',
-            returnedAt: new Date().toISOString(),
-            durationSeconds: durationSec,
-          });
-          if (typeof res.data?.tabSwitchesCount === 'number') {
-            setTabSwitchesCount(res.data.tabSwitchesCount);
-          } else {
-            setTabSwitchesCount((c) => c + 1);
-          }
-        } catch (e) {
-          console.warn('Tab switch return log error:', e);
-          setTabSwitchesCount((c) => c + 1);
-        }
+      // Count the visibility loss / tab switch event immediately
+      setTabSwitchesCount((prev) => prev + 1);
 
-        setFocusLostToast(
-          'Assessment Focus Lost: Your assessment page became inactive. This activity has been recorded for assessment integrity review.'
-        );
+      try {
+        const res = await api.post(`/interviews/${id}/tab-switch`, {
+          eventType: 'SWITCH_AWAY',
+          leftAt: new Date(now).toISOString(),
+        });
+        if (typeof res.data?.tabSwitchesCount === 'number') {
+          setTabSwitchesCount((prev) => Math.max(prev, res.data.tabSwitchesCount));
+        }
+      } catch (e) {
+        console.warn('Tab switch away log error:', e);
       }
     };
 
-    document.addEventListener('visibilitychange', handleVisibility);
+    const handleReturn = async () => {
+      if (!isAwayRef.current) return;
+      isAwayRef.current = false;
+      const now = Date.now();
+      const leftTime = hiddenTimestampRef.current || now - 1000;
+      const durationSec = Math.max(1, Math.round((now - leftTime) / 1000));
+      hiddenTimestampRef.current = null;
+
+      // Play audio warning tone via Web Audio API
+      try {
+        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+        if (AudioCtx) {
+          const ctx = new AudioCtx();
+          if (ctx.state === 'suspended') {
+            ctx.resume().catch(() => {});
+          }
+          const osc = ctx.createOscillator();
+          const gain = ctx.createGain();
+          osc.type = 'triangle';
+          osc.frequency.setValueAtTime(520, ctx.currentTime);
+          osc.frequency.exponentialRampToValueAtTime(780, ctx.currentTime + 0.25);
+          gain.gain.setValueAtTime(0.2, ctx.currentTime);
+          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
+          osc.connect(gain);
+          gain.connect(ctx.destination);
+          osc.start();
+          osc.stop(ctx.currentTime + 0.25);
+        }
+      } catch (_) {}
+
+      // Prompt prominent Alert Dialog immediately
+      setShowTabSwitchAlert(true);
+      setFocusLostToast(
+        'Assessment Focus Lost: You navigated away from the assessment window. This activity has been recorded.'
+      );
+
+      try {
+        const res = await api.post(`/interviews/${id}/tab-switch`, {
+          eventType: 'RETURN',
+          returnedAt: new Date(now).toISOString(),
+          durationSeconds: durationSec,
+        });
+        if (typeof res.data?.tabSwitchesCount === 'number') {
+          setTabSwitchesCount((prev) => Math.max(prev, res.data.tabSwitchesCount));
+        }
+      } catch (e) {
+        console.warn('Tab switch return log error:', e);
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.hidden || document.visibilityState === 'hidden') {
+        handleAway();
+      } else if (!document.hidden || document.visibilityState === 'visible') {
+        if (isAwayRef.current) {
+          handleReturn();
+        }
+      }
+    };
+
+    let blurTimer: any = null;
+    const handleWindowBlur = () => {
+      blurTimer = setTimeout(() => {
+        if (!document.hasFocus() || document.hidden || document.visibilityState === 'hidden') {
+          handleAway();
+        }
+      }, 150);
+    };
+
+    const handleWindowFocus = () => {
+      if (blurTimer) clearTimeout(blurTimer);
+      if (isAwayRef.current) {
+        handleReturn();
+      }
+    };
+
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+    window.addEventListener('blur', handleWindowBlur);
+    window.addEventListener('focus', handleWindowFocus);
+
     return () => {
-      document.removeEventListener('visibilitychange', handleVisibility);
+      if (blurTimer) clearTimeout(blurTimer);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+      window.removeEventListener('blur', handleWindowBlur);
+      window.removeEventListener('focus', handleWindowFocus);
     };
   }, [id, activeRound, isTimeExpired]);
 
@@ -1078,6 +1162,39 @@ export const InterviewSession = () => {
           </button>
         </div>
       )}
+
+      {/* Assessment Integrity / Tab Switch Alert Modal */}
+      <Dialog open={showTabSwitchAlert} onOpenChange={() => setShowTabSwitchAlert(false)}>
+        <DialogContent className="sm:max-w-md bg-white border-2 border-rose-300 text-slate-900 shadow-2xl p-6 rounded-2xl z-50">
+          <DialogHeader>
+            <div className="w-12 h-12 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 mb-3 mx-auto ring-8 ring-rose-50">
+              <AlertTriangle className="w-6 h-6 text-rose-600" />
+            </div>
+            <DialogTitle className="text-center text-lg font-bold text-slate-900">
+              Assessment Integrity Alert: Tab Switch Detected
+            </DialogTitle>
+            <DialogDescription className="text-center text-sm text-slate-600 mt-2">
+              You navigated away from the assessment window. This violation has been recorded by the proctoring monitor and added to your evaluation report.
+            </DialogDescription>
+          </DialogHeader>
+
+          <div className="my-4 p-4 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-600 uppercase tracking-wider">Total Visibility Events</span>
+            <span className="font-mono text-base font-bold text-rose-600 bg-rose-50 px-2.5 py-0.5 rounded-md border border-rose-200">
+              {tabSwitchesCount}
+            </span>
+          </div>
+
+          <DialogFooter className="sm:justify-center">
+            <Button
+              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold py-2.5 rounded-xl shadow-xs cursor-pointer"
+              onClick={() => setShowTabSwitchAlert(false)}
+            >
+              I Understand & Resume Assessment
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
 
       {/* Auto Submit Modal on Deadline Expiration */}
       <Dialog open={showAutoSubmitModal} onOpenChange={() => setShowAutoSubmitModal(false)}>

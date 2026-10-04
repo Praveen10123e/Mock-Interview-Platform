@@ -30,579 +30,614 @@ import { useAdminDashboard } from '../../api/admin';
 import { Button } from '../../components/ui/button';
 import { Skeleton } from '../../components/ui/skeleton';
 
+// Custom tooltip for the Performance AreaChart matching student/faculty design language
+const AdminChartTooltip = ({ active, payload }: any) => {
+  if (active && payload && payload.length) {
+    const data = payload[0].payload;
+    return (
+      <div className="bg-white border border-slate-200 rounded-lg p-2.5 shadow-md text-xs space-y-1">
+        <div className="font-semibold text-slate-800">{data.date}</div>
+        <div className="flex items-center gap-1.5 text-blue-600 font-bold">
+          <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
+          Average Score: {data.averageScore}%
+        </div>
+        {data.count !== undefined && (
+          <div className="text-[11px] text-slate-500">
+            {data.count} evaluation session{data.count === 1 ? '' : 's'} recorded
+          </div>
+        )}
+      </div>
+    );
+  }
+  return null;
+};
+
 export const AdminDashboard: React.FC = () => {
   const { data, isLoading, isError, error, refetch, isFetching } = useAdminDashboard();
 
   return (
-    <div className="min-h-screen bg-background text-foreground pb-16">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-8 space-y-8">
-        {/* ── Hero Header ─────────────────────────────────────────────────── */}
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-6">
-          <div className="space-y-1">
-            <div className="flex items-center gap-2.5">
-              <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-white flex items-center gap-3">
-                System Administration
-                <span className="text-xs px-2.5 py-0.5 rounded-full bg-accent/15 border border-accent/30 text-accent font-medium font-mono">
-                  Super Admin
-                </span>
-              </h1>
-            </div>
-            <p className="text-xs sm:text-sm text-muted-foreground">
-              Monitor users, assessments, interview activity, platform performance, and system health.
-            </p>
+    <div className="w-full max-w-7xl mx-auto space-y-6 md:space-y-8 pb-12 min-w-0">
+      {/* ── 1. Page Header ─────────────────────────────────────────────────── */}
+      <div className="w-full flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4 border-b border-border pb-5">
+        <div className="space-y-1">
+          <div className="flex items-center gap-2.5 flex-wrap">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
+              System Administration
+            </h1>
+            <span className="px-2.5 py-0.5 text-xs font-semibold bg-blue-50 border border-blue-200 text-blue-700 rounded-md font-mono">
+              Super Admin
+            </span>
           </div>
-
-          <div className="flex items-center gap-3 self-start sm:self-auto">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => refetch()}
-              disabled={isFetching}
-              className="border-border hover:bg-surface-elevated text-xs flex items-center gap-1.5"
-            >
-              <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin text-accent' : ''}`} />
-              Refresh Data
-            </Button>
-          </div>
+          <p className="text-xs sm:text-sm text-slate-500 leading-relaxed">
+            Monitor users, assessments, interview activity, platform performance, and system health.
+          </p>
         </div>
 
-        {/* ── Loading State ───────────────────────────────────────────────── */}
-        {isLoading && (
-          <div className="space-y-6">
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {[...Array(8)].map((_, i) => (
-                <Skeleton key={i} className="h-28 rounded-xl bg-surface border border-border" />
+        <div className="flex items-center gap-2.5 shrink-0 self-start sm:self-auto">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => refetch()}
+            disabled={isFetching}
+            className="gap-1.5 text-xs font-medium border-slate-200 text-slate-700 hover:bg-slate-50 cursor-pointer shadow-2xs"
+          >
+            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin text-blue-600' : ''}`} />
+            Refresh Data
+          </Button>
+        </div>
+      </div>
+
+      {/* ── Loading State ───────────────────────────────────────────────── */}
+      {isLoading && (
+        <div className="space-y-6">
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+            {[...Array(8)].map((_, i) => (
+              <Skeleton key={i} className="h-28 rounded-xl bg-white border border-slate-200" />
+            ))}
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            <Skeleton className="h-72 rounded-xl bg-white border border-slate-200 lg:col-span-2" />
+            <Skeleton className="h-72 rounded-xl bg-white border border-slate-200" />
+          </div>
+        </div>
+      )}
+
+      {/* ── Error State ─────────────────────────────────────────────────── */}
+      {isError && (
+        <div className="p-6 rounded-xl border border-rose-200 bg-rose-50 text-rose-800 text-sm flex items-center justify-between">
+          <div className="flex items-center gap-3">
+            <AlertTriangle className="h-5 w-5 text-rose-600 shrink-0" />
+            <div>
+              <p className="font-semibold text-rose-900">Failed to load system administrative metrics</p>
+              <p className="text-xs text-rose-700 mt-0.5">
+                {(error as any)?.response?.data?.error?.message || (error as any)?.message || 'An unexpected error occurred.'}
+              </p>
+            </div>
+          </div>
+          <Button variant="outline" size="sm" onClick={() => refetch()} className="text-xs border-rose-200 hover:bg-rose-100 text-rose-800">
+            Try Again
+          </Button>
+        </div>
+      )}
+
+      {/* ── Authenticated Admin Banner ──────────────────────────────────── */}
+      {!isLoading && data && (
+        <div className="bg-white border border-slate-200/80 rounded-xl p-5 shadow-2xs flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-4">
+            <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-indigo-500 to-blue-600 text-white flex items-center justify-center font-bold font-mono text-lg shrink-0 shadow-xs">
+              SA
+            </div>
+            <div className="space-y-0.5">
+              <div className="flex items-center gap-2 flex-wrap">
+                <h2 className="text-base font-bold text-slate-900 tracking-tight">{data.adminProfile.fullName}</h2>
+                <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  AUTHORIZED
+                </span>
+              </div>
+              <p className="text-xs text-slate-500">
+                {data.adminProfile.email} • {data.adminProfile.designation} • {data.adminProfile.department}
+              </p>
+            </div>
+          </div>
+
+          <div className="flex items-center gap-2 self-start sm:self-auto text-xs text-slate-600 bg-slate-50 px-3 py-1.5 rounded-lg border border-slate-200">
+            <ShieldCheck className="h-4 w-4 text-emerald-600" />
+            <span>Scope: <strong className="text-slate-900 font-semibold">Platform-Wide</strong></span>
+          </div>
+        </div>
+      )}
+
+      {/* ── Main Dashboard Content ──────────────────────────────────────── */}
+      {!isLoading && data && (
+        <div className="space-y-8">
+          {/* ── 8 Platform KPI Cards ──────────────────────────────────────── */}
+          <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 w-full">
+            {/* Card 1: Total Registered Users */}
+            <div className="bg-white border border-slate-200/80 rounded-xl p-4 sm:p-5 shadow-2xs flex flex-col justify-between hover:border-slate-300 transition-all">
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] sm:text-[14px] font-semibold text-slate-500 uppercase tracking-wider">Total Registered Users</span>
+                <div className="w-9 h-9 rounded-lg bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center shrink-0">
+                  <Users className="h-4.5 w-4.5" />
+                </div>
+              </div>
+              <div className="mt-3">
+                <span className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">{data.overview.totalUsers}</span>
+                <span className="text-[12px] sm:text-[13px] text-slate-500 block mt-1 font-medium">
+                  {data.overview.totalStudents} Students • {data.overview.totalFaculty} Faculty • {data.overview.totalAdmins} Admin
+                </span>
+              </div>
+            </div>
+
+            {/* Card 2: Completed Assessments */}
+            <div className="bg-white border border-slate-200/80 rounded-xl p-4 sm:p-5 shadow-2xs flex flex-col justify-between hover:border-slate-300 transition-all">
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] sm:text-[14px] font-semibold text-slate-500 uppercase tracking-wider">Completed Assessments</span>
+                <div className="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center shrink-0">
+                  <CheckCircle2 className="h-4.5 w-4.5" />
+                </div>
+              </div>
+              <div className="mt-3">
+                <span className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">{data.overview.completedAssessments}</span>
+                <span className="text-[12px] sm:text-[13px] text-slate-500 block mt-1 font-medium">
+                  Finalized Sessions across Cohorts
+                </span>
+              </div>
+            </div>
+
+            {/* Card 3: In-Progress Assessments */}
+            <div className="bg-white border border-slate-200/80 rounded-xl p-4 sm:p-5 shadow-2xs flex flex-col justify-between hover:border-slate-300 transition-all">
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] sm:text-[14px] font-semibold text-slate-500 uppercase tracking-wider">Active In-Progress</span>
+                <div className="w-9 h-9 rounded-lg bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center shrink-0">
+                  <Clock className="h-4.5 w-4.5" />
+                </div>
+              </div>
+              <div className="mt-3">
+                <span className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">{data.overview.inProgressAssessments}</span>
+                <span className="text-[12px] sm:text-[13px] text-slate-500 block mt-1 font-medium">
+                  Active Evaluation Sessions
+                </span>
+              </div>
+            </div>
+
+            {/* Card 4: Platform Average Score */}
+            <div className="bg-white border border-slate-200/80 rounded-xl p-4 sm:p-5 shadow-2xs flex flex-col justify-between hover:border-slate-300 transition-all">
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] sm:text-[14px] font-semibold text-slate-500 uppercase tracking-wider">Platform Average Score</span>
+                <div className="w-9 h-9 rounded-lg bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center shrink-0">
+                  <Award className="h-4.5 w-4.5" />
+                </div>
+              </div>
+              <div className="mt-3">
+                <span className="text-2xl sm:text-3xl font-bold text-blue-600 tracking-tight">
+                  {data.overview.averageOverallScore !== null ? `${data.overview.averageOverallScore}%` : 'Data unavailable'}
+                </span>
+                <span className="text-[12px] sm:text-[13px] text-slate-500 block mt-1 font-medium">
+                  Cohort Mean Finalized Score
+                </span>
+              </div>
+            </div>
+
+            {/* Card 5: Official Code Submissions */}
+            <div className="bg-white border border-slate-200/80 rounded-xl p-4 sm:p-5 shadow-2xs flex flex-col justify-between hover:border-slate-300 transition-all">
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] sm:text-[14px] font-semibold text-slate-500 uppercase tracking-wider">Official Submissions</span>
+                <div className="w-9 h-9 rounded-lg bg-cyan-50 text-cyan-600 border border-cyan-100 flex items-center justify-center shrink-0">
+                  <Terminal className="h-4.5 w-4.5" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-baseline gap-2">
+                <span className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">{data.overview.totalOfficialSubmissions}</span>
+                <span className="text-[11px] px-1.5 py-0.5 rounded bg-slate-100 text-slate-600 font-medium">
+                  {data.overview.totalTestRuns} Runs
+                </span>
+              </div>
+            </div>
+
+            {/* Card 6: Submission Acceptance Rate */}
+            <div className="bg-white border border-slate-200/80 rounded-xl p-4 sm:p-5 shadow-2xs flex flex-col justify-between hover:border-slate-300 transition-all">
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] sm:text-[14px] font-semibold text-slate-500 uppercase tracking-wider">Coding Acceptance</span>
+                <div className="w-9 h-9 rounded-lg bg-teal-50 text-teal-600 border border-teal-100 flex items-center justify-center shrink-0">
+                  <Code2 className="h-4.5 w-4.5" />
+                </div>
+              </div>
+              <div className="mt-3">
+                <span className="text-2xl sm:text-3xl font-bold text-teal-600 tracking-tight">
+                  {data.overview.submissionAcceptanceRate !== null ? `${data.overview.submissionAcceptanceRate}%` : 'Data unavailable'}
+                </span>
+                <span className="text-[12px] sm:text-[13px] text-slate-500 block mt-1 font-medium">
+                  {data.codingAnalytics.acceptedSubmissions}/{data.overview.totalOfficialSubmissions} Solved Official
+                </span>
+              </div>
+            </div>
+
+            {/* Card 7: Published Questions */}
+            <div className="bg-white border border-slate-200/80 rounded-xl p-4 sm:p-5 shadow-2xs flex flex-col justify-between hover:border-slate-300 transition-all">
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] sm:text-[14px] font-semibold text-slate-500 uppercase tracking-wider">Published Questions</span>
+                <div className="w-9 h-9 rounded-lg bg-purple-50 text-purple-600 border border-purple-100 flex items-center justify-center shrink-0">
+                  <BookOpen className="h-4.5 w-4.5" />
+                </div>
+              </div>
+              <div className="mt-3">
+                <span className="text-2xl sm:text-3xl font-bold text-purple-600 tracking-tight">{data.questionBank.publishedQuestions}</span>
+                <span className="text-[12px] sm:text-[13px] text-slate-500 block mt-1 font-medium">
+                  Curated ({data.questionBank.totalQuestions.toLocaleString()} total in DB)
+                </span>
+              </div>
+            </div>
+
+            {/* Card 8: System Health Status */}
+            <div className="bg-white border border-slate-200/80 rounded-xl p-4 sm:p-5 shadow-2xs flex flex-col justify-between hover:border-slate-300 transition-all">
+              <div className="flex items-center justify-between">
+                <span className="text-[13px] sm:text-[14px] font-semibold text-slate-500 uppercase tracking-wider">System Health</span>
+                <div className="w-9 h-9 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center shrink-0">
+                  <Activity className="h-4.5 w-4.5" />
+                </div>
+              </div>
+              <div className="mt-3 flex items-baseline gap-2">
+                <span className="text-2xl sm:text-3xl font-bold text-emerald-600 font-mono tracking-tight">{data.systemHealth.overallStatus}</span>
+                <span className="text-[11px] text-slate-500 font-medium">6 Services</span>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Row 1: Platform Performance Trend & Assessment Lifecycle ──── */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Left 2 Cols: Activity Trend AreaChart */}
+            <div className="lg:col-span-2 bg-white border border-slate-200/80 shadow-2xs rounded-xl p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <TrendingUp className="h-4 w-4 text-blue-600" />
+                  <h3 className="text-sm font-semibold text-slate-900">Platform Assessment Activity & Score Trend</h3>
+                </div>
+                <span className="text-xs text-slate-500">
+                  {data.performanceTrend.length} Historical Evaluation Dates
+                </span>
+              </div>
+
+              {data.performanceTrend.length > 0 ? (
+                <div className="h-64 w-full pt-2">
+                  <ResponsiveContainer width="100%" height="100%">
+                    <AreaChart
+                      data={data.performanceTrend}
+                      margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
+                    >
+                      <defs>
+                        <linearGradient id="adminTrendGrad" x1="0" y1="0" x2="0" y2="1">
+                          <stop offset="5%" stopColor="#2563eb" stopOpacity={0.25} />
+                          <stop offset="95%" stopColor="#2563eb" stopOpacity={0.0} />
+                        </linearGradient>
+                      </defs>
+                      <CartesianGrid strokeDasharray="3 3" stroke="#e2e8f0" vertical={false} />
+                      <XAxis
+                        dataKey="date"
+                        stroke="#64748b"
+                        fontSize={11}
+                        tickLine={false}
+                        axisLine={false}
+                      />
+                      <YAxis
+                        stroke="#64748b"
+                        fontSize={11}
+                        tickLine={false}
+                        axisLine={false}
+                        domain={[0, 100]}
+                      />
+                      <Tooltip content={<AdminChartTooltip />} />
+                      <Area
+                        type="monotone"
+                        dataKey="averageScore"
+                        name="Avg Score (%)"
+                        stroke="#2563eb"
+                        strokeWidth={2.5}
+                        fillOpacity={1}
+                        fill="url(#adminTrendGrad)"
+                      />
+                    </AreaChart>
+                  </ResponsiveContainer>
+                </div>
+              ) : (
+                <div className="h-64 flex flex-col items-center justify-center text-center p-6 space-y-2">
+                  <p className="text-xs font-medium text-slate-700">No performance data yet</p>
+                  <p className="text-xs text-slate-400 max-w-sm">Complete more assessments to generate platform-wide performance analytics.</p>
+                </div>
+              )}
+            </div>
+
+            {/* Right 1 Col: Assessment Lifecycle & Score Breakdown */}
+            <div className="bg-white border border-slate-200/80 shadow-2xs rounded-xl p-5 space-y-4">
+              <div className="border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                  <Layers className="h-4 w-4 text-purple-600" />
+                  Lifecycle & Round Scores
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Platform-wide evaluation averages
+                </p>
+              </div>
+
+              <div className="space-y-3.5 text-xs">
+                <div className="space-y-1.5">
+                  <div className="flex justify-between text-slate-600 font-medium">
+                    <span>Total Sessions Initiated</span>
+                    <span className="font-mono text-slate-900 font-bold">{data.overview.totalAssessments}</span>
+                  </div>
+                  <div className="w-full h-2 rounded-full bg-slate-100 overflow-hidden flex">
+                    <div
+                      className="h-full bg-emerald-500"
+                      style={{
+                        width: `${(data.overview.completedAssessments / (data.overview.totalAssessments || 1)) * 100}%`,
+                      }}
+                      title={`Completed: ${data.overview.completedAssessments}`}
+                    />
+                    <div
+                      className="h-full bg-amber-500"
+                      style={{
+                        width: `${(data.overview.inProgressAssessments / (data.overview.totalAssessments || 1)) * 100}%`,
+                      }}
+                      title={`In-Progress: ${data.overview.inProgressAssessments}`}
+                    />
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-400">
+                    <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-emerald-500" /> Completed ({data.overview.completedAssessments})</span>
+                    <span className="flex items-center gap-1.5"><span className="w-2 h-2 rounded-full bg-amber-500" /> In Progress ({data.overview.inProgressAssessments})</span>
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-600">Aptitude Component Mean:</span>
+                    <span className="font-mono text-purple-700 font-bold">
+                      {data.overview.averageAptitudeScore !== null ? `${data.overview.averageAptitudeScore}%` : '—'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-600">Coding Component Mean:</span>
+                    <span className="font-mono text-teal-700 font-bold">
+                      {data.overview.averageCodingScore !== null ? `${data.overview.averageCodingScore}%` : '—'}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-600">HR Behavioral Component Mean:</span>
+                    <span className="font-mono text-pink-700 font-bold">
+                      {data.overview.averageHrScore !== null ? `${data.overview.averageHrScore}%` : '—'}
+                    </span>
+                  </div>
+                </div>
+
+                <div className="pt-3 border-t border-slate-100 text-xs text-slate-500">
+                  Interview Templates: <strong className="text-slate-900 font-semibold">{data.templates.publishedCount} published</strong> ({data.templates.totalTemplates} total)
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Row 2: Coding Infrastructure & Question Bank Breakdown ─────── */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left: Coding & Execution Ecosystem */}
+            <div className="bg-white border border-slate-200/80 shadow-2xs rounded-xl p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <Code2 className="h-4 w-4 text-teal-600" />
+                  <h3 className="text-sm font-semibold text-slate-900">Coding & Execution Ecosystem</h3>
+                </div>
+                <span className="text-xs text-slate-500 font-mono font-medium">
+                  {data.codingAnalytics.totalExecutions} Total Executions
+                </span>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                  <span className="text-xs text-slate-500 block font-medium">Test Runs (RUN)</span>
+                  <span className="text-lg font-bold text-slate-900 font-mono">{data.codingAnalytics.testRunsCount}</span>
+                  <span className="text-[11px] text-slate-400 block mt-0.5">Local candidate runs</span>
+                </div>
+                <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                  <span className="text-xs text-slate-500 block font-medium">Official Submissions</span>
+                  <span className="text-lg font-bold text-teal-700 font-mono">
+                    {data.codingAnalytics.officialSubmissionsCount}
+                  </span>
+                  <span className="text-[11px] text-slate-400 block mt-0.5">Evaluated solutions</span>
+                </div>
+              </div>
+
+              {/* Verdict Distribution Grid */}
+              <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 text-center text-xs">
+                <div className="p-2 rounded-lg bg-emerald-50 border border-emerald-200">
+                  <span className="text-[10px] text-emerald-800 font-semibold block uppercase">Accepted</span>
+                  <span className="font-bold text-emerald-700 font-mono text-sm">{data.codingAnalytics.verdictDistribution.accepted}</span>
+                </div>
+                <div className="p-2 rounded-lg bg-rose-50 border border-rose-200">
+                  <span className="text-[10px] text-rose-800 font-semibold block uppercase">Wrong Ans</span>
+                  <span className="font-bold text-rose-700 font-mono text-sm">{data.codingAnalytics.verdictDistribution.wrongAnswer}</span>
+                </div>
+                <div className="p-2 rounded-lg bg-amber-50 border border-amber-200">
+                  <span className="text-[10px] text-amber-800 font-semibold block uppercase">Compile Err</span>
+                  <span className="font-bold text-amber-700 font-mono text-sm">{data.codingAnalytics.verdictDistribution.compilationError}</span>
+                </div>
+                <div className="p-2 rounded-lg bg-orange-50 border border-orange-200">
+                  <span className="text-[10px] text-orange-800 font-semibold block uppercase">Runtime Err</span>
+                  <span className="font-bold text-orange-700 font-mono text-sm">{data.codingAnalytics.verdictDistribution.runtimeError}</span>
+                </div>
+                <div className="p-2 rounded-lg bg-blue-50 border border-blue-200">
+                  <span className="text-[10px] text-blue-800 font-semibold block uppercase">TLE</span>
+                  <span className="font-bold text-blue-700 font-mono text-sm">{data.codingAnalytics.verdictDistribution.timeLimitExceeded}</span>
+                </div>
+              </div>
+
+              <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+                <span className="text-slate-600 font-medium">Test Case Aggregate Pass Rate</span>
+                <span className="font-mono text-slate-900 font-bold">
+                  {data.codingAnalytics.testsPassedCount}/{data.codingAnalytics.totalTestsCount} ({data.codingAnalytics.testCasePassRate ?? 0}%)
+                </span>
+              </div>
+            </div>
+
+            {/* Right: Question Bank & Curricular Datasets */}
+            <div className="bg-white border border-slate-200/80 shadow-2xs rounded-xl p-5 space-y-4">
+              <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+                <div className="flex items-center gap-2">
+                  <Database className="h-4 w-4 text-purple-600" />
+                  <h3 className="text-sm font-semibold text-slate-900">Question Bank & Curricula</h3>
+                </div>
+                <span className="text-xs text-purple-700 font-mono font-bold bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                  {data.questionBank.publishedQuestions} Curated Active
+                </span>
+              </div>
+
+              <div className="space-y-3 text-xs">
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                    <span className="text-xs text-slate-500 block font-medium">Curated Benchmark</span>
+                    <span className="text-lg font-bold text-purple-700 font-mono">{data.questionBank.publishedQuestions}</span>
+                  </div>
+                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-200">
+                    <span className="text-xs text-slate-500 block font-medium">Total Database Records</span>
+                    <span className="text-lg font-bold text-slate-900 font-mono">{data.questionBank.totalQuestions.toLocaleString()}</span>
+                  </div>
+                </div>
+
+                <div className="pt-2 border-t border-slate-100">
+                  <span className="text-xs text-slate-500 block mb-2 font-semibold">Top Curricular Categories</span>
+                  <div className="grid grid-cols-2 gap-2">
+                    {data.questionBank.categories.map((c) => (
+                      <div key={c.name} className="flex items-center justify-between p-2 rounded-lg bg-slate-50 border border-slate-200">
+                        <span className="text-slate-800 font-medium truncate pr-2">{c.name}</span>
+                        <span className="font-mono text-slate-500 text-xs font-semibold">{c.count.toLocaleString()}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ── Row 3: Live System Health & Microservices Architecture ───────── */}
+          <div className="bg-white border border-slate-200/80 shadow-2xs rounded-xl p-5 space-y-4">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <Server className="h-4 w-4 text-emerald-600" />
+                <h3 className="text-sm font-semibold text-slate-900">Live Microservices & Platform Health</h3>
+              </div>
+              <div className="flex items-center gap-2 text-xs">
+                <span className="h-2.5 w-2.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-emerald-700 font-mono font-bold">ALL SERVICES OPERATIONAL</span>
+              </div>
+            </div>
+
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
+              {data.systemHealth.services.map((svc) => (
+                <div key={svc.name} className="p-3 rounded-lg bg-slate-50 border border-slate-200 space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800 truncate">{svc.name}</span>
+                    <span
+                      className={`h-2.5 w-2.5 rounded-full ${
+                        svc.status === 'Healthy' ? 'bg-emerald-500' : 'bg-rose-500'
+                      }`}
+                    />
+                  </div>
+                  <div className="text-[11px] text-slate-500 font-mono flex items-center justify-between">
+                    <span>Port {svc.port}</span>
+                    <span className="text-emerald-600 font-bold">{svc.latency}</span>
+                  </div>
+                </div>
               ))}
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Skeleton className="h-72 rounded-xl bg-surface border border-border" />
-              <Skeleton className="h-72 rounded-xl bg-surface border border-border" />
+
+            <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-slate-600">
+              <span className="flex items-center gap-2 font-medium">
+                <Database className="h-3.5 w-3.5 text-blue-600" />
+                Database Cluster: <strong className="text-slate-900">auth_db, user_db, interview_db, question_db</strong>
+              </span>
+              <span className="text-emerald-700 font-mono font-semibold">PostgreSQL Connected (Port 5432)</span>
             </div>
           </div>
-        )}
 
-        {/* ── Error State ─────────────────────────────────────────────────── */}
-        {isError && (
-          <div className="p-6 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-300 text-sm flex items-center justify-between">
-            <div className="flex items-center gap-3">
-              <AlertTriangle className="h-5 w-5 text-rose-400 shrink-0" />
-              <div>
-                <p className="font-semibold">Failed to load system administrative metrics</p>
-                <p className="text-xs text-rose-400 mt-0.5">
-                  {(error as any)?.response?.data?.error?.message || (error as any)?.message || 'An unexpected error occurred.'}
+          {/* ── Row 4: Operational Attention & Recent Activity ───────────────── */}
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+            {/* Left: Operational Attention */}
+            <div className="bg-white border border-slate-200/80 shadow-2xs rounded-xl p-5 space-y-4">
+              <div className="border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                  <Zap className="h-4 w-4 text-amber-500" />
+                  Operational Signals & Alerts
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Evidence-based system notifications and cohort indicators
                 </p>
               </div>
-            </div>
-            <Button variant="outline" size="sm" onClick={() => refetch()} className="text-xs border-rose-500/30">
-              Try Again
-            </Button>
-          </div>
-        )}
 
-        {/* ── Authenticated Admin Banner ──────────────────────────────────── */}
-        {!isLoading && data && (
-          <div className="bg-surface border border-border rounded-2xl p-5 relative overflow-hidden shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-            <div className="flex items-center gap-4">
-              <div className="h-12 w-12 rounded-xl bg-gradient-to-br from-indigo-500 to-purple-600 border border-accent/40 flex items-center justify-center text-white font-bold font-mono text-lg shrink-0">
-                SA
+              <div className="space-y-3">
+                {data.attentionItems.map((item) => (
+                  <div
+                    key={item.id}
+                    className={`p-3 rounded-xl border space-y-1 text-xs ${
+                      item.severity === 'HIGH'
+                        ? 'border-rose-200 bg-rose-50 text-rose-800'
+                        : item.severity === 'MEDIUM'
+                        ? 'border-amber-200 bg-amber-50 text-amber-800'
+                        : 'border-blue-200 bg-blue-50 text-blue-800'
+                    }`}
+                  >
+                    <div className="flex items-center justify-between font-semibold">
+                      <span>{item.title}</span>
+                      <span className="font-mono text-[10px] px-2 py-0.5 rounded bg-white border border-current font-bold">
+                        {item.count} items
+                      </span>
+                    </div>
+                    <p className="text-[11px] opacity-90">{item.description}</p>
+                  </div>
+                ))}
               </div>
-              <div className="space-y-0.5">
-                <div className="flex items-center gap-2">
-                  <h2 className="text-base font-bold text-white tracking-tight">{data.adminProfile.fullName}</h2>
-                  <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-emerald-500/15 text-emerald-400 border border-emerald-500/20">
-                    AUTHORIZED
-                  </span>
-                </div>
-                <p className="text-xs text-muted-foreground font-mono">
-                  {data.adminProfile.email} • {data.adminProfile.designation} • {data.adminProfile.department}
+            </div>
+
+            {/* Right: Recent Platform Activity */}
+            <div className="bg-white border border-slate-200/80 shadow-2xs rounded-xl p-5 space-y-4">
+              <div className="border-b border-slate-100 pb-3">
+                <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                  <Activity className="h-4 w-4 text-blue-600" />
+                  Recent Platform Activity Stream
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Real-time assessment completions, submissions, and events
                 </p>
               </div>
-            </div>
 
-            <div className="flex items-center gap-2 self-start sm:self-auto text-xs text-muted-foreground bg-surface-elevated px-3 py-1.5 rounded-lg border border-border">
-              <ShieldCheck className="h-4 w-4 text-emerald-400" />
-              <span>Scope: <strong className="text-white">Platform-Wide</strong></span>
-            </div>
-          </div>
-        )}
-
-        {/* ── Main Dashboard Content ──────────────────────────────────────── */}
-        {!isLoading && data && (
-          <div className="space-y-8">
-            {/* ── 8 Platform KPI Cards ──────────────────────────────────────── */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
-              {/* Card 1: Total Registered Users */}
-              <div className="bg-surface border border-border rounded-xl p-4 flex flex-col justify-between">
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-xs font-medium">Total Registered Users</span>
-                  <Users className="h-4 w-4 text-blue-400" />
-                </div>
-                <div className="mt-3">
-                  <span className="text-2xl font-bold text-white">{data.overview.totalUsers}</span>
-                  <span className="text-[11px] text-muted-foreground block mt-0.5">
-                    {data.overview.totalStudents} Students • {data.overview.totalFaculty} Faculty • {data.overview.totalAdmins} Admin
-                  </span>
-                </div>
-              </div>
-
-              {/* Card 2: Completed Assessments */}
-              <div className="bg-surface border border-border rounded-xl p-4 flex flex-col justify-between">
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-xs font-medium">Completed Assessments</span>
-                  <CheckCircle2 className="h-4 w-4 text-emerald-400" />
-                </div>
-                <div className="mt-3">
-                  <span className="text-2xl font-bold text-emerald-400">{data.overview.completedAssessments}</span>
-                  <span className="text-[11px] text-muted-foreground block mt-0.5">
-                    Finalized Sessions across Cohorts
-                  </span>
-                </div>
-              </div>
-
-              {/* Card 3: In-Progress Assessments */}
-              <div className="bg-surface border border-border rounded-xl p-4 flex flex-col justify-between">
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-xs font-medium">Active In-Progress</span>
-                  <Clock className="h-4 w-4 text-amber-400" />
-                </div>
-                <div className="mt-3">
-                  <span className="text-2xl font-bold text-amber-400">{data.overview.inProgressAssessments}</span>
-                  <span className="text-[11px] text-muted-foreground block mt-0.5">
-                    Active Evaluation Sessions
-                  </span>
-                </div>
-              </div>
-
-              {/* Card 4: Platform Average Score */}
-              <div className="bg-surface border border-border rounded-xl p-4 flex flex-col justify-between">
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-xs font-medium">Platform Average Score</span>
-                  <Award className="h-4 w-4 text-accent" />
-                </div>
-                <div className="mt-3">
-                  <span className="text-2xl font-bold text-accent">
-                    {data.overview.averageOverallScore !== null ? `${data.overview.averageOverallScore}%` : 'Data unavailable'}
-                  </span>
-                  <span className="text-[11px] text-muted-foreground block mt-0.5">
-                    Cohort Mean Finalized Score
-                  </span>
-                </div>
-              </div>
-
-              {/* Card 5: Official Code Submissions */}
-              <div className="bg-surface border border-border rounded-xl p-4 flex flex-col justify-between">
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-xs font-medium">Official Submissions</span>
-                  <Terminal className="h-4 w-4 text-emerald-400" />
-                </div>
-                <div className="mt-3 flex items-baseline gap-2">
-                  <span className="text-2xl font-bold text-white">{data.overview.totalOfficialSubmissions}</span>
-                  <span className="text-[10px] px-1.5 py-0.5 rounded bg-surface-elevated text-muted-foreground border border-border">
-                    {data.overview.totalTestRuns} Runs
-                  </span>
-                </div>
-              </div>
-
-              {/* Card 6: Submission Acceptance Rate */}
-              <div className="bg-surface border border-border rounded-xl p-4 flex flex-col justify-between">
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-xs font-medium">Coding Acceptance Rate</span>
-                  <Code2 className="h-4 w-4 text-cyan-400" />
-                </div>
-                <div className="mt-3">
-                  <span className="text-2xl font-bold text-cyan-400">
-                    {data.overview.submissionAcceptanceRate !== null ? `${data.overview.submissionAcceptanceRate}%` : 'Data unavailable'}
-                  </span>
-                  <span className="text-[11px] text-muted-foreground block mt-0.5">
-                    {data.codingAnalytics.acceptedSubmissions}/{data.overview.totalOfficialSubmissions} Solved Official
-                  </span>
-                </div>
-              </div>
-
-              {/* Card 7: Published Questions */}
-              <div className="bg-surface border border-border rounded-xl p-4 flex flex-col justify-between">
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-xs font-medium">Published Questions</span>
-                  <BookOpen className="h-4 w-4 text-purple-400" />
-                </div>
-                <div className="mt-3">
-                  <span className="text-2xl font-bold text-purple-400">{data.questionBank.publishedQuestions}</span>
-                  <span className="text-[11px] text-muted-foreground block mt-0.5">
-                    Curated Benchmarks ({data.questionBank.totalQuestions.toLocaleString()} total)
-                  </span>
-                </div>
-              </div>
-
-              {/* Card 8: System Health Status */}
-              <div className="bg-surface border border-border rounded-xl p-4 flex flex-col justify-between">
-                <div className="flex items-center justify-between text-muted-foreground">
-                  <span className="text-xs font-medium">System Health</span>
-                  <Activity className="h-4 w-4 text-emerald-400" />
-                </div>
-                <div className="mt-3 flex items-baseline gap-2">
-                  <span className="text-xl font-bold text-emerald-400 font-mono">{data.systemHealth.overallStatus}</span>
-                  <span className="text-[10px] text-muted-foreground">6 Microservices</span>
-                </div>
-              </div>
-            </div>
-
-            {/* ── Row 1: Platform Performance Trend & Assessment Lifecycle ──── */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Left 2 Cols: Activity Trend AreaChart */}
-              <div className="lg:col-span-2 bg-surface border border-border rounded-xl p-5 space-y-4">
-                <div className="flex items-center justify-between border-b border-border pb-3">
-                  <div className="flex items-center gap-2">
-                    <TrendingUp className="h-4 w-4 text-accent" />
-                    <h3 className="text-sm font-semibold text-white">Platform Assessment Activity & Score Trend</h3>
-                  </div>
-                  <span className="text-[11px] text-muted-foreground">
-                    {data.performanceTrend.length} Historical Evaluation Dates
-                  </span>
-                </div>
-
-                {data.performanceTrend.length > 0 ? (
-                  <div className="h-64 w-full pt-2">
-                    <ResponsiveContainer width="100%" height="100%">
-                      <AreaChart
-                        data={data.performanceTrend}
-                        margin={{ top: 10, right: 10, left: -20, bottom: 0 }}
-                      >
-                        <defs>
-                          <linearGradient id="adminTrendGrad" x1="0" y1="0" x2="0" y2="1">
-                            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.4} />
-                            <stop offset="95%" stopColor="#6366f1" stopOpacity={0.0} />
-                          </linearGradient>
-                        </defs>
-                        <CartesianGrid strokeDasharray="3 3" stroke="#262626" vertical={false} />
-                        <XAxis
-                          dataKey="date"
-                          stroke="#737373"
-                          fontSize={11}
-                          tickLine={false}
-                          axisLine={false}
-                        />
-                        <YAxis
-                          stroke="#737373"
-                          fontSize={11}
-                          tickLine={false}
-                          axisLine={false}
-                          domain={[0, 100]}
-                        />
-                        <Tooltip
-                          contentStyle={{
-                            backgroundColor: '#171717',
-                            borderColor: '#262626',
-                            borderRadius: '0.5rem',
-                            fontSize: '12px',
-                            color: '#fff',
-                          }}
-                        />
-                        <Area
-                          type="monotone"
-                          dataKey="averageScore"
-                          name="Avg Score (%)"
-                          stroke="#6366f1"
-                          strokeWidth={2}
-                          fillOpacity={1}
-                          fill="url(#adminTrendGrad)"
-                        />
-                      </AreaChart>
-                    </ResponsiveContainer>
-                  </div>
-                ) : (
-                  <div className="h-64 flex items-center justify-center text-xs text-muted-foreground">
-                    Not enough completed assessments to display activity trend.
-                  </div>
-                )}
-              </div>
-
-              {/* Right 1 Col: Assessment Lifecycle & Score Breakdown */}
-              <div className="bg-surface border border-border rounded-xl p-5 space-y-4">
-                <div className="border-b border-border pb-3">
-                  <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                    <Layers className="h-4 w-4 text-purple-400" />
-                    Lifecycle & Round Scores
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">
-                    Platform-wide evaluation averages
-                  </p>
-                </div>
-
-                <div className="space-y-3 text-xs">
-                  <div className="space-y-1">
-                    <div className="flex justify-between text-muted-foreground">
-                      <span>Total Sessions Initiated</span>
-                      <span className="font-mono text-white font-semibold">{data.overview.totalAssessments}</span>
+              <div className="space-y-2.5">
+                {data.recentActivities.map((act) => (
+                  <div
+                    key={act.id}
+                    className="p-3 rounded-lg bg-slate-50 border border-slate-200 flex items-center justify-between text-xs"
+                  >
+                    <div className="space-y-0.5 min-w-0 pr-3">
+                      <span className="font-semibold text-slate-900 truncate block">{act.title}</span>
+                      <p className="text-[11px] text-slate-500 truncate">{act.description}</p>
                     </div>
-                    <div className="w-full h-1.5 rounded-full bg-surface-elevated overflow-hidden flex">
-                      <div
-                        className="h-full bg-emerald-500"
-                        style={{
-                          width: `${(data.overview.completedAssessments / (data.overview.totalAssessments || 1)) * 100}%`,
-                        }}
-                      />
-                      <div
-                        className="h-full bg-amber-500"
-                        style={{
-                          width: `${(data.overview.inProgressAssessments / (data.overview.totalAssessments || 1)) * 100}%`,
-                        }}
-                      />
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-border space-y-2">
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Aptitude Component Mean:</span>
-                      <span className="font-mono text-purple-400 font-semibold">
-                        {data.overview.averageAptitudeScore !== null ? `${data.overview.averageAptitudeScore}%` : '—'}
+                    <div className="text-right shrink-0">
+                      {act.badge && (
+                        <span
+                          className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold block ${
+                            act.badgeVariant === 'success'
+                              ? 'bg-emerald-100 text-emerald-800 border border-emerald-200'
+                              : 'bg-amber-100 text-amber-800 border border-amber-200'
+                          }`}
+                        >
+                          {act.badge}
+                        </span>
+                      )}
+                      <span className="text-[10px] text-slate-400 mt-0.5 block font-mono">
+                        {new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                       </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">Coding Component Mean:</span>
-                      <span className="font-mono text-cyan-400 font-semibold">
-                        {data.overview.averageCodingScore !== null ? `${data.overview.averageCodingScore}%` : '—'}
-                      </span>
-                    </div>
-                    <div className="flex items-center justify-between">
-                      <span className="text-muted-foreground">HR Behavioral Component Mean:</span>
-                      <span className="font-mono text-pink-400 font-semibold">
-                        {data.overview.averageHrScore !== null ? `${data.overview.averageHrScore}%` : '—'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-border text-[11px] text-muted-foreground">
-                    Interview Templates: <strong className="text-white">{data.templates.publishedCount} published</strong> ({data.templates.totalTemplates} total)
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* ── Row 2: Coding Infrastructure & Question Bank Breakdown ─────── */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Left: Coding & Execution Ecosystem */}
-              <div className="bg-surface border border-border rounded-xl p-5 space-y-4">
-                <div className="flex items-center justify-between border-b border-border pb-3">
-                  <div className="flex items-center gap-2">
-                    <Code2 className="h-4 w-4 text-cyan-400" />
-                    <h3 className="text-sm font-semibold text-white">Coding & Execution Ecosystem</h3>
-                  </div>
-                  <span className="text-[11px] text-muted-foreground font-mono">
-                    {data.codingAnalytics.totalExecutions} Total Executions
-                  </span>
-                </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 rounded-lg bg-surface-elevated border border-border">
-                    <span className="text-[11px] text-muted-foreground block">Test Runs (RUN)</span>
-                    <span className="text-lg font-bold text-white font-mono">{data.codingAnalytics.testRunsCount}</span>
-                    <span className="text-[10px] text-muted-foreground block mt-0.5">Local testing</span>
-                  </div>
-                  <div className="p-3 rounded-lg bg-surface-elevated border border-border">
-                    <span className="text-[11px] text-muted-foreground block">Official Submissions</span>
-                    <span className="text-lg font-bold text-cyan-400 font-mono">
-                      {data.codingAnalytics.officialSubmissionsCount}
-                    </span>
-                    <span className="text-[10px] text-muted-foreground block mt-0.5">Evaluated solutions</span>
-                  </div>
-                </div>
-
-                {/* Verdict Distribution Grid */}
-                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2 text-center text-xs">
-                  <div className="p-2 rounded-lg bg-emerald-500/10 border border-emerald-500/20">
-                    <span className="text-[10px] text-emerald-300 block">Accepted</span>
-                    <span className="font-bold text-emerald-400 font-mono">{data.codingAnalytics.verdictDistribution.accepted}</span>
-                  </div>
-                  <div className="p-2 rounded-lg bg-rose-500/10 border border-rose-500/20">
-                    <span className="text-[10px] text-rose-300 block">Wrong Ans</span>
-                    <span className="font-bold text-rose-400 font-mono">{data.codingAnalytics.verdictDistribution.wrongAnswer}</span>
-                  </div>
-                  <div className="p-2 rounded-lg bg-amber-500/10 border border-amber-500/20">
-                    <span className="text-[10px] text-amber-300 block">Compile Err</span>
-                    <span className="font-bold text-amber-400 font-mono">{data.codingAnalytics.verdictDistribution.compilationError}</span>
-                  </div>
-                  <div className="p-2 rounded-lg bg-orange-500/10 border border-orange-500/20">
-                    <span className="text-[10px] text-orange-300 block">Runtime Err</span>
-                    <span className="font-bold text-orange-400 font-mono">{data.codingAnalytics.verdictDistribution.runtimeError}</span>
-                  </div>
-                  <div className="p-2 rounded-lg bg-blue-500/10 border border-blue-500/20">
-                    <span className="text-[10px] text-blue-300 block">TLE</span>
-                    <span className="font-bold text-blue-400 font-mono">{data.codingAnalytics.verdictDistribution.timeLimitExceeded}</span>
-                  </div>
-                </div>
-
-                <div className="p-3 rounded-lg bg-surface-elevated/40 border border-border flex items-center justify-between text-xs">
-                  <span className="text-muted-foreground">Test Case Aggregate Pass Rate</span>
-                  <span className="font-mono text-white font-semibold">
-                    {data.codingAnalytics.testsPassedCount}/{data.codingAnalytics.totalTestsCount} ({data.codingAnalytics.testCasePassRate ?? 0}%)
-                  </span>
-                </div>
-              </div>
-
-              {/* Right: Question Bank & Curricular Datasets */}
-              <div className="bg-surface border border-border rounded-xl p-5 space-y-4">
-                <div className="flex items-center justify-between border-b border-border pb-3">
-                  <div className="flex items-center gap-2">
-                    <Database className="h-4 w-4 text-purple-400" />
-                    <h3 className="text-sm font-semibold text-white">Question Bank & Curricula</h3>
-                  </div>
-                  <span className="text-[11px] text-purple-400 font-mono font-semibold">
-                    {data.questionBank.publishedQuestions} Active Curated
-                  </span>
-                </div>
-
-                <div className="space-y-2.5 text-xs">
-                  <div className="grid grid-cols-2 gap-3">
-                    <div className="p-2.5 rounded-lg bg-surface-elevated border border-border">
-                      <span className="text-[10px] text-muted-foreground block">Curated Benchmark</span>
-                      <span className="text-base font-bold text-purple-400 font-mono">{data.questionBank.publishedQuestions}</span>
-                    </div>
-                    <div className="p-2.5 rounded-lg bg-surface-elevated border border-border">
-                      <span className="text-[10px] text-muted-foreground block">Total Dataset Records</span>
-                      <span className="text-base font-bold text-white font-mono">{data.questionBank.totalQuestions.toLocaleString()}</span>
-                    </div>
-                  </div>
-
-                  <div className="pt-2 border-t border-border">
-                    <span className="text-[11px] text-muted-foreground block mb-2 font-medium">Top Curricular Categories</span>
-                    <div className="grid grid-cols-2 gap-2">
-                      {data.questionBank.categories.map((c) => (
-                        <div key={c.name} className="flex items-center justify-between p-2 rounded-md bg-surface-elevated/40 border border-border/60">
-                          <span className="text-white truncate pr-2">{c.name}</span>
-                          <span className="font-mono text-muted-foreground text-[11px]">{c.count.toLocaleString()}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* ── Row 3: Live System Health & Microservices Architecture ───────── */}
-            <div className="bg-surface border border-border rounded-xl p-5 space-y-4">
-              <div className="flex items-center justify-between border-b border-border pb-3">
-                <div className="flex items-center gap-2">
-                  <Server className="h-4 w-4 text-emerald-400" />
-                  <h3 className="text-sm font-semibold text-white">Live Microservices & Platform Health</h3>
-                </div>
-                <div className="flex items-center gap-2 text-xs">
-                  <span className="h-2 w-2 rounded-full bg-emerald-400 animate-pulse" />
-                  <span className="text-emerald-400 font-mono font-semibold">ALL SERVICES OPERATIONAL</span>
-                </div>
-              </div>
-
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-3">
-                {data.systemHealth.services.map((svc) => (
-                  <div key={svc.name} className="p-3 rounded-lg bg-surface-elevated border border-border space-y-1.5">
-                    <div className="flex items-center justify-between">
-                      <span className="text-[11px] font-bold text-white truncate">{svc.name}</span>
-                      <span
-                        className={`h-2 w-2 rounded-full ${
-                          svc.status === 'Healthy' ? 'bg-emerald-400' : 'bg-rose-400'
-                        }`}
-                      />
-                    </div>
-                    <div className="text-[10px] text-muted-foreground font-mono flex items-center justify-between">
-                      <span>Port {svc.port}</span>
-                      <span className="text-emerald-400 font-semibold">{svc.latency}</span>
                     </div>
                   </div>
                 ))}
               </div>
-
-              <div className="p-3 rounded-lg bg-surface-elevated/40 border border-border flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs text-muted-foreground">
-                <span className="flex items-center gap-2">
-                  <Database className="h-3.5 w-3.5 text-accent" />
-                  Database Cluster: <strong className="text-white">auth_db, user_db, interview_db, question_db</strong>
-                </span>
-                <span className="text-emerald-400 font-mono font-medium">PostgreSQL Connected (Port 5432)</span>
-              </div>
-            </div>
-
-            {/* ── Row 4: Operational Attention & Recent Activity ───────────────── */}
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              {/* Left: Operational Attention */}
-              <div className="bg-surface border border-border rounded-xl p-5 space-y-4">
-                <div className="border-b border-border pb-3">
-                  <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                    <Zap className="h-4 w-4 text-amber-400" />
-                    Operational Signals & Alerts
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">
-                    Evidence-based system notifications and cohort indicators
-                  </p>
-                </div>
-
-                <div className="space-y-3">
-                  {data.attentionItems.map((item) => (
-                    <div
-                      key={item.id}
-                      className={`p-3 rounded-xl border space-y-1 text-xs ${
-                        item.severity === 'HIGH'
-                          ? 'border-rose-500/30 bg-rose-500/10 text-rose-300'
-                          : item.severity === 'MEDIUM'
-                          ? 'border-amber-500/30 bg-amber-500/10 text-amber-300'
-                          : 'border-blue-500/30 bg-blue-500/10 text-blue-300'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between font-semibold">
-                        <span>{item.title}</span>
-                        <span className="font-mono text-[10px] px-1.5 py-0.5 rounded bg-surface border border-border">
-                          {item.count} items
-                        </span>
-                      </div>
-                      <p className="text-[11px] opacity-90">{item.description}</p>
-                    </div>
-                  ))}
-                </div>
-              </div>
-
-              {/* Right: Recent Platform Activity */}
-              <div className="bg-surface border border-border rounded-xl p-5 space-y-4">
-                <div className="border-b border-border pb-3">
-                  <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                    <Activity className="h-4 w-4 text-accent" />
-                    Recent Platform Activity Stream
-                  </h3>
-                  <p className="text-[11px] text-muted-foreground mt-0.5">
-                    Real-time assessment completions, submissions, and events
-                  </p>
-                </div>
-
-                <div className="space-y-2.5">
-                  {data.recentActivities.map((act) => (
-                    <div
-                      key={act.id}
-                      className="p-2.5 rounded-lg bg-surface-elevated/50 border border-border/60 flex items-center justify-between text-xs"
-                    >
-                      <div className="space-y-0.5 min-w-0 pr-3">
-                        <span className="font-medium text-white truncate block">{act.title}</span>
-                        <p className="text-[11px] text-muted-foreground truncate">{act.description}</p>
-                      </div>
-                      <div className="text-right shrink-0">
-                        {act.badge && (
-                          <span
-                            className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold block ${
-                              act.badgeVariant === 'success'
-                                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/20'
-                                : 'bg-amber-500/15 text-amber-400 border border-amber-500/20'
-                            }`}
-                          >
-                            {act.badge}
-                          </span>
-                        )}
-                        <span className="text-[10px] text-muted-foreground/80 mt-0.5 block">
-                          {new Date(act.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
             </div>
           </div>
-        )}
-      </div>
+        </div>
+      )}
     </div>
   );
 };

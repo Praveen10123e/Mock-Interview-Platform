@@ -1,15 +1,14 @@
 import React, { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import {
   Users,
   Search,
-  Filter,
   RefreshCw,
   Eye,
   Edit2,
   ShieldCheck,
   ShieldAlert,
   Award,
-  Building,
   GraduationCap,
   Briefcase,
   AlertTriangle,
@@ -18,12 +17,14 @@ import {
   ChevronRight,
   X,
   Lock,
+  UserPlus,
+  ExternalLink,
 } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
-import { Input } from '../../components/ui/input';
 import { Skeleton } from '../../components/ui/skeleton';
 import { EmptyState } from '../../components/shared/EmptyState';
+import api from '../../api/axios/instance';
 import {
   useAdminUsersOverview,
   useAdminUsers,
@@ -35,6 +36,7 @@ import type { AdminUserItem, AdminUserListParams } from '../../api/admin';
 import { useAuthStore } from '../../store/AuthStore';
 
 export const AdminUsers: React.FC = () => {
+  const navigate = useNavigate();
   const { user: authUser } = useAuthStore();
 
   // Search & Filter State
@@ -51,6 +53,18 @@ export const AdminUsers: React.FC = () => {
   const [statusChangingUser, setStatusChangingUser] = useState<AdminUserItem | null>(null);
   const [newStatusValue, setNewStatusValue] = useState('ACTIVE');
   const [actionError, setActionError] = useState<string | null>(null);
+
+  // Create User modal state
+  const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
+  const [createRole, setCreateRole] = useState<'STUDENT' | 'FACULTY' | 'ADMINISTRATOR'>('STUDENT');
+  const [createForm, setCreateForm] = useState({
+    firstName: '',
+    lastName: '',
+    email: '',
+    password: '',
+  });
+  const [createLoading, setCreateLoading] = useState(false);
+  const [createError, setCreateError] = useState<string | null>(null);
 
   // Edit form state
   const [editForm, setEditForm] = useState({
@@ -71,7 +85,7 @@ export const AdminUsers: React.FC = () => {
     limit: pageSize,
   };
 
-  const { data: overview, isLoading: isOverviewLoading } = useAdminUsersOverview();
+  const { data: overview, isLoading: isOverviewLoading, refetch: refetchOverview } = useAdminUsersOverview();
   const {
     data: userListData,
     isLoading: isUsersLoading,
@@ -154,44 +168,86 @@ export const AdminUsers: React.FC = () => {
     }
   };
 
+  const handleCreateUser = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setCreateLoading(true);
+    setCreateError(null);
+
+    try {
+      let endpoint = '/auth/register/student';
+      if (createRole === 'FACULTY') endpoint = '/auth/register/faculty';
+      if (createRole === 'ADMINISTRATOR') endpoint = '/auth/register/admin';
+
+      await api.post(endpoint, {
+        email: createForm.email.trim(),
+        password: createForm.password || '123456',
+        firstName: createForm.firstName.trim(),
+        lastName: createForm.lastName.trim(),
+      });
+
+      setIsCreateModalOpen(false);
+      setCreateForm({ firstName: '', lastName: '', email: '', password: '' });
+      refetch();
+      refetchOverview();
+    } catch (err: any) {
+      setCreateError(err.response?.data?.error?.message || err.message || 'Failed to register account');
+    } finally {
+      setCreateLoading(false);
+    }
+  };
+
   const isSelf = (targetId: string) => {
     return authUser?.id === targetId;
   };
 
-  /** Returns true when the user holds SUPER_ADMIN — used only for UI decisions. Server enforces. */
   const isProtectedAccount = (user: AdminUserItem | { isProtected?: boolean }) =>
     (user as any).isProtected === true;
 
   return (
     <div className="space-y-6 md:space-y-8 max-w-7xl mx-auto w-full pb-16">
       {/* ── 1. Page Header ─────────────────────────────────────────────────── */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-border pb-5">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-border pb-5">
         <div className="space-y-1">
-          <div className="flex items-center gap-3">
-            <h1 className="text-2xl md:text-3xl font-bold tracking-tight text-white">
+          <div className="flex items-center gap-3 flex-wrap">
+            <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
               Users
             </h1>
             {overview && (
-              <span className="px-2.5 py-0.5 text-xs font-semibold bg-accent/15 border border-accent/30 text-accent rounded-full font-mono">
+              <span className="px-2.5 py-0.5 text-xs font-semibold bg-blue-50 border border-blue-200 text-blue-700 rounded-full font-mono">
                 {overview.totalUsers} Total Accounts
               </span>
             )}
           </div>
-          <p className="text-xs md:text-sm text-muted-foreground">
+          <p className="text-xs sm:text-sm text-slate-500">
             Manage students, faculty, and authorized platform accounts.
           </p>
         </div>
 
-        <div className="flex items-center gap-2.5">
+        <div className="flex items-center gap-2.5 shrink-0 self-start sm:self-auto">
           <Button
             variant="outline"
             size="sm"
-            onClick={() => refetch()}
+            onClick={() => {
+              refetch();
+              refetchOverview();
+            }}
             disabled={isFetching}
-            className="gap-1.5 text-xs border-border hover:bg-surface-elevated cursor-pointer"
+            className="gap-1.5 text-xs sm:text-sm font-semibold border-slate-200 bg-white hover:bg-slate-50 text-slate-700 cursor-pointer shadow-2xs h-9"
           >
-            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin text-accent' : ''}`} />
-            Refresh
+            <RefreshCw className={`h-3.5 w-3.5 ${isFetching ? 'animate-spin text-blue-600' : 'text-slate-500'}`} />
+            <span>Refresh</span>
+          </Button>
+
+          <Button
+            size="sm"
+            onClick={() => {
+              setCreateError(null);
+              setIsCreateModalOpen(true);
+            }}
+            className="gap-1.5 text-xs sm:text-sm font-semibold bg-blue-600 hover:bg-blue-700 text-white cursor-pointer shadow-2xs h-9"
+          >
+            <UserPlus className="h-4 w-4" />
+            <span>Add User</span>
           </Button>
         </div>
       </div>
@@ -199,158 +255,175 @@ export const AdminUsers: React.FC = () => {
       {/* ── 2. Top Overview KPI Cards (5 Cards) ─────────────────────────────── */}
       <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3.5">
         {/* Total Users */}
-        <div className="bg-surface border border-border rounded-xl p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-medium">Total Users</span>
-            <Users className="h-4 w-4 text-blue-400" />
+        <Card className="p-4 sm:p-5 bg-white border border-slate-200/80 shadow-2xs rounded-xl flex flex-col justify-between hover:border-slate-300 transition-all min-h-[115px]">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Total Users</span>
+            <div className="w-8 h-8 rounded-lg bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center shrink-0">
+              <Users className="h-4 w-4" />
+            </div>
           </div>
-          <div className="mt-3">
+          <div className="mt-2">
             {isOverviewLoading ? (
-              <Skeleton className="h-7 w-12 bg-surface-elevated" />
+              <Skeleton className="h-7 w-12 rounded" />
             ) : (
-              <span className="text-2xl font-bold text-white">{overview?.totalUsers ?? 0}</span>
+              <div className="text-2xl sm:text-3xl font-bold text-slate-900 tracking-tight">
+                {overview?.totalUsers ?? 0}
+              </div>
             )}
-            <span className="text-[11px] text-muted-foreground block mt-0.5">Unique platform identities</span>
+            <p className="text-[12px] text-slate-500 mt-0.5 font-medium truncate">Platform identities</p>
           </div>
-        </div>
+        </Card>
 
         {/* Students */}
-        <div className="bg-surface border border-border rounded-xl p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-medium">Students</span>
-            <GraduationCap className="h-4 w-4 text-emerald-400" />
+        <Card className="p-4 sm:p-5 bg-white border border-slate-200/80 shadow-2xs rounded-xl flex flex-col justify-between hover:border-slate-300 transition-all min-h-[115px]">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Students</span>
+            <div className="w-8 h-8 rounded-lg bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center shrink-0">
+              <GraduationCap className="h-4 w-4" />
+            </div>
           </div>
-          <div className="mt-3">
+          <div className="mt-2">
             {isOverviewLoading ? (
-              <Skeleton className="h-7 w-12 bg-surface-elevated" />
+              <Skeleton className="h-7 w-12 rounded" />
             ) : (
-              <span className="text-2xl font-bold text-emerald-400">{overview?.totalStudents ?? 0}</span>
+              <div className="text-2xl sm:text-3xl font-bold text-emerald-600 tracking-tight">
+                {overview?.totalStudents ?? 0}
+              </div>
             )}
-            <span className="text-[11px] text-muted-foreground block mt-0.5">Enrolled candidates</span>
+            <p className="text-[12px] text-slate-500 mt-0.5 font-medium truncate">Enrolled candidates</p>
           </div>
-        </div>
+        </Card>
 
         {/* Faculty */}
-        <div className="bg-surface border border-border rounded-xl p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-medium">Faculty</span>
-            <Briefcase className="h-4 w-4 text-purple-400" />
+        <Card className="p-4 sm:p-5 bg-white border border-slate-200/80 shadow-2xs rounded-xl flex flex-col justify-between hover:border-slate-300 transition-all min-h-[115px]">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Faculty</span>
+            <div className="w-8 h-8 rounded-lg bg-purple-50 text-purple-600 border border-purple-100 flex items-center justify-center shrink-0">
+              <Briefcase className="h-4 w-4" />
+            </div>
           </div>
-          <div className="mt-3">
+          <div className="mt-2">
             {isOverviewLoading ? (
-              <Skeleton className="h-7 w-12 bg-surface-elevated" />
+              <Skeleton className="h-7 w-12 rounded" />
             ) : (
-              <span className="text-2xl font-bold text-purple-400">{overview?.totalFaculty ?? 0}</span>
+              <div className="text-2xl sm:text-3xl font-bold text-purple-600 tracking-tight">
+                {overview?.totalFaculty ?? 0}
+              </div>
             )}
-            <span className="text-[11px] text-muted-foreground block mt-0.5">Faculty instructors</span>
+            <p className="text-[12px] text-slate-500 mt-0.5 font-medium truncate">Academic leads</p>
           </div>
-        </div>
+        </Card>
 
-        {/* Admins */}
-        <div className="bg-surface border border-border rounded-xl p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-medium">Super Admin</span>
-            <ShieldAlert className="h-4 w-4 text-amber-400" />
+        {/* Super Admin */}
+        <Card className="p-4 sm:p-5 bg-white border border-slate-200/80 shadow-2xs rounded-xl flex flex-col justify-between hover:border-slate-300 transition-all min-h-[115px]">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Super Admin</span>
+            <div className="w-8 h-8 rounded-lg bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center shrink-0">
+              <ShieldAlert className="h-4 w-4" />
+            </div>
           </div>
-          <div className="mt-3">
+          <div className="mt-2">
             {isOverviewLoading ? (
-              <Skeleton className="h-7 w-12 bg-surface-elevated" />
+              <Skeleton className="h-7 w-12 rounded" />
             ) : (
-              <span className="text-2xl font-bold text-amber-400">{overview?.totalSuperAdmins ?? 0}</span>
+              <div className="text-2xl sm:text-3xl font-bold text-amber-600 tracking-tight">
+                {overview?.totalSuperAdmins ?? 0}
+              </div>
             )}
-            <span className="text-[11px] text-muted-foreground block mt-0.5">Protected accounts</span>
+            <p className="text-[12px] text-slate-500 mt-0.5 font-medium truncate">Protected accounts</p>
           </div>
-        </div>
+        </Card>
 
         {/* Active Accounts */}
-        <div className="bg-surface border border-border rounded-xl p-4 flex flex-col justify-between">
-          <div className="flex items-center justify-between text-muted-foreground">
-            <span className="text-xs font-medium">Active Accounts</span>
-            <CheckCircle2 className="h-4 w-4 text-cyan-400" />
+        <Card className="p-4 sm:p-5 bg-white border border-slate-200/80 shadow-2xs rounded-xl flex flex-col justify-between hover:border-slate-300 transition-all min-h-[115px]">
+          <div className="flex items-center justify-between">
+            <span className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Active</span>
+            <div className="w-8 h-8 rounded-lg bg-cyan-50 text-cyan-600 border border-cyan-100 flex items-center justify-center shrink-0">
+              <CheckCircle2 className="h-4 w-4" />
+            </div>
           </div>
-          <div className="mt-3">
+          <div className="mt-2">
             {isOverviewLoading ? (
-              <Skeleton className="h-7 w-12 bg-surface-elevated" />
+              <Skeleton className="h-7 w-12 rounded" />
             ) : (
-              <span className="text-2xl font-bold text-cyan-400">{overview?.activeUsers ?? 0}</span>
+              <div className="text-2xl sm:text-3xl font-bold text-cyan-600 tracking-tight">
+                {overview?.activeUsers ?? 0}
+              </div>
             )}
-            <span className="text-[11px] text-muted-foreground block mt-0.5">Verified active</span>
+            <p className="text-[12px] text-slate-500 mt-0.5 font-medium truncate">Verified status</p>
           </div>
-        </div>
+        </Card>
       </div>
 
-      {/* ── 3. Search & Filters Bar ────────────────────────────────────────── */}
-      <Card className="p-4 bg-surface border-border">
+      {/* ── 3. Search & Filters Bar (Unified, Clean 40px Height) ────────────────── */}
+      <Card className="p-4 bg-white border border-slate-200/80 shadow-2xs rounded-xl">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
           {/* Search Input */}
           <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-            <Input
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none" />
+            <input
               type="text"
-              placeholder="Search by name, email, department..."
+              placeholder="Search users by name or email..."
               value={search}
               onChange={(e) => {
                 setSearch(e.target.value);
                 setPage(1);
               }}
-              className="pl-9 text-xs bg-surface-elevated border-border"
+              className="w-full h-10 pl-9 pr-3 text-sm bg-slate-50 border border-slate-200 rounded-lg text-slate-900 placeholder:text-slate-400 focus:bg-white focus:border-blue-500 focus:outline-none transition-colors"
             />
           </div>
 
           {/* Role Filter */}
-          <div className="flex items-center gap-2">
-            <Users className="h-4 w-4 text-muted-foreground shrink-0" />
+          <div>
             <select
               value={role}
               onChange={(e) => {
                 setRole(e.target.value);
                 setPage(1);
               }}
-              className="w-full text-xs bg-surface-elevated border border-border rounded-md px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-accent"
+              className="w-full h-10 px-3 text-sm font-medium bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:bg-white focus:border-blue-500 focus:outline-none cursor-pointer transition-colors"
             >
-              <option value="ALL">All Roles</option>
-              <option value="SUPER_ADMIN">Super Admins</option>
-              <option value="ADMINISTRATOR">Administrators</option>
-              <option value="FACULTY">Faculty</option>
-              <option value="STUDENT">Students</option>
+              <option value="ALL">Role: All Roles</option>
+              <option value="STUDENT">Role: Students</option>
+              <option value="FACULTY">Role: Faculty</option>
+              <option value="ADMINISTRATOR">Role: Administrators</option>
+              <option value="SUPER_ADMIN">Role: Super Admins</option>
             </select>
           </div>
 
           {/* Status Filter */}
-          <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-muted-foreground shrink-0" />
+          <div>
             <select
               value={status}
               onChange={(e) => {
                 setStatus(e.target.value);
                 setPage(1);
               }}
-              className="w-full text-xs bg-surface-elevated border border-border rounded-md px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-accent"
+              className="w-full h-10 px-3 text-sm font-medium bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:bg-white focus:border-blue-500 focus:outline-none cursor-pointer transition-colors"
             >
-              <option value="ALL">All Statuses</option>
-              <option value="ACTIVE">Active</option>
-              <option value="INACTIVE">Inactive</option>
-              <option value="LOCKED">Locked</option>
-              <option value="BANNED">Banned</option>
-              <option value="PENDING_VERIFICATION">Pending</option>
+              <option value="ALL">Status: All Statuses</option>
+              <option value="ACTIVE">Status: Active</option>
+              <option value="INACTIVE">Status: Inactive</option>
+              <option value="LOCKED">Status: Locked</option>
+              <option value="BANNED">Status: Banned</option>
+              <option value="PENDING_VERIFICATION">Status: Pending</option>
             </select>
           </div>
 
           {/* Department Filter */}
-          <div className="flex items-center gap-2">
-            <Building className="h-4 w-4 text-muted-foreground shrink-0" />
+          <div>
             <select
               value={department}
               onChange={(e) => {
                 setDepartment(e.target.value);
                 setPage(1);
               }}
-              className="w-full text-xs bg-surface-elevated border border-border rounded-md px-3 py-2 text-white focus:outline-none focus:ring-1 focus:ring-accent"
+              className="w-full h-10 px-3 text-sm font-medium bg-slate-50 border border-slate-200 rounded-lg text-slate-800 focus:bg-white focus:border-blue-500 focus:outline-none cursor-pointer transition-colors"
             >
-              <option value="ALL">All Departments</option>
+              <option value="ALL">Department: All Departments</option>
               {overview?.departments.map((dept) => (
                 <option key={dept} value={dept}>
-                  {dept}
+                  Department: {dept}
                 </option>
               ))}
             </select>
@@ -359,26 +432,26 @@ export const AdminUsers: React.FC = () => {
 
         {/* Filter Summary Tags */}
         {(search || role !== 'ALL' || status !== 'ALL' || department !== 'ALL') && (
-          <div className="flex items-center gap-2 mt-3 pt-3 border-t border-border/60 text-xs">
-            <span className="text-muted-foreground text-[11px]">Active Filters:</span>
+          <div className="flex items-center gap-2 mt-3 pt-3 border-t border-slate-100 text-xs">
+            <span className="text-slate-400 font-medium">Active Filters:</span>
             {search && (
-              <span className="px-2 py-0.5 rounded bg-surface-elevated text-white border border-border text-[11px]">
+              <span className="px-2 py-0.5 rounded-md bg-slate-100 text-slate-700 border border-slate-200 text-xs">
                 Search: "{search}"
               </span>
             )}
             {role !== 'ALL' && (
-              <span className="px-2 py-0.5 rounded bg-surface-elevated text-accent border border-border text-[11px]">
-                Role: {role}
+              <span className="px-2 py-0.5 rounded-md bg-blue-50 text-blue-700 border border-blue-200 text-xs font-medium">
+                {role}
               </span>
             )}
             {status !== 'ALL' && (
-              <span className="px-2 py-0.5 rounded bg-surface-elevated text-cyan-400 border border-border text-[11px]">
-                Status: {status}
+              <span className="px-2 py-0.5 rounded-md bg-cyan-50 text-cyan-700 border border-cyan-200 text-xs font-medium">
+                {status}
               </span>
             )}
             {department !== 'ALL' && (
-              <span className="px-2 py-0.5 rounded bg-surface-elevated text-purple-400 border border-border text-[11px]">
-                Dept: {department}
+              <span className="px-2 py-0.5 rounded-md bg-purple-50 text-purple-700 border border-purple-200 text-xs font-medium">
+                {department}
               </span>
             )}
             <button
@@ -389,7 +462,7 @@ export const AdminUsers: React.FC = () => {
                 setDepartment('ALL');
                 setPage(1);
               }}
-              className="text-[11px] text-rose-400 hover:underline ml-auto"
+              className="text-xs text-rose-600 hover:underline ml-auto font-medium cursor-pointer"
             >
               Reset Filters
             </button>
@@ -399,45 +472,45 @@ export const AdminUsers: React.FC = () => {
 
       {/* ── 4. Error State ─────────────────────────────────────────────────── */}
       {isError && (
-        <div className="p-4 rounded-xl border border-rose-500/30 bg-rose-500/10 text-rose-300 text-sm flex items-center justify-between">
+        <div className="p-4 rounded-xl border border-rose-200 bg-rose-50 text-rose-700 text-sm flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <AlertTriangle className="h-5 w-5 text-rose-400 shrink-0" />
+            <AlertTriangle className="h-5 w-5 text-rose-600 shrink-0" />
             <div>
-              <p className="font-semibold">Failed to load platform users</p>
-              <p className="text-xs text-rose-400 mt-0.5">
+              <p className="font-semibold text-rose-800">Failed to load platform users</p>
+              <p className="text-xs text-rose-600 mt-0.5">
                 {(error as any)?.response?.data?.error?.message ||
                   (error as any)?.message ||
                   'An unexpected error occurred.'}
               </p>
             </div>
           </div>
-          <Button variant="outline" size="sm" onClick={() => refetch()} className="text-xs border-rose-500/30">
+          <Button variant="outline" size="sm" onClick={() => refetch()} className="text-xs border-rose-300 text-rose-700 hover:bg-rose-100">
             Try Again
           </Button>
         </div>
       )}
 
-      {/* ── 5. User Table ──────────────────────────────────────────────────── */}
-      <div className="bg-surface border border-border rounded-xl overflow-hidden shadow-sm">
+      {/* ── 5. User Table (Proportional Column Widths & Wrap) ────────────────── */}
+      <div className="bg-white border border-slate-200/80 rounded-xl overflow-hidden shadow-2xs">
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs">
-            <thead className="bg-surface-elevated border-b border-border text-muted-foreground uppercase tracking-wider font-semibold">
+          <table className="w-full text-left table-fixed text-sm">
+            <thead className="bg-slate-50/80 border-b border-slate-200 text-[11px] font-semibold tracking-wider text-slate-500 uppercase font-mono">
               <tr>
-                <th className="py-3 px-4">User</th>
-                <th className="py-3 px-4">Role</th>
-                <th className="py-3 px-4">Department & College</th>
-                <th className="py-3 px-4">Status</th>
-                <th className="py-3 px-4">Activity / Score</th>
-                <th className="py-3 px-4">Created Date</th>
-                <th className="py-3 px-4 text-right">Actions</th>
+                <th className="py-3 px-4 w-[22%]">User</th>
+                <th className="py-3 px-4 w-[12%]">Role</th>
+                <th className="py-3 px-4 w-[23%]">Department & College</th>
+                <th className="py-3 px-4 w-[10%]">Status</th>
+                <th className="py-3 px-4 w-[15%]">Activity / Score</th>
+                <th className="py-3 px-4 w-[10%]">Created Date</th>
+                <th className="py-3 px-4 w-[8%] text-right">Actions</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-border/60">
+            <tbody className="divide-y divide-slate-100">
               {isUsersLoading ? (
                 [...Array(6)].map((_, i) => (
                   <tr key={i}>
-                    <td colSpan={7} className="py-3.5 px-4">
-                      <Skeleton className="h-6 w-full bg-surface-elevated" />
+                    <td colSpan={7} className="py-4 px-4">
+                      <Skeleton className="h-7 w-full rounded" />
                     </td>
                   </tr>
                 ))
@@ -445,7 +518,7 @@ export const AdminUsers: React.FC = () => {
                 <tr>
                   <td colSpan={7} className="py-12 text-center">
                     <EmptyState
-                      icon={<Users className="h-8 w-8 text-muted-foreground" />}
+                      icon={<Users className="h-8 w-8 text-slate-400" />}
                       title={search || role !== 'ALL' || status !== 'ALL' || department !== 'ALL' ? 'No users match filters' : 'No users found'}
                       description="No platform user accounts meet the specified criteria."
                     />
@@ -462,150 +535,149 @@ export const AdminUsers: React.FC = () => {
                   return (
                     <tr
                       key={user.id}
-                      className="hover:bg-surface-elevated/40 transition-colors group cursor-pointer"
+                      className="hover:bg-slate-50/70 transition-colors group cursor-pointer"
                       onClick={() => setSelectedUserId(user.id)}
                     >
-                      {/* Name & Email */}
+                      {/* 1. User: Avatar, Name, Email (22%) */}
                       <td className="py-3.5 px-4">
                         <div className="flex items-center gap-3">
                           <div
-                            className={`h-8 w-8 rounded-lg flex items-center justify-center font-bold text-xs shrink-0 ${
+                            className={`h-9 w-9 rounded-xl flex items-center justify-center font-bold text-xs shrink-0 ${
                               isSuperAdmin
-                                ? 'bg-amber-500/20 text-amber-300 border border-amber-500/40'
+                                ? 'bg-amber-50 text-amber-700 border border-amber-200'
                                 : isAdmin
-                                ? 'bg-accent/20 text-accent border border-accent/40'
+                                ? 'bg-blue-50 text-blue-700 border border-blue-200'
                                 : isFaculty
-                                ? 'bg-purple-500/20 text-purple-300 border border-purple-500/40'
-                                : 'bg-blue-500/20 text-blue-300 border border-blue-500/40'
+                                ? 'bg-purple-50 text-purple-700 border border-purple-200'
+                                : 'bg-emerald-50 text-emerald-700 border border-emerald-200'
                             }`}
                           >
                             {protected_ ? <Lock className="h-3.5 w-3.5" /> : getInitials(user.name)}
                           </div>
-                          <div className="space-y-0.5 min-w-0">
-                            <span className="font-semibold text-white truncate block group-hover:text-accent transition-colors">
+                          <div className="min-w-0">
+                            <span className="text-[14px] font-semibold text-slate-900 truncate block group-hover:text-blue-600 transition-colors">
                               {user.name}
                             </span>
-                            <span className="text-[11px] text-muted-foreground font-mono truncate block">
+                            <span className="text-[12px] text-slate-500 font-mono truncate block">
                               {user.email}
                             </span>
                           </div>
                         </div>
                       </td>
 
-                      {/* Role Badge */}
+                      {/* 2. Role Badge (12%) */}
                       <td className="py-3.5 px-4">
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold inline-flex items-center gap-1 ${
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-semibold inline-flex items-center gap-1 border ${
                             isSuperAdmin
-                              ? 'bg-amber-500/15 text-amber-400 border border-amber-500/40'
+                              ? 'bg-amber-50 text-amber-700 border-amber-200'
                               : isAdmin
-                              ? 'bg-accent/15 text-accent border border-accent/30'
+                              ? 'bg-blue-50 text-blue-700 border-blue-200'
                               : isFaculty
-                              ? 'bg-purple-500/15 text-purple-400 border border-purple-500/30'
-                              : 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                              ? 'bg-purple-50 text-purple-700 border-purple-200'
+                              : 'bg-emerald-50 text-emerald-700 border-emerald-200'
                           }`}
                         >
-                          {isSuperAdmin && <Lock className="h-2.5 w-2.5" />}
+                          {isSuperAdmin && <Lock className="h-3 w-3" />}
                           {user.role}
                         </span>
                       </td>
 
-                      {/* Department & College */}
-                      <td className="py-3.5 px-4 max-w-[220px]">
+                      {/* 3. Department & College (23% - Natural Two-Line Wrap) */}
+                      <td className="py-3.5 px-4">
                         <div className="space-y-0.5">
-                          <span className="text-white font-medium block truncate">
-                            {user.department !== 'N/A' ? user.department : 'Data unavailable'}
-                          </span>
-                          <span className="text-[10px] text-muted-foreground truncate block">
+                          <div className="text-[13px] font-medium text-slate-900 leading-snug truncate">
+                            {user.department !== 'N/A' ? user.department : 'General Cohort'}
+                          </div>
+                          <div className="text-[12px] text-slate-500 leading-snug truncate">
                             {user.designation ? `${user.designation} • ` : ''}
                             {user.college}
-                          </span>
+                          </div>
                         </div>
                       </td>
 
-                      {/* Account Status Badge */}
+                      {/* 4. Status Badge (10%) */}
                       <td className="py-3.5 px-4">
                         <span
-                          className={`px-2 py-0.5 rounded text-[10px] font-mono font-bold inline-block ${
+                          className={`px-2.5 py-1 rounded-md text-[11px] font-semibold inline-block border ${
                             user.status === 'ACTIVE'
-                              ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                              ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
                               : user.status === 'LOCKED'
-                              ? 'bg-amber-500/15 text-amber-400 border border-amber-500/30'
+                              ? 'bg-amber-50 text-amber-700 border-amber-200'
                               : user.status === 'BANNED'
-                              ? 'bg-rose-500/15 text-rose-400 border border-rose-500/30'
-                              : 'bg-neutral-500/15 text-neutral-300 border border-neutral-500/30'
+                              ? 'bg-rose-50 text-rose-700 border-rose-200'
+                              : 'bg-slate-100 text-slate-600 border-slate-200'
                           }`}
                         >
                           {user.status}
                         </span>
                       </td>
 
-                      {/* Activity / Score */}
+                      {/* 5. Activity / Score (15% - Prominent Percentage) */}
                       <td className="py-3.5 px-4">
                         {isStudent ? (
                           <div className="space-y-0.5">
-                            <div className="flex items-center gap-1.5 font-mono text-white">
-                              <span>{user.assessmentsCount} Assessments</span>
-                              {user.averageScore !== null && (
-                                <span className="text-accent font-bold">
-                                  ({user.averageScore}%)
+                            <div className="flex items-center gap-1.5">
+                              {user.averageScore !== null ? (
+                                <span className="text-sm font-bold text-blue-600 font-mono">
+                                  {user.averageScore}%
                                 </span>
+                              ) : (
+                                <span className="text-xs text-slate-400 font-mono">—</span>
                               )}
+                              <span className="text-xs text-slate-500">avg</span>
                             </div>
-                            <span className="text-[10px] text-muted-foreground block">
+                            <span className="text-[11px] text-slate-500 block">
                               {user.completedAssessmentsCount} completed
                             </span>
                           </div>
                         ) : (
-                          <span className="text-muted-foreground text-[11px] font-mono">
-                            {new Date(user.lastActivity).toLocaleDateString()}
+                          <span className="text-slate-500 text-[12px] font-mono">
+                            {user.lastActivity ? new Date(user.lastActivity).toLocaleDateString() : 'Active'}
                           </span>
                         )}
                       </td>
 
-                      {/* Created Date */}
-                      <td className="py-3.5 px-4 font-mono text-muted-foreground">
+                      {/* 6. Created Date (10%) */}
+                      <td className="py-3.5 px-4 text-[13px] text-slate-500 font-mono">
                         {new Date(user.createdAt).toLocaleDateString()}
                       </td>
 
-                      {/* Actions */}
+                      {/* 7. Actions (8%) */}
                       <td className="py-3.5 px-4 text-right" onClick={(e) => e.stopPropagation()}>
-                        <div className="flex items-center justify-end gap-1.5">
-                          <Button
-                            variant="ghost"
-                            size="sm"
+                        <div className="flex items-center justify-end gap-1">
+                          <button
+                            type="button"
                             onClick={() => setSelectedUserId(user.id)}
-                            className="h-7 w-7 p-0 text-muted-foreground hover:text-white"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 transition-colors cursor-pointer"
                             title="View Details"
                           >
-                            <Eye className="h-3.5 w-3.5" />
-                          </Button>
-                          <Button
-                            variant="ghost"
-                            size="sm"
+                            <Eye className="h-4 w-4" />
+                          </button>
+                          <button
+                            type="button"
                             onClick={() => handleOpenEdit(user)}
-                            className="h-7 w-7 p-0 text-muted-foreground hover:text-accent"
+                            className="p-1.5 rounded-lg text-slate-400 hover:text-blue-600 hover:bg-blue-50 transition-colors cursor-pointer"
                             title="Edit Profile"
                           >
-                            <Edit2 className="h-3.5 w-3.5" />
-                          </Button>
+                            <Edit2 className="h-4 w-4" />
+                          </button>
                           {protected_ ? (
                             <span
-                              title="Protected: Super Admin accounts cannot be status-changed"
-                              className="h-7 w-7 flex items-center justify-center text-amber-500/60 cursor-not-allowed"
+                              title="Protected: Super Admin accounts cannot be status-modified"
+                              className="p-1.5 text-amber-500 cursor-not-allowed"
                             >
-                              <Lock className="h-3.5 w-3.5" />
+                              <Lock className="h-4 w-4" />
                             </span>
                           ) : (
-                            <Button
-                              variant="ghost"
-                              size="sm"
+                            <button
+                              type="button"
                               onClick={() => handleOpenStatus(user)}
-                              className="h-7 w-7 p-0 text-muted-foreground hover:text-cyan-400"
+                              className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 transition-colors cursor-pointer"
                               title="Change Account Status"
                             >
-                              <ShieldCheck className="h-3.5 w-3.5" />
-                            </Button>
+                              <ShieldCheck className="h-4 w-4" />
+                            </button>
                           )}
                         </div>
                       </td>
@@ -617,36 +689,36 @@ export const AdminUsers: React.FC = () => {
           </table>
         </div>
 
-        {/* ── Pagination Footer ────────────────────────────────────────────── */}
+        {/* Pagination Toolbar */}
         {!isUsersLoading && users.length > 0 && (
-          <div className="p-4 border-t border-border flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-muted-foreground bg-surface-elevated/30">
+          <div className="p-4 border-t border-slate-100 bg-slate-50/50 flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
             <div>
-              Showing <strong className="text-white">{(pagination.page - 1) * pagination.limit + 1}</strong>–
-              <strong className="text-white">
-                {Math.min(pagination.page * pagination.limit, pagination.total)}
-              </strong>{' '}
-              of <strong className="text-white">{pagination.total}</strong> users
+              Showing <span className="font-semibold text-slate-900">{(page - 1) * pageSize + 1}</span> to{' '}
+              <span className="font-semibold text-slate-900">
+                {Math.min(page * pageSize, pagination.total)}
+              </span>{' '}
+              of <span className="font-semibold text-slate-900">{pagination.total}</span> platform accounts
             </div>
 
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-1.5">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setPage((p) => Math.max(1, p - 1))}
-                disabled={pagination.page <= 1}
-                className="h-8 px-2 text-xs border-border"
+                disabled={page <= 1}
+                className="h-8 px-2.5 text-xs border-slate-200 bg-white"
               >
-                <ChevronLeft className="h-3.5 w-3.5 mr-1" /> Prev
+                <ChevronLeft className="h-3.5 w-3.5 mr-1" /> Previous
               </Button>
-              <span className="font-mono px-2 text-white">
-                Page {pagination.page} of {pagination.totalPages}
+              <span className="px-2.5 font-mono text-slate-700 font-medium">
+                {page} / {pagination.totalPages}
               </span>
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setPage((p) => Math.min(pagination.totalPages, p + 1))}
-                disabled={pagination.page >= pagination.totalPages}
-                className="h-8 px-2 text-xs border-border"
+                disabled={page >= pagination.totalPages}
+                className="h-8 px-2.5 text-xs border-slate-200 bg-white"
               >
                 Next <ChevronRight className="h-3.5 w-3.5 ml-1" />
               </Button>
@@ -655,136 +727,129 @@ export const AdminUsers: React.FC = () => {
         )}
       </div>
 
-      {/* ── 6. User Detail Modal / Drawer ──────────────────────────────────── */}
+      {/* ── 6. User Detail Modal / Drawer (Light Institutional Design) ────────── */}
       {selectedUserId && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-surface border border-border rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-3xl w-full max-h-[90vh] overflow-hidden flex flex-col shadow-2xl animate-in fade-in zoom-in-95 duration-150">
             {/* Modal Header */}
-            <div className="p-5 border-b border-border flex items-center justify-between bg-surface-elevated">
+            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
               <div className="flex items-center gap-3">
-                <div className="h-10 w-10 rounded-xl bg-accent/15 border border-accent/30 text-accent flex items-center justify-center font-bold font-mono">
+                <div className="h-10 w-10 rounded-xl bg-blue-50 border border-blue-200 text-blue-600 flex items-center justify-center font-bold text-sm">
                   {userDetail ? getInitials(`${userDetail.firstName} ${userDetail.lastName}`) : 'U'}
                 </div>
                 <div>
                   <div className="flex items-center gap-2">
-                    <h2 className="text-base font-bold text-white">
+                    <h2 className="text-base font-bold text-slate-900">
                       {userDetail ? `${userDetail.firstName} ${userDetail.lastName}` : 'User Profile'}
                     </h2>
                     {userDetail && (
-                      <span className="px-2 py-0.5 rounded text-[10px] font-mono font-bold bg-accent/15 text-accent border border-accent/30">
+                      <span className="px-2 py-0.5 rounded text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-200">
                         {userDetail.role}
                       </span>
                     )}
                   </div>
-                  <p className="text-xs text-muted-foreground font-mono">{userDetail?.email}</p>
+                  <p className="text-xs text-slate-500 font-mono">{userDetail?.email}</p>
                 </div>
               </div>
 
-              <Button
-                variant="ghost"
-                size="sm"
+              <button
+                type="button"
                 onClick={() => setSelectedUserId(null)}
-                className="h-8 w-8 p-0 text-muted-foreground hover:text-white"
+                className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 cursor-pointer"
               >
                 <X className="h-4 w-4" />
-              </Button>
+              </button>
             </div>
 
             {/* Modal Body */}
-            <div className="p-6 overflow-y-auto space-y-6 text-xs">
+            <div className="p-6 overflow-y-auto space-y-6 text-xs text-slate-700">
               {isDetailLoading ? (
                 <div className="space-y-4">
-                  <Skeleton className="h-24 w-full bg-surface-elevated" />
-                  <Skeleton className="h-40 w-full bg-surface-elevated" />
+                  <Skeleton className="h-24 w-full rounded-xl" />
+                  <Skeleton className="h-40 w-full rounded-xl" />
                 </div>
               ) : userDetail ? (
                 <>
                   {/* Account Information Card */}
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 rounded-xl bg-surface-elevated/60 border border-border">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 p-4 rounded-xl bg-slate-50 border border-slate-200/80">
                     <div>
-                      <span className="text-[10px] text-muted-foreground block">Account Status</span>
-                      <span className="font-mono font-bold text-emerald-400">{userDetail.status}</span>
+                      <span className="text-[11px] text-slate-500 block uppercase font-mono">Account Status</span>
+                      <span className="font-semibold text-emerald-600 text-xs">{userDetail.status}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-muted-foreground block">Department</span>
-                      <span className="font-medium text-white">{userDetail.profile.department}</span>
+                      <span className="text-[11px] text-slate-500 block uppercase font-mono">Department</span>
+                      <span className="font-medium text-slate-900">{userDetail.profile.department}</span>
                     </div>
                     <div>
-                      <span className="text-[10px] text-muted-foreground block">Institution / College</span>
-                      <span className="font-medium text-white">{userDetail.profile.college}</span>
+                      <span className="text-[11px] text-slate-500 block uppercase font-mono">College</span>
+                      <span className="font-medium text-slate-900">{userDetail.profile.college}</span>
                     </div>
                     {userDetail.profile.designation && (
                       <div>
-                        <span className="text-[10px] text-muted-foreground block">Designation</span>
-                        <span className="font-medium text-white">{userDetail.profile.designation}</span>
+                        <span className="text-[11px] text-slate-500 block uppercase font-mono">Designation</span>
+                        <span className="font-medium text-slate-900">{userDetail.profile.designation}</span>
                       </div>
                     )}
                     {userDetail.profile.rollNumber && (
                       <div>
-                        <span className="text-[10px] text-muted-foreground block">Roll / Register Number</span>
-                        <span className="font-mono text-white">{userDetail.profile.rollNumber}</span>
-                      </div>
-                    )}
-                    {userDetail.profile.employeeId && (
-                      <div>
-                        <span className="text-[10px] text-muted-foreground block">Employee ID</span>
-                        <span className="font-mono text-white">{userDetail.profile.employeeId}</span>
+                        <span className="text-[11px] text-slate-500 block uppercase font-mono">Roll / Reg Number</span>
+                        <span className="font-mono text-slate-900">{userDetail.profile.rollNumber}</span>
                       </div>
                     )}
                     <div>
-                      <span className="text-[10px] text-muted-foreground block">Registered On</span>
-                      <span className="font-mono text-muted-foreground">
-                        {new Date(userDetail.createdAt).toLocaleString()}
+                      <span className="text-[11px] text-slate-500 block uppercase font-mono">Registered On</span>
+                      <span className="font-mono text-slate-600">
+                        {new Date(userDetail.createdAt).toLocaleDateString()}
                       </span>
                     </div>
                   </div>
 
-                  {/* If Student: Assessment Overview & History */}
+                  {/* If Student: Assessment History */}
                   {userDetail.role === 'STUDENT' && (
-                    <div className="space-y-4">
-                      <div className="flex items-center justify-between border-b border-border pb-2">
-                        <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                          <Award className="h-4 w-4 text-accent" />
-                          Student Assessment History
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between border-b border-slate-200 pb-2">
+                        <h3 className="text-sm font-semibold text-slate-900 flex items-center gap-2">
+                          <Award className="h-4 w-4 text-blue-600" />
+                          Candidate Assessment Sessions
                         </h3>
-                        <span className="font-mono text-muted-foreground">
+                        <span className="font-mono text-slate-500 text-xs">
                           {userDetail.assessmentSummary.completedAssessments}/{userDetail.assessmentSummary.totalAssessments} Completed
                           {userDetail.assessmentSummary.averageScore !== null && (
-                            <strong className="text-accent ml-1.5">
-                              (Avg: {userDetail.assessmentSummary.averageScore}%)
+                            <strong className="text-blue-600 ml-1.5 font-bold">
+                              ({userDetail.assessmentSummary.averageScore}% Avg)
                             </strong>
                           )}
                         </span>
                       </div>
 
                       {userDetail.interviewsHistory.length === 0 ? (
-                        <div className="p-6 text-center text-muted-foreground rounded-lg bg-surface-elevated/30 border border-border">
+                        <div className="p-6 text-center text-slate-400 rounded-xl bg-slate-50 border border-slate-200">
                           No assessment sessions initiated yet.
                         </div>
                       ) : (
-                        <div className="border border-border rounded-xl overflow-hidden">
+                        <div className="border border-slate-200 rounded-xl overflow-hidden">
                           <table className="w-full text-left text-xs">
-                            <thead className="bg-surface-elevated border-b border-border text-muted-foreground font-semibold">
+                            <thead className="bg-slate-50 border-b border-slate-200 text-slate-500 font-semibold uppercase font-mono text-[11px]">
                               <tr>
                                 <th className="py-2.5 px-3">Session Title</th>
                                 <th className="py-2.5 px-3">State</th>
                                 <th className="py-2.5 px-3">Score</th>
-                                <th className="py-2.5 px-3">Started At</th>
-                                <th className="py-2.5 px-3">Completed At</th>
+                                <th className="py-2.5 px-3">Date</th>
+                                <th className="py-2.5 px-3 text-right">Report</th>
                               </tr>
                             </thead>
-                            <tbody className="divide-y divide-border/60 font-mono">
+                            <tbody className="divide-y divide-slate-100 font-mono">
                               {userDetail.interviewsHistory.map((iv) => (
-                                <tr key={iv.id} className="hover:bg-surface-elevated/40">
-                                  <td className="py-2.5 px-3 text-white font-sans font-medium">
+                                <tr key={iv.id} className="hover:bg-slate-50/70">
+                                  <td className="py-2.5 px-3 text-slate-900 font-sans font-medium">
                                     {iv.title}
                                   </td>
                                   <td className="py-2.5 px-3">
                                     <span
-                                      className={`px-1.5 py-0.5 rounded text-[10px] font-bold ${
+                                      className={`px-2 py-0.5 rounded text-[10px] font-semibold ${
                                         iv.state === 'COMPLETED'
-                                          ? 'bg-emerald-500/15 text-emerald-400'
-                                          : 'bg-amber-500/15 text-amber-400'
+                                          ? 'bg-emerald-50 text-emerald-700 border border-emerald-200'
+                                          : 'bg-amber-50 text-amber-700 border border-amber-200'
                                       }`}
                                     >
                                       {iv.state}
@@ -795,23 +860,37 @@ export const AdminUsers: React.FC = () => {
                                       <span
                                         className={`font-bold ${
                                           iv.score >= 60
-                                            ? 'text-emerald-400'
+                                            ? 'text-emerald-600'
                                             : iv.score >= 40
-                                            ? 'text-amber-400'
-                                            : 'text-rose-400'
+                                            ? 'text-amber-600'
+                                            : 'text-rose-600'
                                         }`}
                                       >
                                         {iv.score}%
                                       </span>
                                     ) : (
-                                      <span className="text-muted-foreground">—</span>
+                                      <span className="text-slate-400">—</span>
                                     )}
                                   </td>
-                                  <td className="py-2.5 px-3 text-muted-foreground">
+                                  <td className="py-2.5 px-3 text-slate-500">
                                     {new Date(iv.startedAt).toLocaleDateString()}
                                   </td>
-                                  <td className="py-2.5 px-3 text-muted-foreground">
-                                    {iv.finishedAt ? new Date(iv.finishedAt).toLocaleDateString() : 'In-Progress'}
+                                  <td className="py-2.5 px-3 text-right">
+                                    {iv.state === 'COMPLETED' ? (
+                                      <button
+                                        type="button"
+                                        onClick={() => {
+                                          setSelectedUserId(null);
+                                          navigate('/admin/reports');
+                                        }}
+                                        className="text-blue-600 hover:text-blue-800 font-sans font-medium text-xs inline-flex items-center gap-1 cursor-pointer"
+                                      >
+                                        <span>View</span>
+                                        <ExternalLink className="h-3 w-3" />
+                                      </button>
+                                    ) : (
+                                      <span className="text-slate-400 text-[11px]">In-Progress</span>
+                                    )}
                                   </td>
                                 </tr>
                               ))}
@@ -821,61 +900,17 @@ export const AdminUsers: React.FC = () => {
                       )}
                     </div>
                   )}
-
-                  {/* If Faculty: Overview */}
-                  {userDetail.role === 'FACULTY' && (
-                    <div className="p-4 rounded-xl bg-surface-elevated/40 border border-border space-y-2">
-                      <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                        <Briefcase className="h-4 w-4 text-purple-400" />
-                        Faculty Operational Scope
-                      </h3>
-                      <p className="text-muted-foreground leading-relaxed">
-                        Authorized to manage interview templates, review cohort student rosters, and inspect student code execution telemetry within the <strong>{userDetail.profile.department}</strong> department.
-                      </p>
-                    </div>
-                  )}
-
-                  {/* If Admin or Super Admin: Overview */}
-                  {(userDetail.role === 'ADMINISTRATOR' || userDetail.role === 'SUPER_ADMIN') && (
-                    <div className={`p-4 rounded-xl border space-y-2 ${
-                      userDetail.isProtected
-                        ? 'bg-amber-500/8 border-amber-500/40'
-                        : 'bg-surface-elevated/40 border-border'
-                    }`}>
-                      <h3 className="text-sm font-semibold text-white flex items-center gap-2">
-                        {userDetail.isProtected
-                          ? <Lock className="h-4 w-4 text-amber-400" />
-                          : <ShieldCheck className="h-4 w-4 text-accent" />
-                        }
-                        {userDetail.isProtected ? 'Super Admin — Protected Account' : 'Platform Administrator Scope'}
-                      </h3>
-                      {userDetail.isProtected && (
-                        <div className="flex items-start gap-2 p-2.5 rounded-lg bg-amber-500/10 border border-amber-500/30 text-amber-300 text-[11px]">
-                          <Lock className="h-3.5 w-3.5 shrink-0 mt-0.5" />
-                          <span>
-                            <strong>Account Protection Active.</strong> This account holds the Super Admin role and cannot be deactivated, locked, or suspended through normal account management. Enforcement is server-side.
-                          </span>
-                        </div>
-                      )}
-                      <p className="text-muted-foreground leading-relaxed">
-                        {userDetail.isProtected
-                          ? 'Authorized for unrestricted platform administration including user management, security administration, microservices telemetry monitoring, and curriculum configuration.'
-                          : 'Authorized for platform-wide user management, curricular dataset configuration, microservices telemetry monitoring, and security administration.'
-                        }
-                      </p>
-                    </div>
-                  )}
                 </>
               ) : null}
             </div>
 
             {/* Modal Footer */}
-            <div className="p-4 border-t border-border bg-surface-elevated flex items-center justify-end">
+            <div className="p-4 border-t border-slate-200 bg-slate-50/50 flex justify-end">
               <Button
                 variant="outline"
                 size="sm"
                 onClick={() => setSelectedUserId(null)}
-                className="text-xs border-border"
+                className="text-xs border-slate-200 bg-white"
               >
                 Close
               </Button>
@@ -884,100 +919,100 @@ export const AdminUsers: React.FC = () => {
         </div>
       )}
 
-      {/* ── 7. Edit Profile Modal ──────────────────────────────────────────── */}
+      {/* ── 7. Edit Profile Modal (Clean Light Styling) ──────────────────────── */}
       {editingUser && (
-        <div className="fixed inset-0 z-50 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4">
-          <div className="bg-surface border border-border rounded-2xl max-w-md w-full overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150">
-            <div className="p-5 border-b border-border flex items-center justify-between bg-surface-elevated">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
               <div className="flex items-center gap-2.5">
-                <Edit2 className="h-4 w-4 text-accent" />
-                <h2 className="text-sm font-bold text-white">Edit User Profile</h2>
+                <Edit2 className="h-4 w-4 text-blue-600" />
+                <h2 className="text-sm font-bold text-slate-900">Edit User Profile</h2>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
+              <button
+                type="button"
                 onClick={() => setEditingUser(null)}
-                className="h-7 w-7 p-0 text-muted-foreground hover:text-white"
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
               >
                 <X className="h-4 w-4" />
-              </Button>
+              </button>
             </div>
 
             <form onSubmit={handleSaveEdit} className="p-5 space-y-4 text-xs">
               {actionError && (
-                <div className="p-3 rounded-lg bg-rose-500/10 border border-rose-500/30 text-rose-300 text-xs">
+                <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs">
                   {actionError}
                 </div>
               )}
 
               <div className="grid grid-cols-2 gap-3">
                 <div className="space-y-1">
-                  <label className="text-muted-foreground font-medium">First Name</label>
-                  <Input
+                  <label className="text-slate-700 font-medium">First Name</label>
+                  <input
                     value={editForm.firstName}
                     onChange={(e) => setEditForm({ ...editForm, firstName: e.target.value })}
                     required
-                    className="text-xs bg-surface-elevated border-border"
+                    className="w-full h-9 px-3 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:border-blue-500"
                   />
                 </div>
                 <div className="space-y-1">
-                  <label className="text-muted-foreground font-medium">Last Name</label>
-                  <Input
+                  <label className="text-slate-700 font-medium">Last Name</label>
+                  <input
                     value={editForm.lastName}
                     onChange={(e) => setEditForm({ ...editForm, lastName: e.target.value })}
-                    className="text-xs bg-surface-elevated border-border"
+                    className="w-full h-9 px-3 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:border-blue-500"
                   />
                 </div>
               </div>
 
               <div className="space-y-1">
-                <label className="text-muted-foreground font-medium">Phone</label>
-                <Input
+                <label className="text-slate-700 font-medium">Phone</label>
+                <input
                   value={editForm.phone}
                   onChange={(e) => setEditForm({ ...editForm, phone: e.target.value })}
                   placeholder="+91 98400 00000"
-                  className="text-xs bg-surface-elevated border-border"
+                  className="w-full h-9 px-3 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               <div className="space-y-1">
-                <label className="text-muted-foreground font-medium">Department</label>
-                <Input
+                <label className="text-slate-700 font-medium">Department</label>
+                <input
                   value={editForm.department}
                   onChange={(e) => setEditForm({ ...editForm, department: e.target.value })}
                   placeholder="e.g. Computer Science & Engineering"
-                  className="text-xs bg-surface-elevated border-border"
+                  className="w-full h-9 px-3 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:border-blue-500"
                 />
               </div>
 
               {editingUser.role === 'FACULTY' && (
                 <div className="space-y-1">
-                  <label className="text-muted-foreground font-medium">Designation</label>
-                  <Input
+                  <label className="text-slate-700 font-medium">Designation</label>
+                  <input
                     value={editForm.designation}
                     onChange={(e) => setEditForm({ ...editForm, designation: e.target.value })}
                     placeholder="e.g. Associate Professor"
-                    className="text-xs bg-surface-elevated border-border"
+                    className="w-full h-9 px-3 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:border-blue-500"
                   />
                 </div>
               )}
 
               <div className="space-y-1">
-                <label className="text-muted-foreground font-medium">College / Institution</label>
-                <Input
+                <label className="text-slate-700 font-medium">College / Institution</label>
+                <input
                   value={editForm.college}
                   onChange={(e) => setEditForm({ ...editForm, college: e.target.value })}
                   placeholder="e.g. Government Engineering College"
-                  className="text-xs bg-surface-elevated border-border"
+                  className="w-full h-9 px-3 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:border-blue-500"
                 />
               </div>
 
-              <div className="pt-3 border-t border-border flex items-center justify-end gap-2">
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
                 <Button
                   type="button"
-                  variant="secondary"
+                  variant="outline"
                   size="sm"
                   onClick={() => setEditingUser(null)}
+                  className="text-xs border-slate-200"
                 >
                   Cancel
                 </Button>
@@ -985,6 +1020,7 @@ export const AdminUsers: React.FC = () => {
                   type="submit"
                   size="sm"
                   disabled={updateProfileMutation.isPending}
+                  className="text-xs bg-blue-600 hover:bg-blue-700 text-white"
                 >
                   {updateProfileMutation.isPending ? 'Saving...' : 'Save Profile'}
                 </Button>
@@ -994,23 +1030,22 @@ export const AdminUsers: React.FC = () => {
         </div>
       )}
 
-      {/* ── 8. Account Status Management Modal ─────────────────────────────── */}
+      {/* ── 8. Account Status Management Modal (Light Institutional Design) ─── */}
       {statusChangingUser && (
-        <div className="fixed inset-0 z-50 bg-black/40 backdrop-blur-xs flex items-center justify-center p-4">
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white border border-slate-200 rounded-2xl max-w-sm w-full overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150">
             <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
               <div className="flex items-center gap-2.5">
                 <ShieldCheck className="h-4 w-4 text-slate-700" />
                 <h2 className="text-sm font-bold text-slate-900">Account Status</h2>
               </div>
-              <Button
-                variant="ghost"
-                size="sm"
+              <button
+                type="button"
                 onClick={() => setStatusChangingUser(null)}
-                className="h-7 w-7 p-0 text-slate-500 hover:text-slate-900"
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
               >
                 <X className="h-4 w-4" />
-              </Button>
+              </button>
             </div>
 
             <div className="p-5 space-y-4 text-xs">
@@ -1030,14 +1065,13 @@ export const AdminUsers: React.FC = () => {
               </div>
 
               {isProtectedAccount(statusChangingUser) && (
-                <div className="p-3 rounded-lg bg-amber-500/10 border border-amber-500/20 text-amber-300 text-[11px] flex items-start gap-2">
-                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5" />
+                <div className="p-3 rounded-lg bg-amber-50 border border-amber-200 text-amber-800 text-[11px] flex items-start gap-2">
+                  <AlertTriangle className="h-3.5 w-3.5 shrink-0 mt-0.5 text-amber-600" />
                   <span>
                     <strong>Self-Protection Notice:</strong> You are currently logged in as this administrator. Modifying to non-active status is restricted to prevent self-lockout.
                   </span>
                 </div>
               )}
-
 
               <div className="space-y-1.5">
                 <label className="text-slate-700 font-medium">Select Target Status</label>
@@ -1045,7 +1079,7 @@ export const AdminUsers: React.FC = () => {
                   value={newStatusValue}
                   onChange={(e) => setNewStatusValue(e.target.value)}
                   disabled={isProtectedAccount(statusChangingUser)}
-                  className="w-full text-xs bg-white border border-slate-300 rounded-md px-3 py-2 text-slate-900 focus:outline-none focus:ring-1 focus:ring-slate-400 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
+                  className="w-full text-xs bg-white border border-slate-300 rounded-md px-3 py-2 text-slate-900 focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:bg-slate-100 disabled:text-slate-400 disabled:cursor-not-allowed"
                 >
                   <option value="ACTIVE">ACTIVE (Authorized access)</option>
                   <option value="INACTIVE" disabled={isSelf(statusChangingUser.id) || isProtectedAccount(statusChangingUser)}>
@@ -1062,9 +1096,10 @@ export const AdminUsers: React.FC = () => {
 
               <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
                 <Button
-                  variant="secondary"
+                  variant="outline"
                   size="sm"
                   onClick={() => setStatusChangingUser(null)}
+                  className="text-xs border-slate-200"
                 >
                   Cancel
                 </Button>
@@ -1072,13 +1107,129 @@ export const AdminUsers: React.FC = () => {
                   size="sm"
                   onClick={handleSaveStatus}
                   disabled={updateStatusMutation.isPending || isProtectedAccount(statusChangingUser)}
-                  className="text-xs"
-                  title={isProtectedAccount(statusChangingUser) ? 'Super Admin accounts are protected — server will reject this action' : undefined}
+                  className="text-xs bg-blue-600 hover:bg-blue-700 text-white"
                 >
                   {updateStatusMutation.isPending ? 'Updating...' : isProtectedAccount(statusChangingUser) ? '🔒 Protected' : 'Update Status'}
                 </Button>
               </div>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── 9. Add User Modal ──────────────────────────────────────────────── */}
+      {isCreateModalOpen && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2.5">
+                <UserPlus className="h-4 w-4 text-blue-600" />
+                <h2 className="text-sm font-bold text-slate-900">Add Platform Account</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCreateModalOpen(false)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleCreateUser} className="p-5 space-y-4 text-xs">
+              {createError && (
+                <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs">
+                  {createError}
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-slate-700 font-medium">Account Role</label>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['STUDENT', 'FACULTY', 'ADMINISTRATOR'] as const).map((r) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setCreateRole(r)}
+                      className={`py-2 px-2 rounded-lg text-xs font-semibold border text-center transition-colors cursor-pointer ${
+                        createRole === r
+                          ? 'bg-blue-50 border-blue-500 text-blue-700'
+                          : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
+                      }`}
+                    >
+                      {r === 'ADMINISTRATOR' ? 'Admin' : r === 'FACULTY' ? 'Faculty' : 'Student'}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-1">
+                  <label className="text-slate-700 font-medium">First Name</label>
+                  <input
+                    type="text"
+                    required
+                    value={createForm.firstName}
+                    onChange={(e) => setCreateForm({ ...createForm, firstName: e.target.value })}
+                    placeholder="e.g. Arun"
+                    className="w-full h-9 px-3 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+                <div className="space-y-1">
+                  <label className="text-slate-700 font-medium">Last Name</label>
+                  <input
+                    type="text"
+                    value={createForm.lastName}
+                    onChange={(e) => setCreateForm({ ...createForm, lastName: e.target.value })}
+                    placeholder="e.g. Kumar"
+                    className="w-full h-9 px-3 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:border-blue-500"
+                  />
+                </div>
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-slate-700 font-medium">Email Address</label>
+                <input
+                  type="email"
+                  required
+                  value={createForm.email}
+                  onChange={(e) => setCreateForm({ ...createForm, email: e.target.value })}
+                  placeholder="user@nm.edu"
+                  className="w-full h-9 px-3 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:border-blue-500"
+                />
+              </div>
+
+              <div className="space-y-1">
+                <label className="text-slate-700 font-medium">Initial Password</label>
+                <input
+                  type="password"
+                  value={createForm.password}
+                  onChange={(e) => setCreateForm({ ...createForm, password: e.target.value })}
+                  placeholder="Defaults to: 123456"
+                  className="w-full h-9 px-3 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:border-blue-500"
+                />
+                <p className="text-[11px] text-slate-400">Leave blank to use default (123456)</p>
+              </div>
+
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setIsCreateModalOpen(false)}
+                  className="text-xs border-slate-200"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={createLoading}
+                  className="text-xs bg-blue-600 hover:bg-blue-700 text-white"
+                >
+                  {createLoading ? 'Registering...' : 'Create Account'}
+                </Button>
+              </div>
+            </form>
           </div>
         </div>
       )}

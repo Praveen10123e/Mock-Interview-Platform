@@ -1,6 +1,7 @@
 import React from 'react';
 import { useInterviewSessionStore } from '../store/useInterviewSessionStore';
 import { Card, CardContent, CardHeader, CardTitle } from '../../../components/ui/card';
+import { formatExampleText } from '../../../utils/formatExampleText';
 
 export const QuestionViewer: React.FC = () => {
   const currentQuestion = useInterviewSessionStore((state) => state.getCurrentQuestion());
@@ -33,21 +34,32 @@ export const QuestionViewer: React.FC = () => {
         {currentQuestion.examples && currentQuestion.examples.length > 0 && (
           <div className="space-y-4 mt-6">
             <h3 className="font-semibold text-lg border-b pb-2">Examples</h3>
-            {currentQuestion.examples.map((ex: any, idx: number) => (
-              <div key={idx} className="bg-muted p-4 rounded-md space-y-2 text-sm">
-                <div>
-                  <strong>Input:</strong> {ex.input}
-                </div>
-                <div>
-                  <strong>Output:</strong> {ex.output}
-                </div>
-                {ex.explanation && (
-                  <div>
-                    <strong>Explanation:</strong> {ex.explanation}
+            {currentQuestion.examples.map((ex: any, idx: number) => {
+              const formattedInput = formatExampleText(ex.input);
+              const formattedOutput = formatExampleText(ex.output);
+              return (
+                <div key={idx} className="bg-muted p-4 rounded-md space-y-3 text-sm">
+                  <div className="space-y-1">
+                    <span className="font-semibold text-xs uppercase tracking-wider text-muted-foreground block">Input:</span>
+                    <pre className="p-2.5 rounded bg-background/80 border font-mono text-xs whitespace-pre-wrap leading-relaxed overflow-x-auto m-0">
+                      {formattedInput}
+                    </pre>
                   </div>
-                )}
-              </div>
-            ))}
+                  <div className="space-y-1">
+                    <span className="font-semibold text-xs uppercase tracking-wider text-muted-foreground block">Output:</span>
+                    <pre className="p-2.5 rounded bg-background/80 border font-mono text-xs whitespace-pre-wrap leading-relaxed overflow-x-auto text-emerald-600 dark:text-emerald-400 font-semibold m-0">
+                      {formattedOutput}
+                    </pre>
+                  </div>
+                  {ex.explanation && (
+                    <div className="text-xs pt-1 border-t">
+                      <span className="font-semibold">Explanation: </span>
+                      <span className="whitespace-pre-wrap">{formatExampleText(ex.explanation)}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
           </div>
         )}
 

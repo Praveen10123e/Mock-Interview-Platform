@@ -28,6 +28,12 @@ export async function recordExecution(
   judgeResult: any,
   questionMeta: any
 ) {
+  // RUN mode is for quick validation only.
+  // It must NOT create an immutable submission attempt, affect score, or affect Best Result.
+  if (runMode !== 'SUBMIT') {
+    return;
+  }
+
   const passedCount = toInt(judgeResult.passedCount, 0);
   const totalCount = toInt(judgeResult.totalCount, 0);
 
@@ -79,36 +85,15 @@ export async function recordExecution(
   } else if (primaryErrorType === 'MEMORY_LIMIT_EXCEEDED') {
     status = 'MEMORY_LIMIT_EXCEEDED';
   } else if (passedCount === totalCount && totalCount > 0) {
-    status = runMode === 'SUBMIT' ? 'ACCEPTED' : 'RUN_PASSED';
+    status = 'ACCEPTED';
   } else if (passedCount > 0 && passedCount < totalCount) {
     status = 'PARTIALLY_SOLVED';
   } else {
-    status = runMode === 'SUBMIT' ? 'WRONG_ANSWER' : 'RUN_ATTEMPTED';
+    status = 'WRONG_ANSWER';
   }
 
-  // Calculate visible vs hidden
-  let visiblePassedCount = 0;
-  let hiddenPassedCount = 0;
-  let visibleTotalCount = 0;
-  let hiddenTotalCount = 0;
-
-  if (judgeResult.results && Array.isArray(judgeResult.results)) {
-    judgeResult.results.forEach((r: any) => {
-      const isHidden = r.hidden === true || r.isHidden === true;
-      const isPassed = r.passed === true || r.status?.id === 3 || r.status === 'Passed';
-      if (isHidden) {
-        hiddenTotalCount++;
-        if (isPassed) hiddenPassedCount++;
-      } else {
-        visibleTotalCount++;
-        if (isPassed) visiblePassedCount++;
-      }
-    });
-  } else {
-    // Fallback if judge doesn't return per-testcase results
-    visibleTotalCount = toInt(judgeResult.totalCount);
-    visiblePassedCount = toInt(judgeResult.passedCount);
-  }
+  const visiblePassedCount = toInt(passedCount, 0);
+  const visibleTotalCount = toInt(totalCount, 0);
 
   const sourceCodeHash = crypto.createHash('sha256').update(sourceCode || '').digest('hex');
   const sourceCodeLength = sourceCode?.length || 0;
@@ -121,7 +106,7 @@ export async function recordExecution(
   // Transaction to safely generate attemptNumber and upsert final result
   await prisma.$transaction(async (tx) => {
     const prevAttempts = await tx.interviewExecutionRecord.findMany({
-      where: { sessionId, questionRefId },
+      where: { sessionId, questionRefId, runMode: 'SUBMIT' },
       orderBy: { attemptNumber: 'desc' },
       take: 1
     });
@@ -129,13 +114,13 @@ export async function recordExecution(
     const nextAttempt = prevAttempts.length > 0 ? prevAttempts[0].attemptNumber + 1 : 1;
     const changedFromPrevious = prevAttempts.length > 0 ? prevAttempts[0].sourceCodeHash !== sourceCodeHash : true;
 
-    // Create record
+    // Create immutable submission attempt record
     const record = await tx.interviewExecutionRecord.create({
       data: {
         sessionId,
         questionRefId,
         language: String(languageId),
-        runMode,
+        runMode: 'SUBMIT',
         status,
         statusDescription: statusDesc,
         passedCount,
@@ -149,10 +134,10 @@ export async function recordExecution(
         testCaseResults: judgeResult.results || null,
         primaryErrorType,
         attemptNumber: nextAttempt,
-        visiblePassedCount: toInt(visiblePassedCount, 0),
-        hiddenPassedCount: toInt(hiddenPassedCount, 0),
-        visibleTotalCount: toInt(visibleTotalCount, 0),
-        hiddenTotalCount: toInt(hiddenTotalCount, 0),
+        visiblePassedCount,
+        hiddenPassedCount: 0,
+        visibleTotalCount,
+        hiddenTotalCount: 0,
         sourceCode: sourceCode || null,
         sourceCodeHash,
         sourceCodeLength: toInt(sourceCodeLength, 0),
@@ -164,37 +149,28 @@ export async function recordExecution(
       }
     });
 
-    // Update Question Result
+    // Update Question Result (Deterministic Best Result from SUBMIT attempts)
     const existingResult = await tx.interviewQuestionResult.findUnique({
       where: { sessionId_questionRefId: { sessionId, questionRefId } }
     });
 
-    let newFinalStatus = existingResult?.finalStatus || 'NOT_ATTEMPTED';
-    let newFinalScore = toFloat(existingResult?.finalScore, 0);
-    let newTotalScore = toFloat(existingResult?.totalScore, 0);
-    let newPassedCount = toInt(existingResult?.passedCount, 0);
-    let newTotalCount = toInt(existingResult?.totalCount, 0);
-    let latestRunRecordId = existingResult?.latestRunRecordId;
-    let latestSubmitRecordId = existingResult?.latestSubmitRecordId;
+    let newFinalStatus = status;
+    let newFinalScore = toFloat(record.score, 0);
+    let newTotalScore = toFloat(judgeResult.totalScore, 0);
+    let newPassedCount = passedCount;
+    let newTotalCount = toInt(record.totalCount, 0);
+    let latestSubmitRecordId = record.id;
 
-    if (status !== 'PLATFORM_ERROR') {
-      if (runMode === 'SUBMIT') {
-        latestSubmitRecordId = record.id;
-        newFinalStatus = status;
-        newFinalScore = toFloat(record.score, 0);
-        newTotalScore = toFloat(judgeResult.totalScore, 0);
-        newPassedCount = toInt(record.passedCount, 0);
-        newTotalCount = toInt(record.totalCount, 0);
-      } else {
-        latestRunRecordId = record.id;
-        // If no submit yet, run is provisional final
-        if (!existingResult?.latestSubmitRecordId) {
-          newFinalStatus = status; // RUN_PASSED or RUN_ATTEMPTED
-          newFinalScore = toFloat(record.score, 0);
-          newTotalScore = toFloat(judgeResult.totalScore, 0);
-          newPassedCount = toInt(record.passedCount, 0);
-          newTotalCount = toInt(record.totalCount, 0);
-        }
+    if (existingResult?.latestSubmitRecordId) {
+      const prevPassed = toInt(existingResult.passedCount, -1);
+      // Deterministic Best Result rule: Highest passedCount wins; if tied, latest attempt wins
+      if (passedCount < prevPassed) {
+        newFinalStatus = existingResult.finalStatus;
+        newFinalScore = existingResult.finalScore;
+        newTotalScore = existingResult.totalScore;
+        newPassedCount = existingResult.passedCount;
+        newTotalCount = existingResult.totalCount;
+        latestSubmitRecordId = existingResult.latestSubmitRecordId;
       }
     }
 
@@ -208,7 +184,6 @@ export async function recordExecution(
         totalScore: newTotalScore,
         passedCount: newPassedCount,
         totalCount: newTotalCount,
-        latestRunRecordId,
         latestSubmitRecordId
       },
       update: {
@@ -217,7 +192,6 @@ export async function recordExecution(
         totalScore: newTotalScore,
         passedCount: newPassedCount,
         totalCount: newTotalCount,
-        latestRunRecordId,
         latestSubmitRecordId
       }
     });
