@@ -388,6 +388,10 @@ model HRInterviewQuestion {
   sequence        Int
   isFollowUpToId  String?  // references another HRInterviewQuestion.id
 
+  difficulty      String   @default("medium") // easy | medium | hard
+  competency      String?
+  selectionReason String?  @db.Text
+
   response        HRInterviewResponse?
 
   createdAt DateTime @default(now())
@@ -397,16 +401,34 @@ model HRInterviewQuestion {
 }
 
 model HRInterviewResponse {
-  id              String   @id @default(uuid())
-  hrSessionId     String
-  questionId      String   @unique
-  question        HRInterviewQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+  id                  String   @id @default(uuid())
+  hrSessionId         String
+  questionId          String   @unique
+  question            HRInterviewQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
 
-  transcript      String?  @db.Text
-  recordingPath   String?  // relative path on disk e.g. uploads/recordings/{sessionId}/{filename}
-  durationSeconds Int      @default(0)
-  wordCount       Int      @default(0)
-  submittedAt     DateTime @default(now())
+  transcript          String?  @db.Text
+  rawTranscript       String?  @db.Text
+  verifiedTranscript  String?  @db.Text
+  corrections         Json?    @default("[]")
+  uncertainSegments   Json?    @default("[]")
+
+  // 8 Evaluation Dimensions (each 0 - 10)
+  dimensionScores     Json?
+  questionScore       Float?
+  justification       String?  @db.Text
+  strengths           Json?    @default("[]")
+  areasForImprovement Json?    @default("[]")
+  starFormatDetected  Boolean  @default(false)
+  starAnalysis        Json?    // Detailed STAR format breakdown & coaching
+  speechAnalysis      Json?    // Phase 3: Filler word & speech pattern intelligence
+  responseQuality     String?
+  evaluationStatus    String   @default("PENDING")
+  analysisMetadata    Json?
+
+  recordingPath       String?  // relative path on disk e.g. uploads/recordings/{sessionId}/{filename}
+  durationSeconds     Int      @default(0)
+  wordCount           Int      @default(0)
+  submittedAt         DateTime @default(now())
 
   @@index([hrSessionId])
 }
@@ -434,6 +456,8 @@ model HRInterviewEvaluation {
   improvements  Json    @default("[]")   // string[]
   starGuidance  String? @db.Text
   aiSummary     String? @db.Text
+  speechSummary Json?   // Phase 3: Aggregated session-level communication pattern summary
+  summary       Json?   // Phase 4: Evidence-based executive interview summary
   evaluatedAt   DateTime @default(now())
 
   @@index([hrSessionId])

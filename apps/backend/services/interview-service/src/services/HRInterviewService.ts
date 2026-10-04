@@ -13,6 +13,9 @@ import { InterviewSessionService } from './InterviewSessionService';
 import { InterviewAIService } from './InterviewAIService';
 import { HRMessage } from '../types/interviewTypes';
 import { HRTranscriptValidator } from './HRTranscriptValidator';
+import { HRScoreEngine } from './HRScoreEngine';
+import { HRSpeechAnalyzer } from './HRSpeechAnalyzer';
+import { HRInterviewSummaryGenerator } from './HRInterviewSummaryGenerator';
 import path from 'path';
 import fs from 'fs';
 
@@ -67,6 +70,9 @@ export class HRInterviewService {
             category: q.category,
             questionType: 'MAIN',
             sequence: idx + 1,
+            difficulty: q.difficulty || (idx === 0 ? 'easy' : 'medium'),
+            competency: q.competency || (idx === 0 ? 'communication' : null),
+            selectionReason: idx === 0 ? 'Standard introductory question' : 'Initial session question pool',
           })),
         },
       },
@@ -142,27 +148,94 @@ export class HRInterviewService {
       throw Object.assign(new Error('Question not found in this HR session.'), { statusCode: 404 });
     }
 
-    // Evidence-based transcript validation
-    const valResult = HRTranscriptValidator.validate(transcript, {
-      question: question.question,
+    // 1. Feature A: Context-Aware Transcript Verification
+    const verification = HRTranscriptValidator.verifyTranscript(transcript, {
+      currentQuestion: question.question,
       category: question.category,
     });
 
-    const storedTranscript = valResult.verifiedTranscript;
-    const wordCount = valResult.wordCount;
+    const storedTranscript = verification.verifiedTranscript;
+    const wordCount = verification.wordCount;
 
-    // Save or update the response
+    // 2. Feature B & Feature C: HR Response Quality Evaluation & Deterministic Scoring
+    const evaluation = await InterviewAIService.evaluateResponseQuality(
+      question.question,
+      storedTranscript,
+      question.category,
+      durationSeconds
+    );
+
+    // 3. Feature D: STAR Format Detection & Coaching Analysis
+    const starAnalysis = await InterviewAIService.analyzeSTAR(
+      question.question,
+      storedTranscript,
+      question.category
+    );
+
+    // 4. Feature E: Phase 3 Speech Pattern & Filler Word Intelligence
+    let speechAnalysis: any = null;
+    try {
+      speechAnalysis = await HRSpeechAnalyzer.analyze(
+        storedTranscript,
+        verification.rawTranscript,
+        durationSeconds,
+        verification.uncertainSegments || []
+      );
+    } catch (speechErr) {
+      console.warn('Speech pattern analysis error (continuing without blocking interview):', speechErr);
+      speechAnalysis = {
+        metadata: {
+          analysisVersion: '1.0',
+          model: 'error-fallback',
+          promptVersion: 'hr-speech-v1',
+          generatedAt: new Date().toISOString(),
+          status: 'failed',
+        },
+      };
+    }
+
+    // 5. Save or update the response with full evidence retention
     await (prisma as any).hRInterviewResponse.upsert({
       where: { questionId },
       create: {
         hrSessionId: hrSession.id,
         questionId,
         transcript: storedTranscript,
+        rawTranscript: verification.rawTranscript,
+        verifiedTranscript: verification.verifiedTranscript,
+        corrections: verification.corrections,
+        uncertainSegments: verification.uncertainSegments,
+        dimensionScores: evaluation.dimensionScores,
+        questionScore: evaluation.overallScore,
+        justification: evaluation.justification,
+        strengths: evaluation.strengths,
+        areasForImprovement: evaluation.areasForImprovement,
+        starFormatDetected: evaluation.starFormatDetected,
+        starAnalysis: starAnalysis as any,
+        speechAnalysis: speechAnalysis as any,
+        responseQuality: evaluation.responseQuality,
+        evaluationStatus: evaluation.metadata.status,
+        analysisMetadata: evaluation.metadata,
         durationSeconds,
         wordCount,
       },
       update: {
         transcript: storedTranscript,
+        rawTranscript: verification.rawTranscript,
+        verifiedTranscript: verification.verifiedTranscript,
+        corrections: verification.corrections,
+        uncertainSegments: verification.uncertainSegments,
+        dimensionScores: evaluation.dimensionScores,
+        questionScore: evaluation.overallScore,
+        justification: evaluation.justification,
+        strengths: evaluation.strengths,
+        areasForImprovement: evaluation.areasForImprovement,
+        starFormatDetected: evaluation.starFormatDetected,
+        starAnalysis: starAnalysis as any,
+        speechAnalysis: speechAnalysis as any,
+        responseQuality: evaluation.responseQuality,
+        evaluationStatus: evaluation.metadata.status,
+        analysisMetadata: evaluation.metadata,
         durationSeconds,
         wordCount,
         submittedAt: new Date(),
@@ -177,13 +250,13 @@ export class HRInterviewService {
         details: {
           role: 'candidate',
           content: storedTranscript,
-          rawTranscript: valResult.rawTranscript,
-          verifiedTranscript: valResult.verifiedTranscript,
-          isEmpty: valResult.isEmpty,
-          isFillerOnly: valResult.isFillerOnly,
-          isNonResponsive: valResult.isNonResponsive,
-          normalizedTerms: valResult.normalizedTerms,
-          rejectionReason: valResult.rejectionReason,
+          rawTranscript: verification.rawTranscript,
+          verifiedTranscript: verification.verifiedTranscript,
+          isEmpty: verification.isEmpty,
+          isFillerOnly: verification.isFillerOnly,
+          isNonResponsive: verification.isNonResponsive,
+          normalizedTerms: verification.normalizedTerms,
+          rejectionReason: verification.rejectionReason,
           questionId,
           durationSeconds,
         } as any,
@@ -206,10 +279,49 @@ export class HRInterviewService {
     });
 
     const currentIdx = allQuestions.findIndex((q: any) => q.id === questionId);
-    const nextMain = allQuestions.slice(currentIdx + 1).find((q: any) => q.questionType === 'MAIN' && !q.response);
-    const answeredCount = allQuestions.filter((q: any) => q.questionType === 'MAIN' && q.response).length;
+    let nextMain = allQuestions.find((q: any) => q.questionType === 'MAIN' && !q.response && q.id !== questionId);
+    const answeredCount = allQuestions.filter((q: any) => q.questionType === 'MAIN' && (q.id === questionId || q.response)).length;
     const totalMain = allQuestions.filter((q: any) => q.questionType === 'MAIN').length;
     const isLastQuestion = !nextMain;
+
+    // Feature E: Adaptive Next-Question Selector (Rule-driven progression)
+    if (nextMain && answeredCount < totalMain) {
+      const answeredQuestions = allQuestions.filter((q: any) => q.questionType === 'MAIN' && (q.id === questionId || q.response));
+      const testedCompetencies = answeredQuestions
+        .map((q: any) => q.competency)
+        .filter(Boolean) as string[];
+
+      const existingQuestionTexts = new Set(allQuestions.map((q: any) => q.question.trim().toLowerCase()));
+      const bank = InterviewAIService.getQuestionBank();
+      const usedBankIds = bank
+        .filter((b) => existingQuestionTexts.has(b.question.trim().toLowerCase()))
+        .map((b) => b.id);
+
+      const adaptiveInput = {
+        previousQuestion: question.question,
+        previousQuestionId: question.id,
+        previousScore: evaluation.overallScore, // Authoritative deterministic score from HRScoreEngine!
+        responseQuality: evaluation.responseQuality,
+        previousCompetencies: testedCompetencies,
+        usedQuestionIds: usedBankIds,
+      };
+
+      const adaptiveSelection = await InterviewAIService.selectAdaptiveNextQuestion(adaptiveInput);
+
+      if (adaptiveSelection && !existingQuestionTexts.has(adaptiveSelection.nextQuestionText.trim().toLowerCase())) {
+        // Persist the adaptive selection directly in the database slot for the next question
+        nextMain = await (prisma as any).hRInterviewQuestion.update({
+          where: { id: nextMain.id },
+          data: {
+            question: adaptiveSelection.nextQuestionText,
+            category: adaptiveSelection.category,
+            difficulty: adaptiveSelection.difficulty,
+            competency: adaptiveSelection.competency,
+            selectionReason: adaptiveSelection.reasoning,
+          },
+        });
+      }
+    }
 
     // Create follow-up question record (unless last question)
     let followUpQuestion: any = null;
@@ -240,13 +352,21 @@ export class HRInterviewService {
         ? { id: followUpQuestion.id, question: followUpText, category: question.category, questionType: 'FOLLOW_UP' }
         : null,
       nextMainQuestion: nextMain
-        ? { id: nextMain.id, question: nextMain.question, category: nextMain.category, sequence: nextMain.sequence }
+        ? {
+            id: nextMain.id,
+            question: nextMain.question,
+            category: nextMain.category,
+            sequence: nextMain.sequence,
+            difficulty: nextMain.difficulty || 'medium',
+            competency: nextMain.competency,
+            selectionReason: nextMain.selectionReason,
+          }
         : null,
       canComplete: answeredCount >= totalMain - 1,
       progress: {
-        answered: answeredCount + 1,
+        answered: answeredCount,
         total: totalMain,
-        percentage: Math.round(((answeredCount + 1) / totalMain) * 100),
+        percentage: Math.round((answeredCount / totalMain) * 100),
       },
     };
   }
@@ -368,7 +488,98 @@ export class HRInterviewService {
         : [{ question: 'General Introduction', category: 'Self Introduction', transcript: '', durationSeconds: 0 }]
     );
 
+    // Feature C: Authoritative Deterministic Score Calculation
+    // Extract question scores from stored responses
+    const questionScores = mainQuestions.map((q: any) => {
+      if (q.response && typeof q.response.questionScore === 'number') {
+        return q.response.questionScore;
+      }
+      return 0;
+    });
+
+    const authoritativeOverallScore = HRScoreEngine.calculateOverallHRScore(
+      questionScores.length > 0 ? questionScores : [0]
+    );
+
+    const roundedOfficial = Math.round(authoritativeOverallScore);
+
+    // Compute dimension averages directly from stored response dimensions
+    const responseDims = mainQuestions
+      .map((q: any) => q.response?.dimensionScores)
+      .filter((d: any) => d && typeof d === 'object');
+    const avgDims = HRScoreEngine.calculateAverageDimensionScores(responseDims);
+
+    // Authoritative backend score overrides LLM guess across all fields
+    evaluation.overallScore = authoritativeOverallScore;
+    evaluation.communicationScore = roundedOfficial;
+    evaluation.clarityScore = Math.round(avgDims.clarity * 10);
+    evaluation.relevanceScore = Math.round(avgDims.relevance * 10);
+    evaluation.structureScore = Math.round(avgDims.structure * 10);
+    evaluation.ownershipScore = Math.round(avgDims.ownership * 10);
+    evaluation.problemSolvingScore = Math.round(avgDims.technicalDepth * 10);
+    evaluation.teamworkScore = Math.round(avgDims.professionalism * 10);
+    evaluation.professionalismScore = Math.round(avgDims.professionalism * 10);
+
+    // CRITICAL: Overwrite evaluation.aiSummary so it uses roundedOfficial and never carries over stale scores (e.g. 40/100)
+    evaluation.aiSummary = `Candidate completed ${mainQuestions.length} behavioral interview question${mainQuestions.length > 1 ? 's' : ''}. Overall score: ${roundedOfficial}/100.`;
+
     const { criteriaEvidence, ...dbEval } = evaluation;
+
+    // Aggregate session speech intelligence across all recorded responses
+    const speechAnalyses = allQuestionsWithResponses
+      .map((q: any) => q.response?.speechAnalysis)
+      .filter((analysis: any) => analysis && typeof analysis === 'object' && (analysis.status === 'completed' || analysis.metadata?.status === 'completed'));
+    const speechSummary = HRSpeechAnalyzer.aggregateSessionSpeech(speechAnalyses);
+
+    // Phase 4: Generate Evidence-Based Executive Interview Summary exclusively for displayed main questions
+    let interviewSummary: any = null;
+    try {
+      const summaryResponses = mainQuestions.map((q: any) => {
+        const followUps = followUpQuestions.filter((fu: any) => fu.isFollowUpToId === q.id && fu.response);
+        const combinedDuration = (q.response?.durationSeconds || 0) +
+          followUps.reduce((acc: number, fu: any) => acc + (fu.response?.durationSeconds || 0), 0);
+        const combinedWords = (q.response?.wordCount || 0) +
+          followUps.reduce((acc: number, fu: any) => acc + (fu.response?.wordCount || 0), 0);
+
+        return {
+          questionId: q.id,
+          sequence: q.sequence,
+          question: q.question,
+          category: q.category,
+          difficulty: q.difficulty,
+          competency: q.competency,
+          rawTranscript: q.response?.rawTranscript,
+          verifiedTranscript: q.response?.verifiedTranscript,
+          questionScore: q.response?.questionScore,
+          dimensionScores: q.response?.dimensionScores,
+          starAnalysis: q.response?.starAnalysis,
+          speechAnalysis: q.response?.speechAnalysis,
+          durationSeconds: combinedDuration,
+          wordCount: combinedWords,
+        };
+      });
+
+      interviewSummary = await HRInterviewSummaryGenerator.generateSummary({
+        candidate: {
+          targetRole: hrSession.position || 'Software Engineer',
+        },
+        durationSeconds: summaryResponses.reduce((sum: number, r: any) => sum + (r.durationSeconds || 0), 0),
+        officialHRScore: authoritativeOverallScore,
+        officialScoreSource: 'HRScoreEngine',
+        responses: summaryResponses,
+        speechSummary,
+      });
+    } catch (summaryErr) {
+      console.error('Failed to generate HR interview summary:', summaryErr);
+      interviewSummary = {
+        status: 'failed',
+        metadata: {
+          analysisVersion: 'hr-summary-v1',
+          status: 'failed',
+          generatedAt: new Date().toISOString(),
+        },
+      };
+    }
 
     // Persist evaluation in DB
     await (prisma as any).hRInterviewEvaluation.upsert({
@@ -376,13 +587,19 @@ export class HRInterviewService {
       create: {
         hrSessionId: hrSession.id,
         ...dbEval,
+        overallScore: authoritativeOverallScore,
         strengths: dbEval.strengths as any,
         improvements: dbEval.improvements as any,
+        speechSummary: speechSummary as any,
+        summary: interviewSummary as any,
       },
       update: {
         ...dbEval,
+        overallScore: authoritativeOverallScore,
         strengths: dbEval.strengths as any,
         improvements: dbEval.improvements as any,
+        speechSummary: speechSummary as any,
+        summary: interviewSummary as any,
         evaluatedAt: new Date(),
       },
     });
@@ -393,7 +610,7 @@ export class HRInterviewService {
       data: {
         status: 'COMPLETED',
         completedAt: new Date(),
-        overallScore: evaluation.overallScore,
+        overallScore: authoritativeOverallScore,
       },
     });
 
@@ -499,7 +716,9 @@ export class HRInterviewService {
       throw Object.assign(new Error('HR session not found.'), { statusCode: 404 });
     }
 
-    return this.formatSession(hrSession);
+    const formatted = this.formatSession(hrSession);
+    this.validateReportConsistency(formatted);
+    return formatted;
   }
 
   // ─── 9. Process Turn (Legacy Backward Compatibility) ─────────────────────────
@@ -625,11 +844,29 @@ export class HRInterviewService {
         category: q.category,
         questionType: q.questionType,
         sequence: q.sequence,
+        difficulty: q.difficulty || 'medium',
+        competency: q.competency || null,
+        selectionReason: q.selectionReason || null,
         isFollowUpToId: q.isFollowUpToId,
         response: q.response
           ? {
               id: q.response.id,
+              questionId: q.response.questionId || q.id,
               transcript: q.response.transcript,
+              rawTranscript: q.response.rawTranscript,
+              verifiedTranscript: q.response.verifiedTranscript,
+              corrections: q.response.corrections,
+              uncertainSegments: q.response.uncertainSegments,
+              dimensionScores: q.response.dimensionScores,
+              questionScore: q.response.questionScore,
+              justification: q.response.justification,
+              strengths: q.response.strengths,
+              areasForImprovement: q.response.areasForImprovement,
+              starFormatDetected: q.response.starFormatDetected,
+              starAnalysis: q.response.starAnalysis,
+              speechAnalysis: q.response.speechAnalysis,
+              responseQuality: q.response.responseQuality,
+              evaluationStatus: q.response.evaluationStatus,
               durationSeconds: q.response.durationSeconds,
               wordCount: q.response.wordCount,
               hasRecording: !!q.response.recordingPath,
@@ -656,8 +893,109 @@ export class HRInterviewService {
             improvements: hrSession.evaluation.improvements,
             starGuidance: hrSession.evaluation.starGuidance,
             aiSummary: hrSession.evaluation.aiSummary,
+            speechSummary: hrSession.evaluation.speechSummary,
+            summary: hrSession.evaluation.summary,
           }
         : null,
     };
+  }
+
+  /**
+   * Backend Validation for Report Consistency (Requirement 11).
+   * Verifies Single Source of Truth for score, question-response mapping integrity,
+   * STAR count bounds, and speech pace consistency before returning the DTO.
+   */
+  static validateReportConsistency(sessionDto: any): void {
+    if (!sessionDto) return;
+
+    const mainQuestions = (sessionDto.questions || []).filter((q: any) => q.questionType === 'MAIN');
+
+    // 1. Question-Response Mapping Integrity
+    for (const q of sessionDto.questions || []) {
+      if (q.response) {
+        if (q.response.questionId && q.response.questionId !== q.id) {
+          throw new Error(`Data Inconsistency: Question ${q.id} has response mapped to questionId ${q.response.questionId}`);
+        }
+      }
+    }
+
+    if (sessionDto.evaluation) {
+      const evalScore = Math.round(sessionDto.evaluation.overallScore);
+      const sessionScore = sessionDto.overallScore !== null && sessionDto.overallScore !== undefined
+        ? Math.round(sessionDto.overallScore)
+        : null;
+
+      // 2. Official Score Single Source of Truth
+      if (sessionScore !== null && evalScore !== sessionScore) {
+        console.warn(`[Consistency] Evaluation overallScore (${evalScore}) differs from session overallScore (${sessionScore}). Harmonizing to authoritative score.`);
+        sessionDto.evaluation.overallScore = sessionScore;
+      }
+
+      // Check summary overallAssessment score matches
+      if (sessionDto.evaluation.summary?.overallAssessment) {
+        const summaryScore = Math.round(sessionDto.evaluation.summary.overallAssessment.officialScore);
+        if (summaryScore !== evalScore) {
+          console.warn(`[Consistency] Summary overallAssessment score (${summaryScore}) contradicts evaluation score (${evalScore}). Harmonizing.`);
+          sessionDto.evaluation.summary.overallAssessment.officialScore = evalScore;
+        }
+      }
+
+      // Check aiSummary doesn't display stale score (e.g. "40/100" vs 58)
+      if (sessionDto.evaluation.aiSummary) {
+        const match = sessionDto.evaluation.aiSummary.match(/\b(\d+)\s*\/\s*100\b/);
+        if (match && parseInt(match[1], 10) !== evalScore) {
+          console.warn(`[Consistency] aiSummary contains conflicting score ${match[1]}/100 vs official ${evalScore}/100. Harmonizing.`);
+          sessionDto.evaluation.aiSummary = sessionDto.evaluation.aiSummary.replace(/\b\d+\s*\/\s*100\b/g, `${evalScore}/100`);
+        }
+      }
+
+      // 3. STAR Count Consistency
+      if (sessionDto.evaluation.summary?.starAssessment) {
+        const star = sessionDto.evaluation.summary.starAssessment;
+        if (star.completeResponses > star.applicableResponses) {
+          console.warn(`[Consistency] STAR complete (${star.completeResponses}) exceeded applicable (${star.applicableResponses}). Clamping.`);
+          star.completeResponses = star.applicableResponses;
+        }
+        if (star.applicableResponses > mainQuestions.length) {
+          console.warn(`[Consistency] STAR applicable count (${star.applicableResponses}) exceeds main questions count (${mainQuestions.length}). Clamping.`);
+          star.applicableResponses = mainQuestions.length;
+          star.completeResponses = Math.min(star.completeResponses, star.applicableResponses);
+          if (typeof star.summary === 'string') {
+            star.summary = star.summary.replace(/\bof\s+\d+\s+behavioral\b/g, `of ${star.applicableResponses} behavioral`);
+          }
+        }
+      }
+
+      // 4. Speech Summary WPM & Question Count Consistency in Summary
+      if (sessionDto.evaluation.summary?.executiveSummary) {
+        let exec = sessionDto.evaluation.summary.executiveSummary;
+
+        // Ensure question count matches displayed main questions
+        exec = exec.replace(/\bcompleted\s+\d+\s+of\s+\d+\s+(?:scheduled|behavioral)\s+questions\b/gi, `completed ${mainQuestions.length} behavioral questions`);
+        exec = exec.replace(/\b\d+\s+of\s+\d+\s+scheduled\s+questions\b/gi, `${mainQuestions.length} behavioral questions`);
+        exec = exec.replace(/\b(\d+)\s+of\s+\d+\s+applicable\s+scenario\s+questions\b/gi, `$1 of ${mainQuestions.length} applicable scenario questions`);
+
+        // Ensure score matches authoritative score
+        exec = exec.replace(/\b\d+\s*\/\s*100\b/g, `${evalScore}/100`);
+
+        if (sessionDto.evaluation.speechSummary) {
+          const expectedWpm = sessionDto.evaluation.speechSummary.averageWpm !== null
+            ? Math.round(sessionDto.evaluation.speechSummary.averageWpm)
+            : null;
+          if (expectedWpm !== null) {
+            exec = exec.replace(/\b(\d+)\s*WPM\b/gi, (m: string, p1: string) => {
+              const parsed = parseInt(p1, 10);
+              if (parsed !== expectedWpm) {
+                console.warn(`[Consistency] Executive summary has discordant WPM ${parsed} vs expected ${expectedWpm}. Harmonizing.`);
+                return `${expectedWpm} WPM`;
+              }
+              return m;
+            });
+          }
+        }
+
+        sessionDto.evaluation.summary.executiveSummary = exec;
+      }
+    }
   }
 }

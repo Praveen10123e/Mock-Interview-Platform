@@ -16,7 +16,12 @@ try {
 export const authPlaceholder = (req: Request, res: Response, next: NextFunction) => {
   const authHeader = req.headers.authorization;
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    if (req.path.includes('/auth/login') || req.path.includes('/health') || req.path.includes('/auth/register')) {
+    if (
+      req.path.includes('/auth/login') ||
+      req.path.includes('/health') ||
+      req.path.includes('/auth/register') ||
+      req.path.includes('/auth/forgot-password')
+    ) {
       return next();
     }
     return res.status(HTTP_STATUS.UNAUTHORIZED).json(BaseResponse.error('UNAUTHORIZED', ERROR_MESSAGES.UNAUTHORIZED));

@@ -30,4 +30,32 @@ export class TokenRepository {
       data: { isRevoked: true },
     });
   }
+
+  async createPasswordResetToken(identityId: string, tokenHash: string, expiresAt: Date) {
+    return prisma.passwordResetToken.create({
+      data: {
+        identityId,
+        tokenHash,
+        expiresAt,
+      },
+    });
+  }
+
+  async findPasswordResetToken(identityId: string, tokenHash: string) {
+    return prisma.passwordResetToken.findFirst({
+      where: { identityId, tokenHash },
+    });
+  }
+
+  async deletePasswordResetTokensForIdentity(identityId: string) {
+    return prisma.passwordResetToken.deleteMany({
+      where: { identityId },
+    });
+  }
+
+  async deletePasswordResetTokenById(id: string) {
+    return prisma.passwordResetToken.delete({
+      where: { id },
+    });
+  }
 }

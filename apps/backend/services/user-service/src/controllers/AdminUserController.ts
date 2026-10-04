@@ -174,4 +174,57 @@ export class AdminUserController extends BaseController {
       next(error);
     }
   };
+
+  /**
+   * POST /api/v1/users/admin/users
+   * Create Student or Faculty account from Admin Panel
+   */
+  public createUser = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<any> => {
+    try {
+      this.checkAdminAuth(req);
+      const actorIdentityId = req.headers['x-identity-id'] as string;
+      if (!actorIdentityId) {
+        return this.forbidden(res, 'Authentication required');
+      }
+
+      const result = await this.adminUserService.createUser(actorIdentityId, req.body);
+      return (this as any).sendCreated(res, result, result.message);
+    } catch (error: any) {
+      if (error?.statusCode === 403 || error?.code === 'FORBIDDEN') {
+        return this.forbidden(res, error.message);
+      }
+      next(error);
+    }
+  };
+
+  /**
+   * POST /api/v1/users/admin/users/:id/reset-password
+   */
+  public resetPassword = async (
+    req: Request,
+    res: Response,
+    next: NextFunction
+  ): Promise<any> => {
+    try {
+      this.checkAdminAuth(req);
+      const { id } = req.params;
+      const { password } = req.body;
+      const actorIdentityId = req.headers['x-identity-id'] as string;
+      if (!actorIdentityId || !id) {
+        return this.forbidden(res, 'Authentication required');
+      }
+
+      const result = await this.adminUserService.resetUserPassword(actorIdentityId, String(id), password);
+      return (this as any).sendSuccess(res, result, result.message);
+    } catch (error: any) {
+      if (error?.statusCode === 403 || error?.code === 'FORBIDDEN') {
+        return this.forbidden(res, error.message);
+      }
+      next(error);
+    }
+  };
 }

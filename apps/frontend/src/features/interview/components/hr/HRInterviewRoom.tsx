@@ -360,6 +360,19 @@ export const HRInterviewRoom: React.FC<HRInterviewRoomProps> = ({
       } else if (result.nextMainQuestion) {
         setShowFollowUp(false);
         setFollowUpQuestion(null);
+        setAllQuestions((prev) =>
+          prev.map((q) =>
+            q.id === result.nextMainQuestion.id
+              ? {
+                  ...q,
+                  question: result.nextMainQuestion.question,
+                  category: result.nextMainQuestion.category,
+                  difficulty: result.nextMainQuestion.difficulty,
+                  competency: result.nextMainQuestion.competency,
+                }
+              : q
+          )
+        );
         const nextIdx = allQuestions.findIndex((q) => q.id === result.nextMainQuestion.id);
         if (nextIdx >= 0) {
           setCurrentIdx(nextIdx);

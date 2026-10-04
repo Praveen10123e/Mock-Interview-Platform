@@ -1732,7 +1732,6 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                   const attFailedTests = curAtt.testResults
                     ? curAtt.testResults.filter((t: any) => !t.passed)
                     : (p.failedTests || []);
-                  const comp = p.complexityAnalysis;
 
                   return (
                     <Card key={p.questionId || idx} className="p-6 bg-white border border-slate-200 rounded-2xl shadow-sm space-y-6">
@@ -1966,369 +1965,343 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
                           </div>
                         )}
 
-                        {/* FAILED ATTEMPT VIEW */}
-                        {!isCurAttAccepted && (
-                          <div className="space-y-6">
-                            {/* Failed Test Cases Breakdown */}
-                            {attFailedTests.length > 0 && (
-                              <div className="space-y-4 pt-1">
-                                <div className="flex items-center justify-between pb-1 border-b border-slate-200">
-                                  <div className="flex items-center gap-2 text-rose-700 font-bold text-sm uppercase tracking-wide">
-                                    <AlertCircle className="h-4 w-4 text-rose-600" />
-                                    <span>Failed Test Cases Breakdown ({attFailedTests.length} Failed)</span>
-                                  </div>
-                                  <span className="text-[11px] font-mono text-slate-500">
-                                    Authoritative Sandbox Execution Facts
-                                  </span>
-                                </div>
-
-                                <div className="space-y-4">
-                                  {attFailedTests.map((ft: any, fIdx: number) => {
-                                    const category = ft.failureCategory || 'LOGICAL_ERROR';
-                                    const catLabel = category.replace(/_/g, ' ');
-
-                                    return (
-                                      <div
-                                        key={fIdx}
-                                        className="p-5 rounded-xl border border-rose-200 bg-rose-50/30 space-y-4 text-xs font-sans shadow-2xs"
-                                      >
-                                        <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-rose-100">
-                                          <div className="flex items-center gap-2">
-                                            <span className="px-2.5 py-0.5 rounded-md font-mono font-bold bg-rose-100 text-rose-800 border border-rose-200 text-[11px]">
-                                              Test Case #{ft.testCaseNumber || fIdx + 1}
-                                            </span>
-                                            <span className="px-2.5 py-0.5 rounded-full font-mono font-bold text-[10px] bg-rose-100 text-rose-700 border border-rose-200 uppercase">
-                                              FAILED
-                                            </span>
-                                            <span className="px-2.5 py-0.5 rounded-full font-mono font-bold text-[10px] bg-purple-50 text-purple-700 border border-purple-200 uppercase">
-                                              {catLabel}
-                                            </span>
-                                          </div>
-                                          {ft.lineLocation && (
-                                            <span className="text-[11px] font-mono text-slate-500">
-                                              Location: <strong className="text-slate-700">{ft.lineLocation}</strong>
-                                            </span>
-                                          )}
-                                        </div>
-
-                                        {/* Input, Expected vs Actual Output Side-by-Side */}
-                                        <div className="grid grid-cols-1 md:grid-cols-3 gap-3 font-mono text-xs">
-                                          <div className="p-3 rounded-lg bg-white border border-slate-200 space-y-1">
-                                            <div className="text-[10px] uppercase font-bold text-slate-500">Test Input</div>
-                                            <pre className="text-slate-800 whitespace-pre-wrap break-all text-[11px]">
-                                              {ft.input || 'Standard test input'}
-                                            </pre>
-                                          </div>
-
-                                          <div className="p-3 rounded-lg bg-emerald-50/70 border border-emerald-200 space-y-1">
-                                            <div className="text-[10px] uppercase font-bold text-emerald-800">Expected Output</div>
-                                            <pre className="text-emerald-950 font-bold whitespace-pre-wrap break-all text-[11px]">
-                                              {ft.expectedOutput || 'N/A'}
-                                            </pre>
-                                          </div>
-
-                                          <div className="p-3 rounded-lg bg-rose-50/70 border border-rose-200 space-y-1">
-                                            <div className="text-[10px] uppercase font-bold text-rose-800">Your Output</div>
-                                            <pre className="text-rose-950 font-bold whitespace-pre-wrap break-all text-[11px]">
-                                              {ft.actualOutput || 'Wrong answer'}
-                                            </pre>
-                                          </div>
-                                        </div>
-
-                                        {/* Why It Fails */}
-                                        {(ft.whyItFails || ft.explanation) && (
-                                          <div className="p-3.5 rounded-lg bg-white border border-slate-200 space-y-1">
-                                            <div className="text-[10px] uppercase font-bold text-rose-700 tracking-wider">
-                                              Why It Fails (Root Cause)
-                                            </div>
-                                            <p className="text-slate-800 leading-relaxed">
-                                              {ft.whyItFails || ft.explanation}
-                                            </p>
-                                          </div>
-                                        )}
-
-                                        {/* Problematic Logic */}
-                                        {ft.problematicLogic && (
-                                          <div className="space-y-1">
-                                            <div className="text-[10px] uppercase font-bold text-slate-600 tracking-wider">
-                                              Problematic Logic in Your Code ({ft.lineLocation || 'Main block'})
-                                            </div>
-                                            <pre className="p-3 rounded-lg bg-slate-900 text-slate-100 font-mono text-[11px] overflow-x-auto whitespace-pre">
-                                              {ft.problematicLogic}
-                                            </pre>
-                                          </div>
-                                        )}
-
-                                        {/* How to Fix */}
-                                        {ft.howToFix && (
-                                          <div className="p-3.5 rounded-lg bg-emerald-50/60 border border-emerald-200 space-y-1">
-                                            <div className="text-[10px] uppercase font-bold text-emerald-800 tracking-wider flex items-center gap-1.5">
-                                              <CheckCircle2 className="h-3.5 w-3.5 text-emerald-600" /> How to Fix
-                                            </div>
-                                            <p className="text-slate-800 leading-relaxed">
-                                              {ft.howToFix}
-                                            </p>
-                                          </div>
-                                        )}
+                        {/* FAILED TEST CASES â€” always visible when tests failed */}
+                        {!isCurAttAccepted && attFailedTests.length > 0 && (
+                          <div className="space-y-4 pt-1">
+                            <div className="flex items-center justify-between pb-1 border-b border-slate-200">
+                              <div className="flex items-center gap-2 text-rose-700 font-bold text-sm uppercase tracking-wide">
+                                <AlertCircle className="h-4 w-4 text-rose-600" />
+                                <span>Failed Test Cases ({attFailedTests.length} Failed)</span>
+                              </div>
+                              <span className="text-[11px] font-mono text-slate-500">Authoritative Sandbox Execution Facts</span>
+                            </div>
+                            <div className="space-y-4">
+                              {attFailedTests.map((ft: any, fIdx: number) => {
+                                const category = ft.failureCategory || 'LOGICAL_ERROR';
+                                const catLabel = category.replace(/_/g, ' ');
+                                return (
+                                  <div key={fIdx} className="p-5 rounded-xl border border-rose-200 bg-rose-50/30 space-y-4 text-xs font-sans shadow-2xs">
+                                    <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-rose-100">
+                                      <div className="flex items-center gap-2">
+                                        <span className="px-2.5 py-0.5 rounded-md font-mono font-bold bg-rose-100 text-rose-800 border border-rose-200 text-[11px]">Test Case #{ft.testCaseNumber || fIdx + 1}</span>
+                                        <span className="px-2.5 py-0.5 rounded-full font-mono font-bold text-[10px] bg-rose-100 text-rose-700 border border-rose-200 uppercase">FAILED</span>
+                                        <span className="px-2.5 py-0.5 rounded-full font-mono font-bold text-[10px] bg-purple-50 text-purple-700 border border-purple-200 uppercase">{catLabel}</span>
                                       </div>
-                                    );
-                                  })}
+                                      {ft.lineLocation && (
+                                        <span className="text-[11px] font-mono text-slate-500">Location: <strong className="text-slate-700">{ft.lineLocation}</strong></span>
+                                      )}
+                                    </div>
+                                    <div className="grid grid-cols-1 md:grid-cols-3 gap-3 font-mono text-xs">
+                                      <div className="p-3 rounded-lg bg-white border border-slate-200 space-y-1">
+                                        <div className="text-[10px] uppercase font-bold text-slate-500">Test Input</div>
+                                        <pre className="text-slate-800 whitespace-pre-wrap break-all text-[11px]">{ft.input || 'Standard test input'}</pre>
+                                      </div>
+                                      <div className="p-3 rounded-lg bg-emerald-50/70 border border-emerald-200 space-y-1">
+                                        <div className="text-[10px] uppercase font-bold text-emerald-800">Expected Output</div>
+                                        <pre className="text-emerald-950 font-bold whitespace-pre-wrap break-all text-[11px]">{ft.expectedOutput || 'N/A'}</pre>
+                                      </div>
+                                      <div className="p-3 rounded-lg bg-rose-50/70 border border-rose-200 space-y-1">
+                                        <div className="text-[10px] uppercase font-bold text-rose-800">Your Output</div>
+                                        <pre className="text-rose-950 font-bold whitespace-pre-wrap break-all text-[11px]">{ft.actualOutput || 'Wrong answer'}</pre>
+                                      </div>
+                                    </div>
+                                    {(ft.whyItFails || ft.explanation) && (
+                                      <div className="p-3.5 rounded-lg bg-white border border-slate-200 space-y-1">
+                                        <div className="text-[10px] uppercase font-bold text-rose-700 tracking-wider">Why It Fails (Root Cause)</div>
+                                        <p className="text-slate-800 leading-relaxed">{ft.whyItFails || ft.explanation}</p>
+                                      </div>
+                                    )}
+                                  </div>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•
+                            AI CODING TUTOR PANEL
+                            Renders for EVERY attempt (accepted + incorrect).
+                            All data sourced from attAi (CodingAttemptAIAnalysis).
+                        â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â•â• */}
+                        {attAi && attAi.status === 'UNAVAILABLE' ? (
+                          <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 space-y-3">
+                            <div className="flex items-center gap-2">
+                              <Sparkles className="h-4 w-4 text-slate-500" />
+                              <span className="font-bold text-slate-800 uppercase tracking-wider text-xs">AI CODING ANALYSIS</span>
+                              <span className="px-2 py-0.5 rounded text-[10px] font-mono bg-slate-200 text-slate-700 font-semibold">UNAVAILABLE</span>
+                            </div>
+                            <p className="text-xs text-slate-700">
+                              AI analysis is currently unavailable for this submission. Your judge result and submission evidence are still available above.
+                            </p>
+                          </div>
+                        ) : attAi ? (
+                          <div className="space-y-5">
+
+                            {/* ── Header ────────────────────────────────────── */}
+                            <div className="flex items-center justify-between flex-wrap gap-2 pb-3 border-b border-slate-200">
+                              <div className="flex items-center gap-2">
+                                <Sparkles className="h-4 w-4 text-indigo-600" />
+                                <span className="font-bold text-slate-900 uppercase tracking-wider text-sm">AI Coding Analysis</span>
+                                <span className={`px-2.5 py-0.5 rounded-full font-mono font-bold text-[10px] border ${
+                                  (attAi.submissionStatus || (isCurAttAccepted ? 'ACCEPTED' : 'INCORRECT')) === 'ACCEPTED'
+                                    ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                    : 'bg-rose-100 text-rose-800 border-rose-200'
+                                }`}>
+                                  {(attAi.submissionStatus || (isCurAttAccepted ? 'ACCEPTED' : 'INCORRECT')) === 'ACCEPTED' ? '✓ ACCEPTED' : '✗ NEEDS CORRECTION'}
+                                </span>
+                              </div>
+                              <span className="text-[10px] font-mono text-slate-400">{attAi.analysisVersion || 'coding-tutor-v1'} · {attAi.model?.split('/').pop() || 'AI'}</span>
+                            </div>
+
+                            {/* â”€â”€ YOUR SUBMISSION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+                            <div className={`p-4 rounded-xl border space-y-3 ${
+                              isCurAttAccepted
+                                ? 'bg-emerald-50 border-emerald-200'
+                                : 'bg-rose-50/50 border-rose-200'
+                            }`}>
+                              <div className={`flex items-center gap-2 font-bold text-sm ${isCurAttAccepted ? 'text-emerald-800' : 'text-rose-800'}`}>
+                                {isCurAttAccepted
+                                  ? <CheckCircle2 className="h-4 w-4 text-emerald-600" />
+                                  : <AlertCircle className="h-4 w-4 text-rose-600" />
+                                }
+                                <span>
+                                  {attAi.submissionAnalysis?.verdict || (
+                                    isCurAttAccepted
+                                      ? `Accepted â€” ${curAtt.passedCount}/${curAtt.totalTests} tests passed`
+                                      : `Incorrect â€” ${curAtt.passedCount}/${curAtt.totalTests} tests passed`
+                                  )}
+                                </span>
+                              </div>
+                              {attAi.submissionAnalysis?.explanation && (
+                                <p className="text-xs text-slate-700 leading-relaxed">{attAi.submissionAnalysis.explanation}</p>
+                              )}
+                            </div>
+
+                            {/* â”€â”€ YOUR CODE EXPLANATION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+                            {attAi.submissionAnalysis?.codeExplanation && (
+                              <div className="p-4 rounded-xl bg-white border border-slate-200 space-y-2.5">
+                                <div className="text-[11px] uppercase font-bold text-indigo-900 tracking-wider flex items-center gap-1.5">
+                                  <Brain className="h-3.5 w-3.5 text-indigo-600" /> Your Code Explanation
+                                </div>
+                                <div className="space-y-1.5 text-xs text-slate-800">
+                                  {attAi.submissionAnalysis.candidateApproach && (
+                                    <div className="font-semibold text-indigo-800 text-[11px] uppercase tracking-wide">
+                                      Approach: {attAi.submissionAnalysis.candidateApproach}
+                                    </div>
+                                  )}
+                                  <p className="leading-relaxed">{attAi.submissionAnalysis.codeExplanation}</p>
+                                </div>
+                                <div className="flex items-center gap-4 pt-1.5 border-t border-slate-100 font-mono text-[11px] text-slate-600">
+                                  <span>Your Time: <strong className="text-indigo-700">{attAi.submissionAnalysis.timeComplexity || (attAi as any).complexity?.time || 'O(n)'}</strong></span>
+                                  <span>Your Space: <strong className="text-indigo-700">{attAi.submissionAnalysis.spaceComplexity || (attAi as any).complexity?.space || 'O(1)'}</strong></span>
                                 </div>
                               </div>
                             )}
 
-                            {/* AI CORRECTED CODE CARD */}
-                            {attAi ? (
-                              <div className="p-5 rounded-xl border-2 border-purple-300 bg-purple-50/40 space-y-4 text-xs font-sans shadow-sm">
+                            {/* â”€â”€ BRUTE FORCE APPROACH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+                            {attAi.bruteForce && (
+                              <div className="p-4 rounded-xl bg-amber-50/60 border border-amber-200 space-y-3">
+                                <div className="text-[11px] uppercase font-bold text-amber-900 tracking-wider flex items-center gap-1.5">
+                                  <Layers className="h-3.5 w-3.5 text-amber-700" /> Brute Force Approach
+                                </div>
+                                {attAi.bruteForce.available === false ? (
+                                  <p className="text-xs text-slate-500 italic">{attAi.bruteForce.idea || 'Brute-force explanation unavailable.'}</p>
+                                ) : (
+                                  <div className="space-y-3">
+                                    {attAi.bruteForce.idea && (
+                                      <p className="text-xs text-slate-800 leading-relaxed"><strong>Idea:</strong> {attAi.bruteForce.idea}</p>
+                                    )}
+                                    {attAi.bruteForce.steps && attAi.bruteForce.steps.length > 0 && (
+                                      <ol className="space-y-1 pl-1">
+                                        {attAi.bruteForce.steps.map((step: string, sIdx: number) => (
+                                          <li key={sIdx} className="flex items-start gap-2 text-xs text-slate-800">
+                                            <span className="font-bold text-amber-700 shrink-0">{sIdx + 1}.</span>
+                                            <span>{step}</span>
+                                          </li>
+                                        ))}
+                                      </ol>
+                                    )}
+                                    {attAi.bruteForce.code && (
+                                      <div className="space-y-1.5">
+                                        <div className="flex items-center justify-between text-[10px] font-bold text-amber-900 uppercase">
+                                          <span>Brute Force Code ({curAtt.language || 'Python'})</span>
+                                          <button
+                                            onClick={() => { navigator.clipboard.writeText(attAi.bruteForce.code); setCopiedCorrectedIdx(-(curAtt.attemptNumber + 100)); setTimeout(() => setCopiedCorrectedIdx(null), 2000); }}
+                                            className="flex items-center gap-1 px-2 py-0.5 rounded bg-amber-100 hover:bg-amber-200 text-amber-800 transition-colors cursor-pointer font-mono font-semibold"
+                                          >
+                                            {copiedCorrectedIdx === -(curAtt.attemptNumber + 100) ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+                                            <span>{copiedCorrectedIdx === -(curAtt.attemptNumber + 100) ? 'Copied!' : 'Copy'}</span>
+                                          </button>
+                                        </div>
+                                        <pre className="p-3 rounded-lg bg-slate-900 text-amber-100 font-mono text-xs overflow-x-auto leading-relaxed border border-amber-950/30">{attAi.bruteForce.code}</pre>
+                                      </div>
+                                    )}
+                                    <div className="flex items-center gap-4 font-mono text-[11px] text-slate-600 pt-1 border-t border-amber-200">
+                                      <span>Time: <strong className="text-amber-800">{attAi.bruteForce.timeComplexity || 'O(nÂ²)'}</strong></span>
+                                      <span>Space: <strong className="text-amber-800">{attAi.bruteForce.spaceComplexity || 'O(1)'}</strong></span>
+                                    </div>
+                                  </div>
+                                )}
+                              </div>
+                            )}
+
+                            {/* â”€â”€ OPTIMAL APPROACH â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+                            {attAi.optimalApproach && (
+                              <div className="p-4 rounded-xl bg-emerald-50/60 border border-emerald-200 space-y-3">
+                                <div className="text-[11px] uppercase font-bold text-emerald-900 tracking-wider flex items-center gap-1.5">
+                                  <TrendingUp className="h-3.5 w-3.5 text-emerald-700" /> Optimal Approach
+                                </div>
+                                <div className="space-y-3">
+                                  {attAi.optimalApproach.idea && (
+                                    <p className="text-xs text-slate-800 leading-relaxed"><strong>Idea:</strong> {attAi.optimalApproach.idea}</p>
+                                  )}
+                                  {attAi.optimalApproach.steps && attAi.optimalApproach.steps.length > 0 && (
+                                    <ol className="space-y-1 pl-1">
+                                      {attAi.optimalApproach.steps.map((step: string, sIdx: number) => (
+                                        <li key={sIdx} className="flex items-start gap-2 text-xs text-slate-800">
+                                          <span className="font-bold text-emerald-700 shrink-0">{sIdx + 1}.</span>
+                                          <span>{step}</span>
+                                        </li>
+                                      ))}
+                                    </ol>
+                                  )}
+                                  {attAi.optimalApproach.code && (
+                                    <div className="space-y-1.5">
+                                      <div className="flex items-center justify-between text-[10px] font-bold text-emerald-900 uppercase">
+                                        <span>Optimal Code ({curAtt.language || 'Python'})</span>
+                                        <button
+                                          onClick={() => { navigator.clipboard.writeText(attAi.optimalApproach.code); setCopiedOptimizedIdx(curAtt.attemptNumber); setTimeout(() => setCopiedOptimizedIdx(null), 2000); }}
+                                          className="flex items-center gap-1 px-2 py-0.5 rounded bg-emerald-100 hover:bg-emerald-200 text-emerald-800 transition-colors cursor-pointer font-mono font-semibold"
+                                        >
+                                          {copiedOptimizedIdx === curAtt.attemptNumber ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
+                                          <span>{copiedOptimizedIdx === curAtt.attemptNumber ? 'Copied!' : 'Copy'}</span>
+                                        </button>
+                                      </div>
+                                      <pre className="p-3 rounded-lg bg-slate-900 text-emerald-100 font-mono text-xs overflow-x-auto leading-relaxed border border-emerald-950/30">{attAi.optimalApproach.code}</pre>
+                                    </div>
+                                  )}
+                                  <div className="flex items-center gap-4 font-mono text-[11px] text-slate-600 pt-1 border-t border-emerald-200">
+                                    <span>Time: <strong className="text-emerald-800">{attAi.optimalApproach.timeComplexity || 'O(n)'}</strong></span>
+                                    <span>Space: <strong className="text-emerald-800">{attAi.optimalApproach.spaceComplexity || 'O(n)'}</strong></span>
+                                  </div>
+                                  {attAi.optimalApproach.whyOptimal && (
+                                    <div className="p-3 rounded-lg bg-white border border-emerald-200 text-xs text-slate-700 leading-relaxed">
+                                      <strong className="text-emerald-900">Why This Is Better:</strong> {attAi.optimalApproach.whyOptimal}
+                                    </div>
+                                  )}
+                                </div>
+                              </div>
+                            )}
+
+                            {/* â”€â”€ OPTIMIZATION REVIEW â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+                            {attAi.optimizationReview && (
+                              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 space-y-2">
+                                <div className="text-[11px] uppercase font-bold text-slate-700 tracking-wider flex items-center gap-1.5">
+                                  <TrendingUp className="h-3.5 w-3.5 text-slate-500" /> Optimization Review
+                                  <span className={`ml-1 px-2 py-0.5 rounded-full font-mono font-bold text-[10px] border ${
+                                    attAi.optimizationReview.status === 'OPTIMAL'
+                                      ? 'bg-emerald-100 text-emerald-800 border-emerald-200'
+                                      : 'bg-amber-100 text-amber-800 border-amber-200'
+                                  }`}>
+                                    {attAi.optimizationReview.status === 'OPTIMAL' ? 'âœ“ OPTIMAL' : 'âš¡ CAN BE OPTIMIZED'}
+                                  </span>
+                                </div>
+                                <p className="text-xs text-slate-700 leading-relaxed">{attAi.optimizationReview.explanation}</p>
+                              </div>
+                            )}
+
+                            {/* â”€â”€ CORRECTED CODE â€” only when submission is incorrect â”€â”€ */}
+                            {attAi.correction?.required && (
+                              <div className="p-4 rounded-xl border-2 border-purple-300 bg-purple-50/40 space-y-4">
                                 <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-purple-200">
                                   <div className="flex items-center gap-2">
                                     <Sparkles className="h-4 w-4 text-purple-600" />
-                                    <span className="font-bold text-purple-950 uppercase tracking-wider text-sm">
-                                      AI Corrected Code
-                                    </span>
-                                    <span className="px-2.5 py-0.5 rounded-full font-mono font-bold text-[10px] bg-purple-100 text-purple-800 border border-purple-200">
-                                      Suggested Correction
-                                    </span>
+                                    <span className="font-bold text-purple-950 uppercase tracking-wider text-sm">Corrected Implementation</span>
+                                    <span className="px-2.5 py-0.5 rounded-full font-mono font-bold text-[10px] bg-purple-100 text-purple-800 border border-purple-200">AI Generated</span>
                                   </div>
-                                  <span className="text-[10px] font-mono text-purple-700 font-semibold">
-                                    Version 2.0.0
-                                  </span>
                                 </div>
 
-                                {/* What Went Wrong / Why It Failed */}
-                                <div className="space-y-1">
-                                  <div className="text-[10px] uppercase font-bold text-purple-900 tracking-wider">
-                                    Root Cause & Explanation
+                                {attAi.correction.rootCause && (
+                                  <div className="space-y-1">
+                                    <div className="text-[10px] uppercase font-bold text-purple-900 tracking-wider">Root Cause</div>
+                                    <p className="text-xs text-slate-800 leading-relaxed">{attAi.correction.rootCause}</p>
                                   </div>
-                                  <p className="text-slate-800 leading-relaxed pl-0.5">
-                                    {attAi.whyItFailed || attAi.whatWentWrong || 'The submission failed to satisfy constraint boundaries or expected logic.'}
-                                  </p>
-                                </div>
+                                )}
 
-                                {/* Corrected Code Container */}
-                                {attAi.correctedCode && (
+                                {attAi.correction.correctedCode ? (
                                   <div className="space-y-2">
                                     <div className="flex items-center justify-between text-[11px] font-bold text-purple-900 uppercase">
                                       <span>Corrected Implementation ({curAtt.language || 'Python'})</span>
                                       <button
-                                        onClick={() => {
-                                          navigator.clipboard.writeText(attAi.correctedCode);
-                                          setCopiedCorrectedIdx(curAtt.attemptNumber);
-                                          setTimeout(() => setCopiedCorrectedIdx(null), 2000);
-                                        }}
+                                        onClick={() => { navigator.clipboard.writeText(attAi.correction.correctedCode); setCopiedCorrectedIdx(curAtt.attemptNumber); setTimeout(() => setCopiedCorrectedIdx(null), 2000); }}
                                         className="flex items-center gap-1 px-2.5 py-1 rounded bg-purple-100 hover:bg-purple-200 text-purple-800 transition-colors cursor-pointer text-[10px] font-mono font-semibold"
                                       >
                                         {copiedCorrectedIdx === curAtt.attemptNumber ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
                                         <span>{copiedCorrectedIdx === curAtt.attemptNumber ? 'Copied!' : 'Copy Corrected Code'}</span>
                                       </button>
                                     </div>
-                                    <pre className="p-4 rounded-xl bg-slate-900 text-purple-100 font-mono text-xs overflow-x-auto leading-relaxed border border-purple-950/40">
-                                      {attAi.correctedCode}
-                                    </pre>
+                                    <pre className="p-4 rounded-xl bg-slate-900 text-purple-100 font-mono text-xs overflow-x-auto leading-relaxed border border-purple-950/40">{attAi.correction.correctedCode}</pre>
+
+                                    {attAi.correction.explanation && (
+                                      <div className="p-3 rounded-lg bg-white border border-purple-200 text-xs text-slate-700 leading-relaxed">
+                                        <strong className="text-purple-900">Why This Fix Works:</strong> {attAi.correction.explanation}
+                                      </div>
+                                    )}
+
+                                    {/* Verification status badge */}
+                                    {attAi.correction.verificationStatus === 'VERIFIED' ? (
+                                      <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-900 flex items-start gap-2">
+                                        <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                                        <span><strong>Verified:</strong> This correction has been confirmed against the authoritative test suite.</span>
+                                      </div>
+                                    ) : (
+                                      <div className="p-3 rounded-lg bg-amber-50/80 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-2">
+                                        <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                                        <span><strong>Unverified:</strong> This AI-generated correction has not been executed against the test suite. Review before use.</span>
+                                      </div>
+                                    )}
+                                  </div>
+                                ) : (
+                                  <div className="p-3 rounded-lg bg-slate-50 border border-slate-200 text-[11px] text-slate-500 italic">
+                                    AI correction unavailable for this submission. The candidate code and failure evidence are preserved above.
                                   </div>
                                 )}
-
-                                {/* How to Fix Action Steps */}
-                                {attAi.howToFix && Array.isArray(attAi.howToFix) && attAi.howToFix.length > 0 && (
-                                  <div className="p-3.5 rounded-lg bg-white border border-purple-200 space-y-1.5">
-                                    <div className="text-[10px] uppercase font-bold text-purple-900 tracking-wider">
-                                      Correction Steps
-                                    </div>
-                                    <ol className="space-y-1 pl-1">
-                                      {attAi.howToFix.map((step: string, sIdx: number) => (
-                                        <li key={sIdx} className="flex items-start gap-2 text-slate-800">
-                                          <span className="font-bold text-purple-600 shrink-0">{sIdx + 1}.</span>
-                                          <span>{step}</span>
-                                        </li>
-                                      ))}
-                                    </ol>
-                                  </div>
-                                )}
-
-                                {/* Concept & Bug Prevention */}
-                                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 pt-1">
-                                  <div className="p-3 rounded-lg bg-white border border-purple-200 space-y-1">
-                                    <div className="text-[10px] uppercase font-bold text-purple-900">Key Concept</div>
-                                    <p className="text-slate-700">{attAi.concept || 'Algorithmic Invariants & Edge Handling'}</p>
-                                  </div>
-                                  <div className="p-3 rounded-lg bg-white border border-purple-200 space-y-1">
-                                    <div className="text-[10px] uppercase font-bold text-purple-900">Bug Prevention</div>
-                                    <p className="text-slate-700">{attAi.prevention || 'Validate boundary test inputs before nested loops.'}</p>
-                                  </div>
-                                </div>
-
-                                {/* Mandatory Safety Disclaimer */}
-                                <div className="p-3 rounded-lg bg-amber-50/80 border border-amber-200 text-[11px] text-amber-900 flex items-start gap-2">
-                                  <AlertCircle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
-                                  <span>
-                                    <strong>Disclaimer:</strong> This change is expected to address the observed failure, but it has not been verified against the test suite.
-                                  </span>
-                                </div>
                               </div>
-                            ) : (
-                              <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-500 italic">
-                                AI analysis is currently unavailable for this submission.
+                            )}
+
+                            {/* â”€â”€ No correction needed (accepted) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+                            {!attAi.correction?.required && isCurAttAccepted && (
+                              <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-[11px] text-emerald-800 flex items-center gap-2">
+                                <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                                <span>âœ“ No correction required â€” your submission is already correct.</span>
+                              </div>
+                            )}
+
+                            {/* â”€â”€ KEY CONCEPT + BUG PREVENTION â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€ */}
+                            {(attAi.keyConcept || attAi.bugPrevention) && (
+                              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                {attAi.keyConcept && (
+                                  <div className="p-3.5 rounded-xl bg-indigo-50/60 border border-indigo-200 space-y-1">
+                                    <div className="text-[10px] uppercase font-bold text-indigo-900 tracking-wider flex items-center gap-1.5">
+                                      <Brain className="h-3.5 w-3.5 text-indigo-600" /> Key Concept
+                                    </div>
+                                    <p className="text-xs text-slate-700 leading-relaxed">{attAi.keyConcept}</p>
+                                  </div>
+                                )}
+                                {attAi.bugPrevention && (
+                                  <div className="p-3.5 rounded-xl bg-amber-50/60 border border-amber-200 space-y-1">
+                                    <div className="text-[10px] uppercase font-bold text-amber-900 tracking-wider flex items-center gap-1.5">
+                                      <AlertCircle className="h-3.5 w-3.5 text-amber-600" /> Bug Prevention
+                                    </div>
+                                    <p className="text-xs text-slate-700 leading-relaxed">{attAi.bugPrevention}</p>
+                                  </div>
+                                )}
                               </div>
                             )}
                           </div>
-                        )}
-
-                        {/* ACCEPTED ATTEMPT VIEW */}
-                        {isCurAttAccepted && (
-                          <div className="space-y-6">
-                            {/* Accepted Banner */}
-                            <div className="p-5 rounded-xl bg-emerald-50 border border-emerald-200 space-y-3">
-                              <div className="flex items-center gap-2 text-emerald-800 font-bold text-sm uppercase tracking-wide">
-                                <CheckCircle2 className="h-5 w-5 text-emerald-600" />
-                                <span>Accepted — All {curAtt.totalTests} Test Cases Passed Successfully</span>
-                              </div>
-
-                              <div className="space-y-2 text-xs text-slate-800 pl-1">
-                                <div>
-                                  <strong className="text-emerald-900">Why It Works:</strong> {attAi?.whyItWorks || 'Code correctly maintains invariants across all tested cases and meets runtime constraints.'}
-                                </div>
-                                {attAi?.algorithmApproach && (
-                                  <div>
-                                    <strong className="text-emerald-900">Algorithm:</strong> {attAi.algorithmApproach}
-                                  </div>
-                                )}
-                                {attAi?.keyInvariants && attAi.keyInvariants.length > 0 && (
-                                  <div>
-                                    <strong className="text-emerald-900">Key Invariants:</strong> {attAi.keyInvariants.join(', ')}
-                                  </div>
-                                )}
-                                <div className="pt-1 text-[11px] font-mono text-slate-600">
-                                  Estimated Complexity (Source: AI): Time: <strong>{attAi?.complexity?.time || p.candidateTimeComplexity || 'O(n)'}</strong> | Space: <strong>{attAi?.complexity?.space || p.candidateSpaceComplexity || 'O(1)'}</strong>
-                                </div>
-                              </div>
-                            </div>
-
-                            {/* AI OPTIMIZED CODE CARD */}
-                            <div className="p-5 rounded-xl border-2 border-emerald-300 bg-emerald-50/40 space-y-4 text-xs font-sans shadow-sm">
-                              <div className="flex items-center justify-between flex-wrap gap-2 pb-2 border-b border-emerald-200">
-                                <div className="flex items-center gap-2">
-                                  <TrendingUp className="h-4 w-4 text-emerald-600" />
-                                  <span className="font-bold text-emerald-950 uppercase tracking-wider text-sm">
-                                    AI Optimization Review
-                                  </span>
-                                  <span className="px-2.5 py-0.5 rounded-full font-mono font-bold text-[10px] bg-emerald-100 text-emerald-800 border border-emerald-200">
-                                    Asymptotic Review
-                                  </span>
-                                </div>
-                                <span className="text-[10px] font-mono text-emerald-700 font-semibold">
-                                  Version 2.0.0
-                                </span>
-                              </div>
-
-                              {attAi?.optimization?.isAlreadyOptimal || comp?.isOptimal ? (
-                                <div className="p-4 rounded-lg bg-white border border-emerald-200 space-y-2 text-slate-800">
-                                  <div className="font-bold text-emerald-800 flex items-center gap-1.5">
-                                    <CheckCircle2 className="h-4 w-4 text-emerald-600" />
-                                    No meaningful better asymptotic approach was identified.
-                                  </div>
-                                  <p className="text-xs text-slate-600 leading-relaxed">
-                                    {attAi?.optimization?.whyBetter || 'Your solution already operates at the theoretical optimal time and space complexity for this problem pattern.'}
-                                  </p>
-                                </div>
-                              ) : (
-                                <div className="space-y-3">
-                                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-mono text-xs">
-                                    <div className="p-3 rounded-lg bg-white border border-emerald-200 space-y-1">
-                                      <span className="text-[10px] text-slate-500 uppercase font-semibold">Current Complexity</span>
-                                      <div className="font-bold text-indigo-700 text-sm">
-                                        {attAi?.optimization?.currentComplexity || p.candidateTimeComplexity || 'O(n²)'}
-                                      </div>
-                                    </div>
-                                    <div className="p-3 rounded-lg bg-white border border-emerald-200 space-y-1">
-                                      <span className="text-[10px] text-slate-500 uppercase font-semibold">Target Optimal Complexity</span>
-                                      <div className="font-bold text-emerald-700 text-sm">
-                                        {attAi?.optimization?.suggestedComplexity || p.expectedComplexity || 'O(n)'}
-                                      </div>
-                                    </div>
-                                  </div>
-
-                                  {attAi?.optimization?.description && (
-                                    <p className="text-slate-800 leading-relaxed pl-0.5">
-                                      {attAi.optimization.description}
-                                    </p>
-                                  )}
-
-                                  {attAi?.optimizedCode && (
-                                    <div className="space-y-2 pt-1">
-                                      <div className="flex items-center justify-between text-[11px] font-bold text-emerald-900 uppercase">
-                                        <span>AI Optimized Implementation ({curAtt.language || 'Python'})</span>
-                                        <button
-                                          onClick={() => {
-                                            navigator.clipboard.writeText(attAi.optimizedCode);
-                                            setCopiedOptimizedIdx(curAtt.attemptNumber);
-                                            setTimeout(() => setCopiedOptimizedIdx(null), 2000);
-                                          }}
-                                          className="flex items-center gap-1 px-2.5 py-1 rounded bg-emerald-100 hover:bg-emerald-200 text-emerald-800 transition-colors cursor-pointer text-[10px] font-mono font-semibold"
-                                        >
-                                          {copiedOptimizedIdx === curAtt.attemptNumber ? <Check className="h-3 w-3 text-emerald-600" /> : <Copy className="h-3 w-3" />}
-                                          <span>{copiedOptimizedIdx === curAtt.attemptNumber ? 'Copied!' : 'Copy Optimized Code'}</span>
-                                        </button>
-                                      </div>
-                                      <pre className="p-4 rounded-xl bg-slate-900 text-emerald-100 font-mono text-xs overflow-x-auto leading-relaxed border border-emerald-950/40">
-                                        {attAi.optimizedCode}
-                                      </pre>
-                                    </div>
-                                  )}
-                                </div>
-                              )}
-                            </div>
-                          </div>
-                        )}
-
-                        {/* Overall Problem Complexity & Algorithmic Constraint Card */}
-                        <div className="p-5 rounded-xl bg-slate-50 border border-slate-200 space-y-3 text-xs">
-                          <div className="flex items-center justify-between pb-1 border-b border-slate-200">
-                            <span className="font-bold text-slate-900 uppercase tracking-wider text-[11px]">
-                              Algorithmic Complexity & Constraints
-                            </span>
-                            <span className={`px-2.5 py-0.5 rounded font-mono font-bold text-[10px] ${
-                              comp?.isOptimal ? 'bg-emerald-100 text-emerald-800' : 'bg-amber-100 text-amber-800'
-                            }`}>
-                              {comp?.isOptimal ? 'OPTIMAL BOUNDS' : 'OPTIMIZATION AVAILABLE'}
-                            </span>
-                          </div>
-
-                          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 font-mono text-xs">
-                            <div className="p-3 rounded-lg bg-white border border-slate-200 space-y-1">
-                              <span className="text-[10px] text-slate-500 uppercase font-semibold">Your Detected Approach</span>
-                              <div className="font-bold text-indigo-700 font-sans text-xs">
-                                {comp?.candidateApproach || p.approachClassification}
-                              </div>
-                              <div className="text-[11px] text-slate-600">
-                                Time: <strong className="text-indigo-600">{p.candidateTimeComplexity || 'O(n)'}</strong> | Space: <strong>{p.candidateSpaceComplexity || 'O(1)'}</strong>
-                              </div>
-                            </div>
-
-                            <div className="p-3 rounded-lg bg-white border border-slate-200 space-y-1">
-                              <span className="text-[10px] text-slate-500 uppercase font-semibold">Target Optimal Algorithm</span>
-                              <div className="font-bold text-emerald-700 font-sans text-xs">
-                                {comp?.optimalApproach || p.betterApproach?.description || 'Optimal Pattern'}
-                              </div>
-                              <div className="text-[11px] text-slate-600">
-                                Time: <strong className="text-emerald-600">{p.expectedComplexity || 'O(n)'}</strong> | Space: <strong>{p.expectedSpaceComplexity || 'O(1)'}</strong>
-                              </div>
-                            </div>
-                          </div>
-
-                          <p className="text-slate-700 leading-relaxed font-sans pt-1">
-                            {comp?.reason || p.approachSummary}
-                          </p>
-                        </div>
-
-                        {/* Key Learning Takeaway */}
-                        {p.keyLearning && (
-                          <div className="p-4 rounded-xl bg-purple-50/60 border border-purple-200 text-xs space-y-1.5 font-sans">
-                            <div className="font-bold text-purple-950 uppercase text-[11px] tracking-wider flex items-center gap-1.5">
-                              <Brain className="h-4 w-4 text-purple-600" /> Key Algorithmic Learning
-                            </div>
-                            <p className="text-slate-800 leading-relaxed">
-                              {p.keyLearning}
-                            </p>
+                        ) : (
+                          <div className="p-4 rounded-xl bg-slate-50 border border-slate-200 text-xs text-slate-600">
+                            AI analysis is currently unavailable for this submission. Your judge result and submission evidence are still available above.
                           </div>
                         )}
                       </div>

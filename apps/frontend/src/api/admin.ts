@@ -353,6 +353,43 @@ export const useUpdateAdminUserStatus = () => {
   });
 };
 
+export const useCreateAdminUser = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (data: {
+      firstName: string;
+      lastName?: string;
+      email: string;
+      password?: string;
+      role: 'STUDENT' | 'FACULTY';
+      department?: string;
+      designation?: string;
+      college?: string;
+    }) => {
+      const res = await api.post('/users/admin/users', data);
+      return res.data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users', 'overview'] });
+    },
+  });
+};
+
+export const useResetAdminUserPassword = () => {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ id, password }: { id: string; password?: string }) => {
+      const res = await api.post(`/users/admin/users/${id}/reset-password`, { password });
+      return res.data;
+    },
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users'] });
+      queryClient.invalidateQueries({ queryKey: ['admin', 'users', 'detail', variables.id] });
+    },
+  });
+};
+
 // ─── ADMIN DATASETS QUERIES & MUTATIONS ──────────────────────────────────────
 
 export interface AdminDatasetItem {

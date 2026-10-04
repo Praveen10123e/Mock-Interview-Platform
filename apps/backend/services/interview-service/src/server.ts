@@ -1,3 +1,6 @@
+import dotenv from 'dotenv';
+dotenv.config();
+
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -603,100 +606,7 @@ app.post('/:id/hr', async (req, res) => {
   }
 });
 
-// ─── FINALIZATION AND REPORT ──────────────────────────────────────────────────
-
-app.post('/:id/finalize', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const identityId = req.headers['x-identity-id'] as string;
-    if (!identityId) return res.status(401).json({ error: 'Unauthorized' });
-
-    const interview = await prisma.interview.findUnique({
-      where: { id },
-      include: { session: true }
-    });
-
-    if (!interview || interview.identityId !== identityId) {
-      return res.status(404).json({ error: 'Interview not found' });
-    }
-
-    if (!interview.session) {
-      return res.status(400).json({ error: 'Session not started' });
-    }
-
-    // Persist telemetry payload if provided in body
-    if (req.body?.telemetry) {
-      if (req.body.telemetry.aptitude) {
-        await prisma.interviewHistory.create({
-          data: { interviewId: id, event: 'APTITUDE_SUBMIT', details: req.body.telemetry.aptitude }
-        });
-      }
-      if (req.body.telemetry.hr) {
-        await prisma.interviewHistory.create({
-          data: { interviewId: id, event: 'HR_COMPLETE', details: req.body.telemetry.hr }
-        });
-      }
-    }
-
-    // Idempotency: return existing if finalized with 7-dimension schema
-    if (interview.session.finalizedAt && interview.session.reportSnapshot && (interview.session.reportSnapshot as any).metrics) {
-      return res.json(interview.session.reportSnapshot);
-    }
-
-    const report = await generateReport(id, identityId, prisma, req.body?.telemetry);
-
-    await prisma.interviewSession.update({
-      where: { id: interview.session.id },
-      data: {
-        finalizedAt: new Date(),
-        finishedAt: new Date(),
-        reportSnapshot: report,
-        reportVersion: 2
-      }
-    });
-    
-    await prisma.interview.update({
-      where: { id },
-      data: { state: 'COMPLETED' }
-    });
-
-    res.json(report);
-  } catch (error: any) {
-    console.error('[FINALIZE] Error:', error);
-    res.status(500).json({ error: 'Failed to finalize session' });
-  }
-});
-
-app.get('/:id/report', async (req, res) => {
-  try {
-    const { id } = req.params;
-    const identityId = req.headers['x-identity-id'] as string;
-    if (!identityId) return res.status(401).json({ error: 'Unauthorized' });
-
-    const interview = await prisma.interview.findUnique({
-      where: { id },
-      include: { session: true }
-    });
-
-    if (!interview || interview.identityId !== identityId) {
-      return res.status(404).json({ error: 'Interview not found' });
-    }
-
-    if (interview.session?.finalizedAt && interview.session?.reportSnapshot && (interview.session.reportSnapshot as any).metrics) {
-      return res.json(interview.session.reportSnapshot);
-    }
-
-    if (interview.state === 'RUNNING' && !interview.session?.finalizedAt) {
-      return res.status(403).json({ success: false, error: 'Assessment report unavailable: Interview session is currently active.' });
-    }
-
-    const liveReport = await generateReport(id, identityId, prisma);
-    res.json(liveReport);
-  } catch (error: any) {
-    console.error('[REPORT] Error:', error);
-    res.status(500).json({ error: 'Failed to generate report' });
-  }
-});
+// Note: /:id/finalize and /:id/report are handled by interviewSessionRouter via ReportService
 
 // ─── COHORT ANALYTICS FOR FACULTY ────────────────────────────────────────────
 

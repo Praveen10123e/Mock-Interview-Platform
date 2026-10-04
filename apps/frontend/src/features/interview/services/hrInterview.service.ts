@@ -68,16 +68,187 @@ export interface HRQuestion {
   category: string;
   questionType: 'MAIN' | 'FOLLOW_UP';
   sequence: number;
+  difficulty?: string;
+  competency?: string | null;
+  selectionReason?: string | null;
   isFollowUpToId?: string | null;
   response?: {
     id: string;
     transcript: string;
+    rawTranscript?: string;
+    verifiedTranscript?: string;
+    corrections?: Array<{
+      original: string;
+      corrected: string;
+      reason: string;
+      confidence: number;
+    }>;
+    uncertainSegments?: Array<{
+      text: string;
+      reason: string;
+    }>;
+    dimensionScores?: {
+      relevance: number;
+      specificity: number;
+      evidence: number;
+      structure: number;
+      clarity: number;
+      technicalDepth: number;
+      ownership: number;
+      professionalism: number;
+    };
+    questionScore?: number;
+    justification?: string;
+    strengths?: string[];
+    areasForImprovement?: string[];
+    starFormatDetected?: boolean;
+    starAnalysis?: {
+      starApplicable: boolean;
+      situation: { present: boolean; score: number; evidence: string };
+      task: { present: boolean; score: number; evidence: string };
+      action: { present: boolean; score: number; evidence: string };
+      result: { present: boolean; score: number; evidence: string };
+      starScore: number;
+      completeness: number;
+      missingComponents: string[];
+      feedback: string;
+      improvedVersion: string;
+      wordCount: number;
+    } | null;
+    speechAnalysis?: HRSpeechAnalysis | null;
+    responseQuality?: string;
+    evaluationStatus?: string;
     durationSeconds: number;
     wordCount: number;
     hasRecording: boolean;
     recordingPath?: string;
     submittedAt: string;
   } | null;
+}
+
+export interface HRSpeechAnalysis {
+  analysisVersion?: string;
+  model?: string;
+  promptVersion?: string;
+  generatedAt?: string;
+  status: 'pending' | 'completed' | 'failed' | 'unavailable';
+  fillerWords: {
+    total: number;
+    ratePer100Words: number;
+    breakdown: Record<string, number>;
+  };
+  repetitions: {
+    count: number;
+    items: Array<{ text: string; type: string; count: number }>;
+  };
+  falseStarts: {
+    count: number;
+    items: Array<{ text: string; reason: string }>;
+  };
+  hesitations: {
+    source: 'transcript' | 'audio';
+    count: number;
+    pauseCount: number | null;
+    averagePauseMs: number | null;
+  };
+  speechPace: {
+    wordCount: number;
+    durationSeconds: number;
+    wordsPerMinute: number | null;
+    classification: 'slow' | 'normal' | 'fast' | 'very_fast' | 'unavailable';
+  };
+  confidenceMarkers: {
+    confidenceCount: number;
+    uncertaintyCount: number;
+    confidenceRatio: number;
+    confidenceExamples: string[];
+    uncertaintyExamples: string[];
+  };
+  sentenceStructure: {
+    sentenceCount: number;
+    averageWordsPerSentence: number;
+    longestSentenceWords: number;
+    fragmentedSentenceCount: number;
+  };
+  communicationAssessment: {
+    clarity: string;
+    conciseness: string;
+    fluency: string;
+  };
+  recommendations: string[];
+}
+
+export interface HRSpeechSummary {
+  totalFillerWords: number;
+  averageFillerRate: number;
+  totalRepetitions: number;
+  totalFalseStarts: number;
+  averageWpm: number | null;
+  paceClassification: string;
+  overallClarity: string;
+  overallFluency: string;
+  topFillerWords: Array<{ word: string; count: number }>;
+  totalConfidenceMarkers: number;
+  totalUncertaintyMarkers: number;
+  coachingRecommendations: string[];
+}
+
+export interface HRInterviewSummary {
+  analysisVersion?: string;
+  model?: string;
+  promptVersion?: string;
+  generatedAt?: string;
+  status: 'completed' | 'insufficient_evidence' | 'failed';
+  executiveSummary: string;
+  topStrengths: Array<{
+    title: string;
+    description?: string;
+    strength?: string;
+    evidence: string;
+    sourceQuestionIds: string[];
+  }>;
+  areasForImprovement: Array<{
+    title: string;
+    description?: string;
+    area?: string;
+    evidence: string;
+    impact: string;
+    recommendation: string;
+    priority: 'high' | 'medium' | 'low';
+    sourceQuestionIds: string[];
+  }>;
+  overallAssessment: {
+    officialScore: number;
+    scoreSource: 'HRScoreEngine';
+    category: string;
+    summary: string;
+  };
+  communicationAssessment: {
+    summary: string;
+    strengths: string[];
+    improvements: string[];
+  };
+  starAssessment: {
+    applicableResponses: number;
+    completeResponses: number;
+    missingResultResponses: number;
+    summary: string;
+  };
+  strongestDimensions: Array<{
+    dimension: string;
+    averageScore: number;
+  }>;
+  weakestDimensions: Array<{
+    dimension: string;
+    averageScore: number;
+  }>;
+  recommendedPracticeFocus: Array<{
+    focus: string;
+    reason: string;
+    priority: 'high' | 'medium' | 'low';
+  }>;
+  readinessScore: number | null;
+  assessmentLimitations: string[];
 }
 
 export interface HRSessionEvaluation {
@@ -97,6 +268,8 @@ export interface HRSessionEvaluation {
   improvements: string[];
   starGuidance: string;
   aiSummary: string;
+  speechSummary?: HRSpeechSummary | null;
+  summary?: HRInterviewSummary | null;
 }
 
 export interface HRSession {

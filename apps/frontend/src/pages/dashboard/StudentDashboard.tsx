@@ -2,46 +2,194 @@ import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   History,
-  CheckCircle2,
   ArrowRight,
   ShieldCheck,
   BookOpen,
   Code2,
   BarChart3,
   Calendar,
-  Sparkles
+  Sparkles,
+  Award,
+  Target,
+  Brain,
+  Users,
+  Compass,
+  FileText,
+  Clock,
 } from 'lucide-react';
 import { Button } from '../../components/ui/button';
-import { Card } from '../../components/ui/card';
+import { Card, CardHeader, CardTitle, CardContent } from '../../components/ui/card';
 import { useAuthStore } from '../../store/AuthStore';
-import { useProfileCompletion } from '../../hooks/useProfile';
+import { useProfile } from '../../hooks/useProfile';
 import { useStatistics, useCategories } from '../../api/questions';
 import { Skeleton } from '../../components/ui/skeleton';
 import { InterviewService } from '../../features/interview/services/interview.service';
 import { StatusBadge } from '../../components/ui/badge';
-import { EmptyState } from '../../components/shared/EmptyState';
+import { StatCard } from '../../components/shared/StatCard';
 import { getProcessedStudentCategories } from '../../utils/categoryMapping';
 
 export const StudentDashboard: React.FC = () => {
   const user = useAuthStore((state) => state.user);
-  const { data: completionData, isLoading: isLoadingCompletion } = useProfileCompletion();
-  const { data: statsData } = useStatistics();
+  const { data: profile } = useProfile();
+  const { data: statsData, isLoading: isLoadingStats } = useStatistics();
   const { data: rawCategories } = useCategories();
   const [interviews, setInterviews] = useState<any[]>([]);
+  const [isLoadingInterviews, setIsLoadingInterviews] = useState(true);
   const navigate = useNavigate();
 
   useEffect(() => {
-    InterviewService.getInterviews().then(setInterviews).catch(console.error);
+    setIsLoadingInterviews(true);
+    InterviewService.getInterviews()
+      .then((data) => {
+        setInterviews(Array.isArray(data) ? data : []);
+      })
+      .catch((err) => {
+        console.error('Failed to load student interviews:', err);
+      })
+      .finally(() => {
+        setIsLoadingInterviews(false);
+      });
   }, []);
 
-  const completedCount = interviews.filter(i => i.state === 'COMPLETED').length;
-  const recentInterviews = interviews.slice(0, 4);
+  // ── Candidate Name Resolution ──
+  const rawFirst = (profile?.firstName || user?.firstName || '').trim();
+  const rawLast = (profile?.lastName || user?.lastName || '').trim();
+  const first = (rawFirst === 'New' && rawLast === 'User') ? '' : rawFirst;
+  const last = (rawFirst === 'New' && rawLast === 'User') ? '' : rawLast;
+
+  const combinedName = [first, last].filter(Boolean).join(' ');
+  const emailPrefixName = user?.email ? user.email.split('@')[0].replace(/[._-]/g, ' ') : '';
+  const formattedEmailName = emailPrefixName
+    .split(' ')
+    .filter(Boolean)
+    .map((s) => s.charAt(0).toUpperCase() + s.slice(1))
+    .join(' ');
+
+  const displayName = combinedName || user?.name || formattedEmailName || 'Candidate';
+
+  // ── Real Completed Interviews & Score Calculations ──
+  const completedInterviews = interviews.filter((i) => i.state === 'COMPLETED' || i.session?.finalizedAt);
+  const totalInterviewsCount = interviews.length;
+
+  const scoredInterviews = completedInterviews
+    .map((inv) => {
+      const snap = inv.session?.reportSnapshot;
+      const score = snap?.overallScore ?? snap?.overallProficiencyScore;
+      return typeof score === 'number' && !isNaN(score) ? score : null;
+    })
+    .filter((s): s is number => s !== null);
+
+  const averageScore = scoredInterviews.length > 0
+    ? Math.round(scoredInterviews.reduce((a, b) => a + b, 0) / scoredInterviews.length)
+    : null;
+
+  const bestScore = scoredInterviews.length > 0
+    ? Math.max(...scoredInterviews)
+    : null;
+
+  // ── Latest & Previous Completed Interview ──
+  const latestCompleted = completedInterviews[0] || null;
+  const previousCompleted = completedInterviews[1] || null;
+
+  const latestSnap = latestCompleted?.session?.reportSnapshot || null;
+  const prevSnap = previousCompleted?.session?.reportSnapshot || null;
+
+  const latestOverallScore = latestSnap?.overallScore ?? latestSnap?.overallProficiencyScore ?? null;
+  const prevOverallScore = prevSnap?.overallScore ?? prevSnap?.overallProficiencyScore ?? null;
+
+  // Round scores of latest completed
+  const aptScore = latestSnap?.stages?.aptitude?.scorePercentage ?? null;
+  const codingScore = latestSnap?.stages?.coding?.scorePercentage ?? null;
+  const hrScore = latestSnap?.stages?.hr?.analysis?.overallScore ?? latestSnap?.stages?.hr?.scorePercentage ?? null;
+
+  // Score comparison calculation
+  let scoreDiffText: string | null = null;
+  let scoreDiffTone: 'positive' | 'negative' | 'neutral' = 'neutral';
+  if (latestOverallScore !== null && prevOverallScore !== null) {
+    const diff = latestOverallScore - prevOverallScore;
+    if (diff > 0) {
+      scoreDiffText = `↑ +${diff} from previous interview`;
+      scoreDiffTone = 'positive';
+    } else if (diff < 0) {
+      scoreDiffText = `↓ ${diff} from previous interview`;
+      scoreDiffTone = 'negative';
+    } else {
+      scoreDiffText = `→ Same score as previous interview`;
+      scoreDiffTone = 'neutral';
+    }
+  } else if (latestCompleted) {
+    scoreDiffText = 'First recorded assessment';
+  }
+
+  // ── Deterministic Next Best Action ──
+  let nextAction = {
+    title: 'Take Your First Mock Interview',
+    tag: 'Baseline Assessment',
+    description: 'Establish your candidate readiness benchmark with a full 3-round mock interview.',
+    recommendation: 'Complete Aptitude, Coding, and HR rounds under proctored simulation.',
+    actionRoute: '/student/interviews',
+    actionLabel: 'Start Mock Interview',
+  };
+
+  if (completedInterviews.length > 0) {
+    const validScores: { name: string; score: number; type: 'coding' | 'aptitude' | 'hr' }[] = [];
+    if (typeof codingScore === 'number') validScores.push({ name: 'Coding', score: codingScore, type: 'coding' });
+    if (typeof aptScore === 'number') validScores.push({ name: 'Aptitude', score: aptScore, type: 'aptitude' });
+    if (typeof hrScore === 'number') validScores.push({ name: 'HR Behavioral', score: hrScore, type: 'hr' });
+
+    if (validScores.length > 0) {
+      validScores.sort((a, b) => a.score - b.score);
+      const lowest = validScores[0];
+
+      if (lowest.score < 75) {
+        if (lowest.type === 'coding') {
+          nextAction = {
+            title: 'Focus on Coding Practice',
+            tag: 'Coding Lowest Round',
+            description: `Coding is currently your lowest-performing round (${lowest.score}%).`,
+            recommendation: 'Recommended: Practice algorithmic problem solving with test cases.',
+            actionRoute: '/student/practice/questions',
+            actionLabel: 'Practice Coding Problems',
+          };
+        } else if (lowest.type === 'aptitude') {
+          nextAction = {
+            title: 'Strengthen Quantitative & Logical Aptitude',
+            tag: 'Aptitude Lowest Round',
+            description: `Aptitude is currently your lowest-performing round (${lowest.score}%).`,
+            recommendation: 'Recommended: Practice timed logical, quantitative, and verbal questions.',
+            actionRoute: '/student/practice/categories',
+            actionLabel: 'Practice Aptitude Sets',
+          };
+        } else if (lowest.type === 'hr') {
+          nextAction = {
+            title: 'Refine HR Behavioral Articulation',
+            tag: 'HR Lowest Round',
+            description: `HR Behavioral is currently your lowest-performing round (${lowest.score}%).`,
+            recommendation: 'Recommended: Practice structured STAR method responses and technical depth.',
+            actionRoute: '/student/interviews',
+            actionLabel: 'Practice HR Round',
+          };
+        }
+      } else {
+        nextAction = {
+          title: 'Maintain Strong Readiness',
+          tag: 'All Rounds Strong',
+          description: 'You are performing consistently above 75% across all technical and behavioral rounds.',
+          recommendation: 'Recommended: Take a full timed assessment to maintain your competitive edge.',
+          actionRoute: '/student/interviews',
+          actionLabel: 'Start Full Assessment',
+        };
+      }
+    }
+  }
+
+  // ── Practice Domains ──
   const categories = getProcessedStudentCategories(rawCategories || []);
-  const completionPercentage = completionData?.data?.completionPercentage || 0;
+  const totalQuestions = statsData?.totalQuestions ?? 0;
 
   return (
     <div className="space-y-6 md:space-y-8 max-w-7xl mx-auto w-full">
-      {/* ── 1. Welcome Banner ── */}
+      {/* ── 1. Hero / Welcome Section ── */}
       <div className="rounded-2xl border border-border-card bg-surface p-6 md:p-8 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 shadow-sm relative overflow-hidden">
         <div className="space-y-2 relative z-10 max-w-2xl">
           <div className="inline-flex items-center gap-2 px-2.5 py-0.5 rounded-full bg-accent/10 border border-accent/25 text-accent text-xs font-semibold">
@@ -49,10 +197,10 @@ export const StudentDashboard: React.FC = () => {
             <span>Naan Mudhalvan Candidate Hub</span>
           </div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-text-primary">
-            Welcome back, {user?.email?.split('@')[0] || 'Candidate'}.
+            Welcome back, {displayName}.
           </h1>
           <p className="text-xs sm:text-sm text-text-secondary leading-relaxed">
-            Practice algorithmic challenges, test relational SQL queries, or launch an automated 3-round mock interview with proctoring.
+            Continue building your interview readiness across algorithmic problem solving, SQL databases, and AI-evaluated mock assessments.
           </p>
         </div>
 
@@ -63,7 +211,7 @@ export const StudentDashboard: React.FC = () => {
             leftIcon={<Calendar className="h-4 w-4" />}
             className="flex-1 sm:flex-initial"
           >
-            Mock Interviews
+            Start Mock Interview
           </Button>
           <Button
             variant="outline"
@@ -72,258 +220,392 @@ export const StudentDashboard: React.FC = () => {
             leftIcon={<Code2 className="h-4 w-4" />}
             className="flex-1 sm:flex-initial"
           >
-            Practice Bank
+            Continue Practice
           </Button>
         </div>
       </div>
 
-      {/* ── 2. Professional Stats Row (4 Real Metrics) ── */}
+      {/* ── 2. Top Summary Metrics (Real Data) ── */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <Card className="p-5 flex items-center justify-between gap-4">
-          <div className="space-y-1">
-            <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
-              Total Sessions
-            </span>
-            <div className="text-2xl sm:text-3xl font-bold text-text-primary tracking-tight">
-              {interviews.length}
-            </div>
-            <p className="text-xs text-text-muted">Recorded mock attempts</p>
-          </div>
-          <div className="h-11 w-11 rounded-xl bg-indigo-500/10 border border-indigo-500/20 text-indigo-600 dark:text-indigo-400 flex items-center justify-center shrink-0">
-            <History className="h-5 w-5" />
-          </div>
-        </Card>
-
-        <Card className="p-5 flex items-center justify-between gap-4">
-          <div className="space-y-1">
-            <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
-              Completed
-            </span>
-            <div className="text-2xl sm:text-3xl font-bold text-text-primary tracking-tight">
-              {completedCount}
-            </div>
-            <p className="text-xs text-text-muted">Evaluated & scored</p>
-          </div>
-          <div className="h-11 w-11 rounded-xl bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 flex items-center justify-center shrink-0">
-            <CheckCircle2 className="h-5 w-5" />
-          </div>
-        </Card>
-
-        <Card className="p-5 flex items-center justify-between gap-4">
-          <div className="space-y-1">
-            <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
-              Question Bank
-            </span>
-            <div className="text-2xl sm:text-3xl font-bold text-text-primary tracking-tight">
-              {statsData?.totalQuestions ?? 60}
-            </div>
-            <p className="text-xs text-text-muted">Curriculum problems</p>
-          </div>
-          <div className="h-11 w-11 rounded-xl bg-purple-500/10 border border-purple-500/20 text-purple-600 dark:text-purple-400 flex items-center justify-center shrink-0">
-            <BookOpen className="h-5 w-5" />
-          </div>
-        </Card>
-
-        <Card className="p-5 flex items-center justify-between gap-4">
-          <div className="space-y-1">
-            <span className="text-xs font-semibold text-text-secondary uppercase tracking-wider">
-              Profile Readiness
-            </span>
-            <div className="text-2xl sm:text-3xl font-bold text-text-primary tracking-tight">
-              {completionPercentage}%
-            </div>
-            <p className="text-xs text-text-muted">Academic details</p>
-          </div>
-          <div className="h-11 w-11 rounded-xl bg-amber-500/10 border border-amber-500/20 text-amber-600 dark:text-amber-400 flex items-center justify-center shrink-0">
-            <Sparkles className="h-5 w-5" />
-          </div>
-        </Card>
+        <StatCard
+          title="Total Interviews"
+          value={isLoadingInterviews ? '...' : totalInterviewsCount}
+          subtitle={`${completedInterviews.length} completed assessments`}
+          icon={<History className="h-5 w-5" />}
+          tone="violet"
+        />
+        <StatCard
+          title="Average Score"
+          value={averageScore !== null ? `${averageScore}/100` : '--'}
+          subtitle={scoredInterviews.length > 0 ? `Across ${scoredInterviews.length} evaluations` : 'Awaiting evaluations'}
+          icon={<Award className="h-5 w-5" />}
+          tone="accent"
+        />
+        <StatCard
+          title="Best Score"
+          value={bestScore !== null ? `${bestScore}/100` : '--'}
+          subtitle={bestScore !== null ? 'Peak assessment performance' : 'No recorded scores yet'}
+          icon={<Sparkles className="h-5 w-5" />}
+          tone="gold"
+        />
+        <StatCard
+          title="Problem Bank"
+          value={isLoadingStats ? '...' : totalQuestions}
+          subtitle="Curated interview questions"
+          icon={<BookOpen className="h-5 w-5" />}
+          tone="success"
+        />
       </div>
 
-      {/* ── 3. Main Dashboard Grid ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-7 gap-6">
-        {/* Left Column: Recent Activity + Practice Quick Access (Col 4) */}
-        <div className="lg:col-span-4 space-y-6">
-          {/* Recent Activity Card */}
-          <Card className="p-5 md:p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <History className="h-4 w-4 text-accent" />
-                <h2 className="text-base font-semibold text-text-primary">Recent Interview Activity</h2>
+      {/* ── 3. Performance & Next Best Action Row ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Current Performance (Latest Evaluation) */}
+        <Card className="lg:col-span-2 flex flex-col justify-between overflow-hidden bg-white border border-slate-200/80 shadow-xs">
+          <div>
+            <CardHeader className="pb-3 border-b border-slate-100">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <BarChart3 className="h-4 w-4 text-blue-600" />
+                  Current Performance Across Rounds
+                </CardTitle>
+                {latestCompleted && (
+                  <span className="text-[11px] text-slate-500 font-mono">
+                    Latest Assessment: {new Date(latestCompleted.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                  </span>
+                )}
               </div>
-              {recentInterviews.length > 0 && (
-                <button 
-                  onClick={() => navigate('/student/interviews')}
-                  className="text-xs text-slate-700 hover:text-slate-900 font-semibold flex items-center gap-1 cursor-pointer transition-colors"
-                >
-                  <span>View all</span>
-                  <ArrowRight className="h-3.5 w-3.5" />
-                </button>
-              )}
-            </div>
-            
-            {recentInterviews.length > 0 ? (
-              <div className="space-y-2.5">
-                {recentInterviews.map((interview) => (
-                  <div 
-                    key={interview.id} 
-                    className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 p-3.5 rounded-xl border border-border-card bg-surface-elevated hover:bg-surface-hover transition-colors"
-                  >
-                    <div className="space-y-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-sm font-semibold text-text-primary truncate">
-                          {interview.title || 'Technical Assessment Session'}
-                        </p>
-                        <StatusBadge status={interview.state || 'PENDING'} />
+            </CardHeader>
+            <CardContent className="p-5 md:p-6 space-y-5">
+              {latestCompleted ? (
+                <>
+                  {/* Aptitude Round Bar */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2 font-semibold text-slate-900">
+                        <Brain className="h-4 w-4 text-sky-600" />
+                        <span>Aptitude & Logic</span>
                       </div>
-                      <p className="text-xs text-text-muted">
-                        Created on {new Date(interview.createdAt).toLocaleDateString()} · {interview.interviewType || 'PRACTICE'}
-                      </p>
+                      <span className="font-mono font-bold text-sky-600">
+                        {aptScore !== null ? `${aptScore}%` : 'Not evaluated yet'}
+                      </span>
                     </div>
-
-                    <Button 
-                      variant={interview.state === 'COMPLETED' ? 'secondary' : 'default'}
-                      size="sm" 
-                      onClick={() => navigate(interview.state === 'COMPLETED' ? `/student/interviews/summary/${interview.id}` : `/student/interviews/session/${interview.id}`)}
-                      className="shrink-0 w-full sm:w-auto"
-                    >
-                      {interview.state === 'COMPLETED' ? 'View Report' : 'Enter Assessment'}
-                    </Button>
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <EmptyState
-                compact
-                icon={<Calendar className="h-5 w-5" />}
-                title="No interview sessions recorded yet"
-                description="Start a practice interview session to experience the proctored 3-round format."
-                actionLabel="Start Mock Interview"
-                onAction={() => navigate('/student/interviews')}
-              />
-            )}
-          </Card>
-
-          {/* Quick Practice Access Cards */}
-          <div className="space-y-3">
-            <div className="flex items-center justify-between">
-              <h3 className="text-sm font-semibold text-text-primary flex items-center gap-2">
-                <Code2 className="h-4 w-4 text-accent" /> Recommended Curriculum Domains
-              </h3>
-              <button
-                onClick={() => navigate('/student/practice/categories')}
-                className="text-xs text-slate-700 hover:text-slate-900 font-semibold flex items-center gap-1 cursor-pointer transition-colors"
-              >
-                <span>All domains</span>
-                <ArrowRight className="h-3.5 w-3.5" />
-              </button>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {categories.slice(0, 3).map((cat) => (
-                <Card
-                  key={cat.name}
-                  className="p-4 cursor-pointer hover:border-accent/40 transition-all flex flex-col justify-between"
-                  onClick={() => navigate(`/student/practice/questions?category=${encodeURIComponent(cat.name)}`)}
-                >
-                  <div className="space-y-2">
-                    <div className="p-2 rounded-lg bg-accent/10 text-accent w-fit shadow-xs">
-                      {cat.icon}
-                    </div>
-                    <div>
-                      <h4 className="text-xs font-semibold text-text-primary">{cat.name}</h4>
-                      <p className="text-[11px] text-text-muted mt-0.5">{cat.count} problems</p>
+                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="bg-sky-500 h-full rounded-full transition-all duration-500"
+                        style={{ width: `${aptScore !== null ? Math.min(100, Math.max(0, aptScore)) : 0}%` }}
+                      />
                     </div>
                   </div>
-                </Card>
-              ))}
-            </div>
-          </div>
-        </div>
 
-        {/* Right Column: Profile Readiness & Analytics Context (Col 3) */}
-        <div className="lg:col-span-3 space-y-6">
-          {/* Profile Completion Card */}
-          <Card className="p-5 md:p-6 flex flex-col justify-between space-y-4">
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <h2 className="text-sm font-semibold text-text-primary">Profile Readiness</h2>
-                <span className="text-xs font-mono font-bold text-accent">{completionPercentage}%</span>
-              </div>
+                  {/* Coding Round Bar */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2 font-semibold text-slate-900">
+                        <Code2 className="h-4 w-4 text-emerald-600" />
+                        <span>Coding & Data Structures</span>
+                      </div>
+                      <span className="font-mono font-bold text-emerald-600">
+                        {codingScore !== null ? `${codingScore}%` : 'Not evaluated yet'}
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="bg-emerald-500 h-full rounded-full transition-all duration-500"
+                        style={{ width: `${codingScore !== null ? Math.min(100, Math.max(0, codingScore)) : 0}%` }}
+                      />
+                    </div>
+                  </div>
 
-              {isLoadingCompletion ? (
-                <div className="flex flex-col items-center justify-center py-4 space-y-3">
-                  <Skeleton className="h-24 w-24 rounded-full" />
-                  <Skeleton className="h-4 w-32" />
-                </div>
+                  {/* HR Round Bar */}
+                  <div className="space-y-1.5">
+                    <div className="flex items-center justify-between text-xs">
+                      <div className="flex items-center gap-2 font-semibold text-slate-900">
+                        <Users className="h-4 w-4 text-amber-600" />
+                        <span>HR & Behavioral Readiness</span>
+                      </div>
+                      <span className="font-mono font-bold text-amber-600">
+                        {hrScore !== null ? `${hrScore}%` : 'Not evaluated yet'}
+                      </span>
+                    </div>
+                    <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">
+                      <div
+                        className="bg-amber-500 h-full rounded-full transition-all duration-500"
+                        style={{ width: `${hrScore !== null ? Math.min(100, Math.max(0, hrScore)) : 0}%` }}
+                      />
+                    </div>
+                  </div>
+                </>
               ) : (
-                <div className="flex flex-col items-center justify-center py-2">
-                  <div className="relative h-24 w-24 rounded-full flex items-center justify-center mb-3">
-                    <span className="text-2xl font-bold text-text-primary font-mono">
-                      {completionPercentage}%
-                    </span>
-                    <svg className="absolute top-0 left-0 h-full w-full -rotate-90 transform" viewBox="0 0 100 100">
-                      <circle
-                        cx="50"
-                        cy="50"
-                        r="40"
-                        fill="transparent"
-                        stroke="currentColor"
-                        strokeWidth="7"
-                        className="text-border"
-                      />
-                      <circle
-                        cx="50"
-                        cy="50"
-                        r="40"
-                        fill="transparent"
-                        stroke="currentColor"
-                        strokeWidth="7"
-                        className="text-accent transition-all duration-700 ease-in-out"
-                        strokeDasharray="251.2"
-                        strokeDashoffset={251.2 - (251.2 * completionPercentage) / 100}
-                        strokeLinecap="round"
-                      />
-                    </svg>
-                  </div>
-                  <p className="text-xs text-center text-text-secondary leading-relaxed max-w-xs">
-                    Complete your academic department and skill targets to personalize mock interview rubrics.
+                <div className="py-8 text-center space-y-2">
+                  <Compass className="h-8 w-8 text-slate-400 mx-auto" />
+                  <p className="text-xs text-slate-500 max-w-sm mx-auto">
+                    No evaluated round data recorded yet. Complete a mock interview assessment to visualize your round-by-round calibration.
                   </p>
                 </div>
               )}
-            </div>
+            </CardContent>
+          </div>
 
-            <Button 
-              variant="secondary" 
-              className="w-full" 
-              size="sm"
-              onClick={() => navigate('/student/profile')}
+          {latestCompleted && (
+            <div className="p-4 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between text-xs">
+              <span className="text-slate-600">
+                Overall Assessment Score: <strong className="text-slate-900 font-mono">{latestOverallScore !== null ? `${latestOverallScore}/100` : '--'}</strong>
+              </span>
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => navigate(`/student/interviews/summary/${latestCompleted.id}`)}
+                className="text-blue-600 hover:text-blue-700 hover:bg-blue-50 gap-1 font-semibold"
+              >
+                View Full Breakdown <ArrowRight className="h-3.5 w-3.5" />
+              </Button>
+            </div>
+          )}
+        </Card>
+
+        {/* Next Best Action Card */}
+        <Card className="flex flex-col justify-between bg-white border border-blue-200/80 shadow-xs overflow-hidden">
+          <div>
+            <CardHeader className="pb-3 border-b border-blue-100 bg-blue-50/50">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-xs font-bold text-blue-700 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                  <Target className="h-4 w-4 text-blue-600" />
+                  Next Best Action
+                </CardTitle>
+                <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-semibold border border-blue-200">
+                  {nextAction.tag}
+                </span>
+              </div>
+            </CardHeader>
+            <CardContent className="p-5 space-y-3">
+              <h3 className="text-base font-bold text-slate-900">{nextAction.title}</h3>
+              <p className="text-xs text-slate-600 leading-relaxed">{nextAction.description}</p>
+              <div className="p-3.5 rounded-xl bg-slate-50 border border-slate-200/80 text-xs text-slate-700 leading-relaxed">
+                {nextAction.recommendation}
+              </div>
+            </CardContent>
+          </div>
+          <div className="p-4 pt-0">
+            <Button
+              onClick={() => navigate(nextAction.actionRoute)}
+              className="w-full gap-1.5 font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-2xs"
             >
-              Update Candidate Profile
+              {nextAction.actionLabel} <ArrowRight className="h-4 w-4" />
             </Button>
-          </Card>
+          </div>
+        </Card>
+      </div>
 
-          {/* AI Assessment Guidance Card */}
-          <Card className="p-5 md:p-6 space-y-3">
-            <div className="flex items-center gap-2 text-text-primary font-semibold text-sm">
-              <BarChart3 className="h-4 w-4 text-accent" />
-              <span>Assessment & Scoring Insights</span>
+      {/* ── 4. Latest Interview & Practice Overview ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+        {/* Latest Completed Assessment Detail */}
+        {latestCompleted && (
+          <Card className="flex flex-col justify-between overflow-hidden bg-white border border-slate-200/80 shadow-xs">
+            <div>
+              <CardHeader className="pb-3 border-b border-slate-100">
+                <CardTitle className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <Award className="h-4 w-4 text-amber-500" />
+                  Latest Completed Assessment
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-5 space-y-4">
+                <div>
+                  <h4 className="text-base font-bold text-slate-900">{latestCompleted.title || 'Practice Assessment'}</h4>
+                  <div className="flex items-center gap-2 mt-1 text-xs text-slate-500">
+                    <Calendar className="h-3.5 w-3.5" />
+                    <span>{new Date(latestCompleted.createdAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' })}</span>
+                  </div>
+                </div>
+
+                <div className="p-4 rounded-xl bg-slate-50 border border-slate-200/80 flex items-center justify-between">
+                  <div>
+                    <span className="text-xs text-slate-600 font-medium">Overall Score</span>
+                    <div className="text-2xl font-bold font-mono text-blue-600 mt-0.5">
+                      {latestOverallScore !== null ? `${latestOverallScore}/100` : '--'}
+                    </div>
+                  </div>
+                  {scoreDiffText && (
+                    <div className={`text-right text-xs font-semibold ${scoreDiffTone === 'positive' ? 'text-emerald-600' : scoreDiffTone === 'negative' ? 'text-rose-600' : 'text-slate-500'}`}>
+                      {scoreDiffText}
+                    </div>
+                  )}
+                </div>
+
+                <div className="grid grid-cols-3 gap-2 text-center text-xs">
+                  <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80">
+                    <span className="text-[10px] text-slate-500 font-medium">Aptitude</span>
+                    <p className="font-bold text-sky-600 mt-0.5 font-mono">{aptScore !== null ? `${aptScore}%` : '--'}</p>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80">
+                    <span className="text-[10px] text-slate-500 font-medium">Coding</span>
+                    <p className="font-bold text-emerald-600 mt-0.5 font-mono">{codingScore !== null ? `${codingScore}%` : '--'}</p>
+                  </div>
+                  <div className="p-2.5 rounded-lg bg-slate-50 border border-slate-200/80">
+                    <span className="text-[10px] text-slate-500 font-medium">HR</span>
+                    <p className="font-bold text-amber-600 mt-0.5 font-mono">{hrScore !== null ? `${hrScore}%` : '--'}</p>
+                  </div>
+                </div>
+              </CardContent>
             </div>
-            <p className="text-xs text-text-secondary leading-relaxed">
-              Completing full 3-round assessments automatically generates multidimensional scoring cards across code accuracy, runtime efficiency, and behavioral communication.
-            </p>
+            <div className="p-4 pt-0">
+              <Button
+                variant="outline"
+                onClick={() => navigate(`/student/interviews/summary/${latestCompleted.id}`)}
+                className="w-full gap-1 text-xs border-slate-200 text-slate-700 hover:bg-slate-50"
+              >
+                <FileText className="h-3.5 w-3.5" /> View Diagnostic Report
+              </Button>
+            </div>
+          </Card>
+        )}
+
+        {/* Practice Overview Breakdown */}
+        <Card className={`${latestCompleted ? 'lg:col-span-2' : 'lg:col-span-3'} flex flex-col justify-between overflow-hidden bg-white border border-slate-200/80 shadow-xs`}>
+          <div>
+            <CardHeader className="pb-3 border-b border-slate-100">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2">
+                  <BookOpen className="h-4 w-4 text-blue-600" />
+                  Practice Problem Bank Curriculum
+                </CardTitle>
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  onClick={() => navigate('/student/practice')}
+                  className="text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 gap-1 font-semibold"
+                >
+                  Explore Bank <ArrowRight className="h-3.5 w-3.5" />
+                </Button>
+              </div>
+            </CardHeader>
+            <CardContent className="p-5">
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3">
+                {categories.slice(0, 6).map((cat) => (
+                  <div
+                    key={cat.name}
+                    onClick={() => navigate(`/student/practice/questions?category=${encodeURIComponent(cat.name)}`)}
+                    className="p-3.5 rounded-xl bg-slate-50/70 border border-slate-200/80 hover:border-blue-300 hover:bg-white transition-all cursor-pointer group shadow-2xs"
+                  >
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="text-xs font-semibold text-slate-900 group-hover:text-blue-600 transition-colors">
+                        {cat.name}
+                      </span>
+                      <span className="text-[11px] font-mono text-slate-500 font-medium">
+                        {cat.count} Qs
+                      </span>
+                    </div>
+                    <p className="text-[11px] text-slate-500 line-clamp-1">{cat.description}</p>
+                  </div>
+                ))}
+              </div>
+            </CardContent>
+          </div>
+          <div className="p-4 bg-slate-50/70 border-t border-slate-100 flex items-center justify-between text-xs text-slate-600">
+            <span>{totalQuestions} curated challenges across Data Structures, Algorithms, SQL, and Aptitude.</span>
             <Button
               variant="outline"
               size="sm"
-              className="w-full text-xs"
-              onClick={() => navigate('/student/reports')}
-              rightIcon={<ArrowRight className="h-3 w-3" />}
+              onClick={() => navigate('/student/practice/questions')}
+              className="text-xs border-slate-200 text-slate-700 hover:bg-white"
             >
-              View Assessment Reports
+              Solve Challenges
             </Button>
-          </Card>
-        </div>
+          </div>
+        </Card>
       </div>
+
+      {/* ── 5. Recent Interview Activity ── */}
+      <Card className="overflow-hidden bg-white border border-slate-200/80 shadow-xs">
+        <CardHeader className="pb-3 border-b border-slate-100">
+          <div className="flex items-center justify-between">
+            <CardTitle className="text-sm font-bold text-slate-900 uppercase tracking-wider flex items-center gap-2 font-mono">
+              <Clock className="h-4 w-4 text-blue-600" />
+              Recent Interview Activity
+            </CardTitle>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => navigate('/student/interviews')}
+              className="text-xs text-blue-600 hover:text-blue-700 hover:bg-blue-50 font-semibold"
+            >
+              All Interviews ({interviews.length})
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent className="p-0">
+          {isLoadingInterviews ? (
+            <div className="p-6 space-y-3">
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+              <Skeleton className="h-10 w-full" />
+            </div>
+          ) : interviews.length > 0 ? (
+            <div className="divide-y divide-slate-100">
+              {interviews.slice(0, 5).map((interview) => {
+                const snap = interview.session?.reportSnapshot;
+                const score = snap?.overallScore ?? snap?.overallProficiencyScore ?? null;
+                const isCompleted = interview.state === 'COMPLETED';
+
+                return (
+                  <div
+                    key={interview.id}
+                    className="p-4 sm:px-6 flex flex-col sm:flex-row sm:items-center justify-between gap-3 hover:bg-slate-50/70 transition-colors"
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2.5">
+                        <span className="text-sm font-semibold text-slate-900">
+                          {interview.title || 'Mock Interview Session'}
+                        </span>
+                        <StatusBadge status={interview.state} />
+                      </div>
+                      <div className="flex items-center gap-3 text-xs text-slate-500">
+                        <span>{new Date(interview.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                        <span>•</span>
+                        <span className="capitalize">{interview.interviewType?.toLowerCase() || 'mock'}</span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-4 shrink-0 justify-between sm:justify-end">
+                      {score !== null && (
+                        <div className="text-right">
+                          <span className="text-[10px] text-slate-500 block font-medium">Score</span>
+                          <span className="text-sm font-bold font-mono text-blue-600">{score}/100</span>
+                        </div>
+                      )}
+                      {isCompleted ? (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => navigate(`/student/interviews/summary/${interview.id}`)}
+                          className="text-xs border-slate-200 text-slate-700 hover:bg-slate-50"
+                        >
+                          View Report
+                        </Button>
+                      ) : (
+                        <Button
+                          size="sm"
+                          onClick={() => navigate(`/student/interviews/lobby/${interview.id}`)}
+                          className="text-xs bg-blue-600 hover:bg-blue-700 text-white"
+                        >
+                          Resume
+                        </Button>
+                      )}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="p-8 text-center space-y-3">
+              <Calendar className="h-8 w-8 text-slate-400 mx-auto" />
+              <p className="text-xs text-slate-600">No assessment activity recorded yet.</p>
+              <Button size="sm" onClick={() => navigate('/student/interviews')} className="bg-blue-600 hover:bg-blue-700 text-white">
+                Launch First Mock Interview
+              </Button>
+            </div>
+          )}
+        </CardContent>
+      </Card>
     </div>
   );
 };

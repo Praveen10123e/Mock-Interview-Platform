@@ -36,4 +36,20 @@ export class TokenService extends BaseService {
   public verifyAccessToken(token: string): IJwtPayload {
     return jwt.verify(token, this.publicKey, { algorithms: ['RS256'] }) as IJwtPayload;
   }
+
+  public generatePasswordResetJwt(identityId: string, email: string): string {
+    return jwt.sign(
+      { sub: identityId, email, purpose: 'PASSWORD_RESET' },
+      this.privateKey,
+      { algorithm: 'RS256', expiresIn: '10m' }
+    );
+  }
+
+  public verifyPasswordResetJwt(token: string): { sub: string; email: string; purpose: string } {
+    const payload = jwt.verify(token, this.publicKey, { algorithms: ['RS256'] }) as any;
+    if (payload.purpose !== 'PASSWORD_RESET') {
+      throw new Error('Invalid token purpose');
+    }
+    return payload;
+  }
 }

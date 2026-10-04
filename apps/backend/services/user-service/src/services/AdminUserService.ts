@@ -783,4 +783,155 @@ export class AdminUserService extends BaseService {
       message: `Account status successfully updated to ${updated.status}`,
     };
   }
+
+  /**
+   * Create a new Student or Faculty account from the Admin panel.
+   * Strictly enforces Administrator authorization and restricts role to STUDENT or FACULTY.
+   */
+  public async createUser(
+    actorIdentityId: string,
+    data: {
+      firstName: string;
+      lastName?: string;
+      email: string;
+      password?: string;
+      role: 'STUDENT' | 'FACULTY';
+      department?: string;
+      designation?: string;
+      college?: string;
+    }
+  ) {
+    const authPrisma = getAuthPrisma();
+    const userPrisma = getUserPrisma();
+    if (!authPrisma || !userPrisma) {
+      throw ErrorFactory.internal('Database services unavailable');
+    }
+
+    // Authoritative server-side DB permission check
+    const actorRoles = await this.getIdentityRoles(actorIdentityId);
+    const actorEffective = resolveEffectiveRole(actorRoles);
+    if (actorEffective !== 'ADMINISTRATOR' && actorEffective !== 'SUPER_ADMIN') {
+      throw ErrorFactory.unauthorized('Forbidden: Administrator privileges required to create accounts');
+    }
+
+    if (!data.email || !data.firstName) {
+      throw ErrorFactory.validation('First name and email are required');
+    }
+
+    const normalizedEmail = data.email.trim().toLowerCase();
+    const existing = await authPrisma.identity.findUnique({ where: { email: normalizedEmail } });
+    if (existing) {
+      throw ErrorFactory.conflict('An account with this email already exists');
+    }
+
+    const requestedRole = (data.role || 'STUDENT').toUpperCase();
+    if (requestedRole !== 'STUDENT' && requestedRole !== 'FACULTY') {
+      throw ErrorFactory.validation('Role must be either STUDENT or FACULTY');
+    }
+
+    let roleRecord = await authPrisma.role.findUnique({ where: { name: requestedRole } });
+    if (!roleRecord) {
+      roleRecord = await authPrisma.role.create({
+        data: { name: requestedRole, description: `${requestedRole} Role` },
+      });
+    }
+
+    const bcrypt = require('bcryptjs');
+    const plainPassword = data.password && data.password.trim() ? data.password.trim() : '123456';
+    const salt = await bcrypt.genSalt(12);
+    const passwordHash = await bcrypt.hash(plainPassword, salt);
+
+    const identity = await authPrisma.identity.create({
+      data: {
+        email: normalizedEmail,
+        passwordHash,
+        status: 'ACTIVE',
+        roles: {
+          create: [{ roleId: roleRecord.id }],
+        },
+      },
+      include: {
+        roles: { include: { role: true } },
+      },
+    });
+
+    const firstName = data.firstName.trim();
+    const lastName = (data.lastName || '').trim();
+
+    const profile = await userPrisma.profile.create({
+      data: {
+        identityId: identity.id,
+        firstName,
+        lastName,
+        studentProfile:
+          requestedRole === 'STUDENT'
+            ? {
+                create: {
+                  department: data.department || 'Computer Science and Engineering',
+                  college: data.college || 'Naan Mudhalvan Partner Institution',
+                },
+              }
+            : undefined,
+        facultyProfile:
+          requestedRole === 'FACULTY'
+            ? {
+                create: {
+                  department: data.department || 'Department of Computer Applications',
+                  designation: data.designation || 'Faculty Member',
+                  college: data.college || 'Naan Mudhalvan Partner Institution',
+                },
+              }
+            : undefined,
+      },
+    });
+
+    return {
+      id: identity.id,
+      email: identity.email,
+      name: `${firstName} ${lastName}`.trim(),
+      role: requestedRole,
+      status: identity.status,
+      message: `${requestedRole === 'FACULTY' ? 'Faculty' : 'Student'} account created successfully`,
+    };
+  }
+
+  /**
+   * Admin Reset User Password
+   */
+  public async resetUserPassword(
+    actorIdentityId: string,
+    targetIdentityId: string,
+    newPassword?: string
+  ) {
+    const authPrisma = getAuthPrisma();
+    if (!authPrisma) {
+      throw ErrorFactory.internal('Authentication database service unavailable');
+    }
+
+    await this.checkMutationPermission(actorIdentityId, targetIdentityId, 'STATUS_CHANGE');
+
+    const bcrypt = require('bcryptjs');
+    const plainPassword = newPassword && newPassword.trim() ? newPassword.trim() : '123456';
+    const salt = await bcrypt.genSalt(12);
+    const passwordHash = await bcrypt.hash(plainPassword, salt);
+
+    await authPrisma.identity.update({
+      where: { id: targetIdentityId },
+      data: {
+        passwordHash,
+        failedLoginAttempts: 0,
+        lockedUntil: null,
+      },
+    });
+
+    // Invalidate existing sessions
+    await authPrisma.session.deleteMany({
+      where: { identityId: targetIdentityId },
+    });
+
+    return {
+      success: true,
+      message: 'Password reset successfully',
+    };
+  }
 }

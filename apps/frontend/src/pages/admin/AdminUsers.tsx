@@ -19,18 +19,20 @@ import {
   Lock,
   UserPlus,
   ExternalLink,
+  KeyRound,
 } from 'lucide-react';
 import { Card } from '../../components/ui/card';
 import { Button } from '../../components/ui/button';
 import { Skeleton } from '../../components/ui/skeleton';
 import { EmptyState } from '../../components/shared/EmptyState';
-import api from '../../api/axios/instance';
 import {
   useAdminUsersOverview,
   useAdminUsers,
   useAdminUserDetail,
   useUpdateAdminUserProfile,
   useUpdateAdminUserStatus,
+  useCreateAdminUser,
+  useResetAdminUserPassword,
 } from '../../api/admin';
 import type { AdminUserItem, AdminUserListParams } from '../../api/admin';
 import { useAuthStore } from '../../store/AuthStore';
@@ -54,9 +56,14 @@ export const AdminUsers: React.FC = () => {
   const [newStatusValue, setNewStatusValue] = useState('ACTIVE');
   const [actionError, setActionError] = useState<string | null>(null);
 
+  // Reset Password Modal State
+  const [resettingUser, setResettingUser] = useState<AdminUserItem | null>(null);
+  const [newPasswordValue, setNewPasswordValue] = useState('');
+  const [resetSuccessMsg, setResetSuccessMsg] = useState<string | null>(null);
+
   // Create User modal state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
-  const [createRole, setCreateRole] = useState<'STUDENT' | 'FACULTY' | 'ADMINISTRATOR'>('STUDENT');
+  const [createRole, setCreateRole] = useState<'STUDENT' | 'FACULTY'>('FACULTY');
   const [createForm, setCreateForm] = useState({
     firstName: '',
     lastName: '',
@@ -98,6 +105,8 @@ export const AdminUsers: React.FC = () => {
   const { data: userDetail, isLoading: isDetailLoading } = useAdminUserDetail(selectedUserId);
   const updateProfileMutation = useUpdateAdminUserProfile();
   const updateStatusMutation = useUpdateAdminUserStatus();
+  const createAdminUserMutation = useCreateAdminUser();
+  const resetPasswordMutation = useResetAdminUserPassword();
 
   const users = userListData?.users || [];
   const pagination = userListData?.pagination || {
@@ -168,21 +177,44 @@ export const AdminUsers: React.FC = () => {
     }
   };
 
+  const handleOpenResetPassword = (user: AdminUserItem) => {
+    setResettingUser(user);
+    setNewPasswordValue('');
+    setResetSuccessMsg(null);
+    setActionError(null);
+  };
+
+  const handleSaveResetPassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!resettingUser) return;
+    try {
+      setActionError(null);
+      await resetPasswordMutation.mutateAsync({
+        id: resettingUser.id,
+        password: newPasswordValue || '123456',
+      });
+      setResetSuccessMsg(`Password successfully reset for ${resettingUser.email}`);
+      setTimeout(() => {
+        setResettingUser(null);
+        setResetSuccessMsg(null);
+      }, 1500);
+    } catch (err: any) {
+      setActionError(err.response?.data?.error?.message || err.message || 'Failed to reset password');
+    }
+  };
+
   const handleCreateUser = async (e: React.FormEvent) => {
     e.preventDefault();
     setCreateLoading(true);
     setCreateError(null);
 
     try {
-      let endpoint = '/auth/register/student';
-      if (createRole === 'FACULTY') endpoint = '/auth/register/faculty';
-      if (createRole === 'ADMINISTRATOR') endpoint = '/auth/register/admin';
-
-      await api.post(endpoint, {
+      await createAdminUserMutation.mutateAsync({
         email: createForm.email.trim(),
         password: createForm.password || '123456',
         firstName: createForm.firstName.trim(),
         lastName: createForm.lastName.trim(),
+        role: createRole,
       });
 
       setIsCreateModalOpen(false);
@@ -670,14 +702,24 @@ export const AdminUsers: React.FC = () => {
                               <Lock className="h-4 w-4" />
                             </span>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={() => handleOpenStatus(user)}
-                              className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 transition-colors cursor-pointer"
-                              title="Change Account Status"
-                            >
-                              <ShieldCheck className="h-4 w-4" />
-                            </button>
+                            <>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenResetPassword(user)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-amber-600 hover:bg-amber-50 transition-colors cursor-pointer"
+                                title="Reset User Password"
+                              >
+                                <KeyRound className="h-4 w-4" />
+                              </button>
+                              <button
+                                type="button"
+                                onClick={() => handleOpenStatus(user)}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-cyan-600 hover:bg-cyan-50 transition-colors cursor-pointer"
+                                title="Change Account Status"
+                              >
+                                <ShieldCheck className="h-4 w-4" />
+                              </button>
+                            </>
                           )}
                         </div>
                       </td>
@@ -1144,8 +1186,8 @@ export const AdminUsers: React.FC = () => {
 
               <div className="space-y-1">
                 <label className="text-slate-700 font-medium">Account Role</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {(['STUDENT', 'FACULTY', 'ADMINISTRATOR'] as const).map((r) => (
+                <div className="grid grid-cols-2 gap-2">
+                  {(['FACULTY', 'STUDENT'] as const).map((r) => (
                     <button
                       key={r}
                       type="button"
@@ -1156,7 +1198,7 @@ export const AdminUsers: React.FC = () => {
                           : 'bg-white border-slate-200 text-slate-600 hover:bg-slate-50'
                       }`}
                     >
-                      {r === 'ADMINISTRATOR' ? 'Admin' : r === 'FACULTY' ? 'Faculty' : 'Student'}
+                      {r === 'FACULTY' ? 'Faculty Member' : 'Student Candidate'}
                     </button>
                   ))}
                 </div>
@@ -1199,7 +1241,7 @@ export const AdminUsers: React.FC = () => {
               </div>
 
               <div className="space-y-1">
-                <label className="text-slate-700 font-medium">Initial Password</label>
+                <label className="text-slate-700 font-medium">Temporary Password</label>
                 <input
                   type="password"
                   value={createForm.password}
@@ -1224,9 +1266,82 @@ export const AdminUsers: React.FC = () => {
                   type="submit"
                   size="sm"
                   disabled={createLoading}
-                  className="text-xs bg-blue-600 hover:bg-blue-700 text-white"
+                  className="text-xs bg-blue-600 hover:bg-blue-700 text-white font-semibold"
                 >
-                  {createLoading ? 'Registering...' : 'Create Account'}
+                  {createLoading ? 'Creating...' : 'CREATE ACCOUNT'}
+                </Button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
+      {/* ── 10. Admin Reset Password Modal ─────────────────────────────────── */}
+      {resettingUser && (
+        <div className="fixed inset-0 z-50 bg-black/50 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white border border-slate-200 rounded-2xl max-w-md w-full overflow-hidden shadow-2xl animate-in fade-in zoom-in-95 duration-150">
+            <div className="p-5 border-b border-slate-200 flex items-center justify-between bg-slate-50">
+              <div className="flex items-center gap-2.5">
+                <KeyRound className="h-4 w-4 text-amber-600" />
+                <div>
+                  <h2 className="text-sm font-bold text-slate-900">Reset User Password</h2>
+                  <p className="text-[11px] text-slate-500">{resettingUser.email}</p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setResettingUser(null)}
+                className="p-1 rounded-lg text-slate-400 hover:text-slate-700 cursor-pointer"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            <form onSubmit={handleSaveResetPassword} className="p-5 space-y-4 text-xs">
+              {actionError && (
+                <div className="p-3 rounded-lg bg-rose-50 border border-rose-200 text-rose-700 text-xs">
+                  {actionError}
+                </div>
+              )}
+
+              {resetSuccessMsg && (
+                <div className="p-3 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs flex items-center gap-2">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0" />
+                  <span>{resetSuccessMsg}</span>
+                </div>
+              )}
+
+              <div className="space-y-1">
+                <label className="text-slate-700 font-medium">New Password</label>
+                <input
+                  type="password"
+                  value={newPasswordValue}
+                  onChange={(e) => setNewPasswordValue(e.target.value)}
+                  placeholder="Enter new password (or leave blank for: 123456)"
+                  className="w-full h-9 px-3 text-xs bg-white border border-slate-200 rounded-lg text-slate-900 focus:outline-none focus:border-amber-500"
+                />
+                <p className="text-[11px] text-slate-400">
+                  This will immediately update the password and invalidate all active user sessions.
+                </p>
+              </div>
+
+              <div className="pt-3 border-t border-slate-200 flex items-center justify-end gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setResettingUser(null)}
+                  className="text-xs border-slate-200"
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  size="sm"
+                  disabled={resetPasswordMutation.isPending}
+                  className="text-xs bg-amber-600 hover:bg-amber-700 text-white font-semibold"
+                >
+                  {resetPasswordMutation.isPending ? 'Resetting...' : 'Reset Password'}
                 </Button>
               </div>
             </form>

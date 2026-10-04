@@ -329,7 +329,28 @@ export class ReportChatService {
       }
     }
 
-    // 3. Check for CODING queries (PRIORITY: check coding before generic question numbers to prevent routing "2nd coding question" to aptitude)
+    // 3. Check for HR / BEHAVIORAL / SUMMARY queries (Phase 4 Evidence Integration)
+    const isHrQuery =
+      qLower.includes('hr') ||
+      qLower.includes('behavioral') ||
+      qLower.includes('communication') ||
+      qLower.includes('filler') ||
+      qLower.includes('speech') ||
+      qLower.includes('star') ||
+      qLower.includes('weakness') ||
+      qLower.includes('biggest weakness') ||
+      qLower.includes('strongest skill') ||
+      qLower.includes('what did i do well') ||
+      qLower.includes('what i did well') ||
+      /why did i get \d+/i.test(qLower) ||
+      /why (?:is|was) my (?:hr|score)/i.test(qLower) ||
+      /explain my (?:hr|score)/i.test(qLower);
+
+    if (isHrQuery && !qLower.includes('coding') && !qLower.includes('code') && !qLower.includes('test case') && !qLower.includes('test #')) {
+      return this.handleHRInterviewChat(userMessage, interviewId, identityId, synthesis);
+    }
+
+    // 4. Check for CODING queries (PRIORITY: check coding before generic question numbers to prevent routing "2nd coding question" to aptitude)
     const isCodingQuery =
       qLower.includes('coding') ||
       qLower.includes('code') ||
@@ -1360,6 +1381,230 @@ Return ONLY a JSON object with this exact schema:
       relatedQuestionId: prob.questionId,
       contextQuestionIndex: targetIndex,
       contextAttemptNumber: prob.bestResult?.attemptNumber || attempts.length,
+    };
+  }
+
+  /**
+   * Handle interactive HR / Behavioral / Communication / STAR / Summary queries
+   * strictly grounded in stored interview evaluation evidence.
+   */
+  private static async handleHRInterviewChat(
+    userMessage: string,
+    interviewId: string,
+    identityId: string,
+    synthesis: SynthesizedReport
+  ): Promise<ChatRouteResponse> {
+    const qLower = userMessage.toLowerCase();
+
+    // Fetch HR evaluation including summary and session responses
+    const hrEval = await (prisma as any).hRInterviewEvaluation.findFirst({
+      where: { hrSession: { interviewId } },
+      include: {
+        hrSession: {
+          include: {
+            questions: {
+              include: { response: true },
+              orderBy: { sequence: 'asc' },
+            },
+          },
+        },
+      },
+    });
+
+    const summary = (hrEval?.summary as any) || null;
+    const officialScore = hrEval?.overallScore !== undefined ? Math.round(hrEval.overallScore) : (synthesis.scoreBreakdown?.hrScore || 0);
+
+    // 1. Weakness query: "What was my biggest weakness?", "areas for improvement", etc.
+    if (qLower.includes('weakness') || qLower.includes('biggest weakness') || qLower.includes('improve') || qLower.includes('areas for improvement')) {
+      if (summary?.areasForImprovement && summary.areasForImprovement.length > 0) {
+        const topWeaknesses = summary.areasForImprovement;
+        let ans = `### 🎯 HR Interview: Key Areas for Improvement\n\n`;
+        ans += `Based strictly on your recorded interview responses:\n\n`;
+        topWeaknesses.forEach((w: any, idx: number) => {
+          ans += `**${idx + 1}. ${w.title || w.area}** (${w.priority ? w.priority.toUpperCase() + ' PRIORITY' : 'RECOMMENDATION'})\n`;
+          if (w.description) ans += `* **Observation**: ${w.description}\n`;
+          if (w.evidence) ans += `* **Observed Evidence**: "${w.evidence}"\n`;
+          if (w.impact) ans += `* **Impact**: ${w.impact}\n`;
+          if (w.recommendation) ans += `* **Actionable Advice**: ${w.recommendation}\n\n`;
+        });
+        if (summary.recommendedPracticeFocus && summary.recommendedPracticeFocus.length > 0) {
+          ans += `**Recommended Practice Focus**:\n`;
+          summary.recommendedPracticeFocus.forEach((p: any) => {
+            ans += `- **${p.focus}**: ${p.reason}\n`;
+          });
+        }
+        return {
+          answer: ans,
+          suggestedFollowups: [
+            'What did I do well?',
+            `Why did I get ${officialScore}?`,
+            'How was my communication?',
+            'How was my STAR performance?',
+          ],
+        };
+      } else if (hrEval?.improvements && hrEval.improvements.length > 0) {
+        return {
+          answer: `### 🎯 Areas for Improvement\n\n` +
+            hrEval.improvements.map((imp: string, i: number) => `${i + 1}. ${imp}`).join('\n') +
+            `\n\nFocus on providing structured examples with clear, measurable outcomes.`,
+          suggestedFollowups: ['What did I do well?', `Why did I get ${officialScore}?`, 'How was my communication?'],
+        };
+      }
+      return {
+        answer: `No significant behavioral weaknesses were flagged in your responses. You maintained strong clarity and relevance throughout the interview.`,
+        suggestedFollowups: ['What did I do well?', `Why did I get ${officialScore}?`],
+      };
+    }
+
+    // 2. Strengths query: "What did I do well?", "strongest skill", "my strengths"
+    if (qLower.includes('what did i do well') || qLower.includes('what i did well') || qLower.includes('strength') || qLower.includes('strongest')) {
+      if (summary?.topStrengths && summary.topStrengths.length > 0) {
+        let ans = `### 🌟 HR Interview: Top Demonstrated Strengths\n\n`;
+        ans += `Here is the verified evidence of what you did well:\n\n`;
+        summary.topStrengths.forEach((s: any, idx: number) => {
+          ans += `**${idx + 1}. ${s.title || s.strength}**\n`;
+          if (s.description) ans += `* **Assessment**: ${s.description}\n`;
+          if (s.evidence) ans += `* **Observed Evidence**: "${s.evidence}"\n\n`;
+        });
+        if (summary.strongestDimensions && summary.strongestDimensions.length > 0) {
+          ans += `**Highest Rated Dimensions**:\n`;
+          summary.strongestDimensions.forEach((d: any) => {
+            ans += `- **${d.dimension.toUpperCase()}**: ${typeof d.averageScore === 'number' ? d.averageScore.toFixed(1) : d.averageScore}/10\n`;
+          });
+        }
+        return {
+          answer: ans,
+          suggestedFollowups: [
+            'What was my biggest weakness?',
+            `Why did I get ${officialScore}?`,
+            'How was my communication?',
+          ],
+        };
+      } else if (hrEval?.strengths && hrEval.strengths.length > 0) {
+        return {
+          answer: `### 🌟 Your Key Strengths\n\n` +
+            hrEval.strengths.map((str: string, i: number) => `* **${str}**`).join('\n'),
+          suggestedFollowups: ['What was my biggest weakness?', `Why did I get ${officialScore}?`],
+        };
+      }
+      return {
+        answer: `You completed your interview questions with relevant responses aligned to the target role.`,
+        suggestedFollowups: ['What was my biggest weakness?', `Why did I get ${officialScore}?`],
+      };
+    }
+
+    // 3. Score explanation query: "Why did I get 76?", "explain my score"
+    if (/why did i get \d+/i.test(qLower) || /why (?:is|was) my (?:hr|score)/i.test(qLower) || /explain my (?:hr|score)/i.test(qLower) || qLower.includes('score')) {
+      let ans = `### 📊 Official HR Score Explanation\n\n`;
+      ans += `* **Official HR Score**: **${officialScore} / 100**\n`;
+      ans += `* **Authority**: \`HRScoreEngine\` (Deterministic 8-Dimension Evaluation)\n`;
+      if (summary?.overallAssessment?.category) {
+        ans += `* **Performance Band**: **${summary.overallAssessment.category}**\n`;
+      }
+      ans += `\nYour score is calculated deterministically from verified responses across 8 behavioral dimensions:\n\n`;
+      if (summary?.strongestDimensions && summary.strongestDimensions.length > 0) {
+        ans += `* **Top Performing Dimensions**: ${summary.strongestDimensions.map((d: any) => `${d.dimension} (${d.averageScore}/10)`).join(', ')}\n`;
+      }
+      if (summary?.weakestDimensions && summary.weakestDimensions.length > 0) {
+        ans += `* **Areas Pulling Down Score**: ${summary.weakestDimensions.map((d: any) => `${d.dimension} (${d.averageScore}/10)`).join(', ')}\n`;
+      }
+      if (summary?.overallAssessment?.summary) {
+        ans += `\n**Evaluation Summary**:\n${summary.overallAssessment.summary}\n`;
+      } else if (hrEval?.aiSummary) {
+        ans += `\n${hrEval.aiSummary}\n`;
+      }
+      return {
+        answer: ans,
+        suggestedFollowups: [
+          'What was my biggest weakness?',
+          'What did I do well?',
+          'How was my communication?',
+          'How was my STAR performance?',
+        ],
+      };
+    }
+
+    // 4. Communication & Speech analysis query: "How was my communication?", "filler words", "speaking pace"
+    if (qLower.includes('communication') || qLower.includes('filler') || qLower.includes('speech') || qLower.includes('pace') || qLower.includes('wpm')) {
+      let ans = `### 🎙️ Communication & Speech Intelligence Analysis\n\n`;
+      const commAssessment = summary?.communicationAssessment;
+      if (commAssessment?.summary) {
+        ans += `${commAssessment.summary}\n\n`;
+      }
+      const sp = hrEval?.speechSummary as any;
+      if (sp) {
+        ans += `**Verified Speech Metrics**:\n`;
+        if (sp.averagePaceWpm) ans += `* **Speaking Pace**: ${Math.round(sp.averagePaceWpm)} WPM (${sp.averagePaceWpm < 110 ? 'Deliberate / Slow' : sp.averagePaceWpm > 170 ? 'Fast' : 'Optimal Coaching Band'})\n`;
+        if (sp.totalFillerCount !== undefined) ans += `* **Filler Words Count**: ${sp.totalFillerCount} (${sp.averageFillerRatePerMin ? sp.averageFillerRatePerMin.toFixed(1) + '/min' : 'detected'})\n`;
+        if (sp.totalRepetitionCount !== undefined) ans += `* **Repeated Phrases**: ${sp.totalRepetitionCount}\n`;
+        if (sp.totalFalseStartCount !== undefined) ans += `* **False Starts**: ${sp.totalFalseStartCount}\n`;
+        if (sp.totalConfidenceScore !== undefined) ans += `* **Language Confidence Score**: ${sp.totalConfidenceScore}/100\n`;
+      }
+      if (commAssessment?.improvements && commAssessment.improvements.length > 0) {
+        ans += `\n**Coaching Recommendations**:\n`;
+        commAssessment.improvements.forEach((imp: string) => {
+          ans += `* ${imp}\n`;
+        });
+      }
+      return {
+        answer: ans,
+        suggestedFollowups: [
+          'What was my biggest weakness?',
+          'What did I do well?',
+          'How was my STAR performance?',
+        ],
+      };
+    }
+
+    // 5. STAR Performance query: "How was my STAR performance?", "STAR"
+    if (qLower.includes('star')) {
+      const star = summary?.starAssessment;
+      let ans = `### ⭐ STAR Framework Performance\n\n`;
+      if (star) {
+        ans += `* **STAR-Applicable Responses**: ${star.applicableResponses}\n`;
+        ans += `* **Complete STAR Answers**: ${star.completeResponses} / ${star.applicableResponses}\n`;
+        if (star.missingResultResponses > 0) {
+          ans += `* **Responses Missing Result**: ${star.missingResultResponses} (Action was described without a clear business outcome or measurable result)\n`;
+        }
+        if (star.summary) {
+          ans += `\n**Analysis**:\n${star.summary}\n`;
+        }
+      } else {
+        ans += `The STAR method evaluates behavioral questions across **Situation**, **Task**, **Action**, and **Result**.\n\n`;
+        ans += hrEval?.starGuidance || `Make sure each behavioral story concludes with a tangible Result.`;
+      }
+      return {
+        answer: ans,
+        suggestedFollowups: [
+          'What was my biggest weakness?',
+          'What did I do well?',
+          'How was my communication?',
+        ],
+      };
+    }
+
+    // 6. Default HR Executive Summary
+    let defaultAns = `### 📋 HR Interview Executive Summary\n\n`;
+    if (summary?.executiveSummary) {
+      defaultAns += `${summary.executiveSummary}\n\n`;
+    } else if (hrEval?.aiSummary) {
+      defaultAns += `${hrEval.aiSummary}\n\n`;
+    } else {
+      defaultAns += `Interview evaluation completed with an official score of **${officialScore} / 100**.\n\n`;
+    }
+    defaultAns += `* **Official HR Score**: **${officialScore} / 100** (\`HRScoreEngine\`)\n`;
+    if (summary?.overallAssessment?.category) {
+      defaultAns += `* **Assessment Band**: ${summary.overallAssessment.category}\n`;
+    }
+
+    return {
+      answer: defaultAns,
+      suggestedFollowups: [
+        'What was my biggest weakness?',
+        'What did I do well?',
+        'How was my communication?',
+        'How was my STAR performance?',
+      ],
     };
   }
 }

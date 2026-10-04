@@ -1,4 +1,20 @@
 import { CodingProblemEvidence } from './ReportEvidenceService';
+import axios from 'axios';
+
+// ─── LLM Configuration (reuses same env vars as InterviewAIService) ───────────
+const _GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
+const _GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
+const TUTOR_PROMPT_VERSION = '3.0.0';
+const TUTOR_ANALYSIS_VERSION = 'coding-tutor-v1';
+
+function _getLLMKey(): string {
+  return process.env.LLM_API_KEY || '';
+}
+
+function _isLLMAvailable(): boolean {
+  const key = _getLLMKey();
+  return !!key && key.length > 10;
+}
 
 export type FailureCategory =
   | 'LOGICAL_ERROR'
@@ -42,33 +58,80 @@ export interface FailedTestAnalysis {
   visible: true;
 }
 
+/**
+ * Full AI Coding Tutor analysis — persisted per-submission, never overwritten.
+ * Generated once by the LLM and cached on InterviewExecutionRecord.aiAnalysis.
+ */
 export interface CodingAttemptAIAnalysis {
-  analysisVersion: string;
+  // ── Metadata ──────────────────────────────────────────────────────────────
+  analysisVersion: string;      // e.g. 'coding-tutor-v1'
   model: string;
   promptVersion: string;
-  generatedAt: string;
+  generatedAt: string;          // ISO timestamp
   status: 'COMPLETED' | 'FAILED' | 'UNAVAILABLE';
   submissionId: string;
   attemptNumber: number;
 
-  // For failed / partial attempt:
-  whatWentWrong?: string;
-  whyItFailed?: string;
-  howToFix?: string;
-  correctedCode?: string;
-  concept?: string;
-  prevention?: string;
+  // ── Submission Verdict (authoritative — comes from judge, not LLM) ────────
+  submissionStatus: 'ACCEPTED' | 'INCORRECT' | 'COMPILATION_ERROR' | 'RUNTIME_ERROR';
 
-  // For accepted attempt:
-  whyItWorks?: string;
-  algorithm?: string;
-  invariants?: string;
-  complexity?: {
-    time: string;
-    space: string;
-    confidence: 'High' | 'Medium';
-    source: 'AI';
+  // ── Candidate Submission Analysis ─────────────────────────────────────────
+  submissionAnalysis: {
+    verdict: string;            // e.g. "Accepted — 10/10 tests passed"
+    explanation: string;        // LLM explanation of the outcome
+    candidateApproach: string;  // What algorithm/pattern the candidate used
+    codeExplanation: string;    // Step-by-step explanation of the actual submitted code
+    timeComplexity: string;     // e.g. "O(n)"
+    spaceComplexity: string;    // e.g. "O(n)"
   };
+
+  // ── Brute Force Approach ──────────────────────────────────────────────────
+  bruteForce: {
+    available: boolean;
+    idea: string;
+    steps: string[];
+    code: string | null;        // Complete executable stdin/stdout program
+    timeComplexity: string;
+    spaceComplexity: string;
+  };
+
+  // ── Optimal Approach ──────────────────────────────────────────────────────
+  optimalApproach: {
+    idea: string;
+    steps: string[];
+    code: string | null;        // Complete executable stdin/stdout program
+    timeComplexity: string;
+    spaceComplexity: string;
+    whyOptimal: string;         // Comparison vs brute-force
+  };
+
+  // ── Correction (only populated when submission is INCORRECT) ─────────────
+  correction: {
+    required: boolean;
+    rootCause: string | null;
+    correctedCode: string | null; // Complete executable program; null = unavailable
+    explanation: string | null;   // Why the fix works
+    /**
+     * UNVERIFIED = LLM-generated only.
+     * VERIFIED   = Authoritative judge confirmed all tests pass.
+     */
+    verificationStatus: 'UNVERIFIED' | 'VERIFIED' | null;
+  };
+
+  // ── Optimization Review ───────────────────────────────────────────────────
+  optimizationReview: {
+    status: 'OPTIMAL' | 'CAN_BE_OPTIMIZED';
+    explanation: string;
+  };
+
+  // ── Learning Metadata ─────────────────────────────────────────────────────
+  keyConcept: string;
+  bugPrevention: string;
+
+  // ── Legacy fields kept for backward-compat (accepted-only flow) ───────────
+  /** @deprecated Use submissionAnalysis.codeExplanation */
+  whyItWorks?: string;
+  /** @deprecated Use optimizationReview */
   optimization?: {
     currentComplexity: string;
     suggestedComplexity: string;
@@ -881,11 +944,280 @@ export class CodingDiagnosticEngine {
     return `Mastering ${p.pattern || 'this algorithmic pattern'} allows reducing unnecessary state recalculation and choosing the optimal data structure for problem constraints.`;
   }
 
+
   /**
-   * Generates comprehensive attempt-specific AI analysis for an immutable submission record.
-   * Cached directly on InterviewExecutionRecord.aiAnalysis.
+   * Calls Groq LLM to act as a DSA tutor:
+   *   - Explains the candidate's actual code
+   *   - Provides brute-force and optimal approaches with COMPLETE programs
+   *   - Only generates correctedCode when the submission is not accepted
+   *   - Derives complexity from the actual submitted code
+   * Returns null if the LLM is unavailable (never fabricates).
    */
-  static analyzeAttempt(
+  private static async callGroqForTutorAnalysis(
+    attempt: {
+      language: string;
+      sourceCode: string | null;
+      submissionStatus: 'ACCEPTED' | 'INCORRECT' | 'COMPILATION_ERROR' | 'RUNTIME_ERROR';
+      passedCount: number;
+      totalCount: number;
+      compileError?: string | null;
+      runtimeError?: string | null;
+      testResults?: any[];
+      primaryErrorType?: string | null;
+    },
+    problemMeta: {
+      title: string;
+      description?: string;
+      constraints?: any[];
+      examples?: any[];
+      pattern?: string;
+      topic?: string;
+      difficulty?: string;
+      expectedComplexity?: string;
+      expectedSpaceComplexity?: string;
+      authoritativeTestCases?: any[];
+    }
+  ): Promise<Omit<CodingAttemptAIAnalysis, 'analysisVersion' | 'model' | 'promptVersion' | 'generatedAt' | 'status' | 'submissionId' | 'attemptNumber' | 'submissionStatus'> | null> {
+    if (!_isLLMAvailable()) return null;
+
+    const lang = attempt.language || 'python';
+    const sourceCode = attempt.sourceCode || '';
+    if (!sourceCode.trim()) return null;
+
+    const isAccepted = attempt.submissionStatus === 'ACCEPTED';
+    const isCompilationError = attempt.submissionStatus === 'COMPILATION_ERROR';
+    const isRuntimeError = attempt.submissionStatus === 'RUNTIME_ERROR';
+
+    // Collect up to 3 failed test cases as authoritative evidence
+    const failedTests = (attempt.testResults || []).filter((t: any) => !t.passed).slice(0, 3);
+    const failedEvidence = failedTests.length > 0
+      ? failedTests.map((t: any, i: number) =>
+          `Failed Test ${i + 1}:\n  Input: ${t.input ?? '(not shown)'}\n  Expected: ${t.expectedOutput ?? '(not shown)'}\n  Actual:   ${t.actualOutput ?? '(empty)'}${t.errorMessage ? `\n  Error: ${t.errorMessage}` : ''}`
+        ).join('\n\n')
+      : '';
+
+    const constraintsText = Array.isArray(problemMeta.constraints) && problemMeta.constraints.length > 0
+      ? problemMeta.constraints.map((c: any) => (typeof c === 'string' ? c : JSON.stringify(c))).join('\n')
+      : 'See problem statement';
+
+    const examplesText = Array.isArray(problemMeta.examples) && problemMeta.examples.length > 0
+      ? problemMeta.examples.slice(0, 2).map((e: any) =>
+          `Input: ${e.input ?? e.inputText ?? JSON.stringify(e)}\nOutput: ${e.output ?? e.expectedOutput ?? e.outputText ?? ''}`
+        ).join('\n---\n')
+      : '';
+
+    const errorContext = [
+      attempt.compileError ? `Compilation Error:\n${attempt.compileError}` : '',
+      attempt.runtimeError ? `Runtime Error:\n${attempt.runtimeError}` : '',
+    ].filter(Boolean).join('\n');
+
+    const verdictLine = isAccepted
+      ? `ACCEPTED â€” ${attempt.passedCount}/${attempt.totalCount} tests passed`
+      : isCompilationError
+        ? `COMPILATION_ERROR â€” Code did not compile`
+        : isRuntimeError
+          ? `RUNTIME_ERROR â€” ${attempt.passedCount}/${attempt.totalCount} tests passed before crash`
+          : `INCORRECT â€” ${attempt.passedCount}/${attempt.totalCount} tests passed`;
+
+    const expectedTime = problemMeta.expectedComplexity || 'Not specified';
+    const expectedSpace = problemMeta.expectedSpaceComplexity || 'Not specified';
+
+    const systemPrompt = `You are an expert DSA tutor and competitive programming coach. Your role is to provide EDUCATIONAL analysis of a candidate's coding submission, NOT just to correct it.
+
+CRITICAL RULES YOU MUST FOLLOW:
+1. You MUST explain the candidate's ACTUAL submitted code — do NOT replace it silently.
+2. You are NOT the judge. The authoritative execution result is provided. Do NOT override it.
+3. submissionStatus is determined by the judge — accept it as ground truth.
+4. If submissionStatus is ACCEPTED: correction.required = false, correction.correctedCode = null.
+5. If submissionStatus is INCORRECT/COMPILATION_ERROR/RUNTIME_ERROR: correction.required = true, provide correctedCode.
+6. correctedCode MUST be a COMPLETE executable stdin/stdout program in ${lang} — never pseudocode or snippets.
+7. bruteForce.code and optimalApproach.code MUST be COMPLETE executable programs in ${lang}.
+8. Derive complexity from the candidate's ACTUAL code — NEVER contradict the code.
+9. Consider expected problem complexity (Time: ${expectedTime}, Space: ${expectedSpace}) as problem context, but derive candidate complexity from their actual implementation.
+10. Do NOT invent test results, scores, or execution data.
+11. Respond ONLY with a valid JSON object — no markdown fences, no text outside JSON.
+12. Properly escape all strings: use \\n for newlines inside JSON string values.
+13. If correctedCode or brute-force code is unavailable, set to null — never use placeholders.
+
+REQUIRED JSON SCHEMA:
+{
+  "submissionAnalysis": {
+    "verdict": "<e.g. 'Accepted — 10/10 tests passed'>",
+    "explanation": "<Explain what the judge result means and why>",
+    "candidateApproach": "<Name and describe the algorithm/pattern the candidate used>",
+    "codeExplanation": "<Step-by-step explanation of the candidate's ACTUAL submitted code — variables, loops, logic, data structures>",
+    "timeComplexity": "<e.g. O(n) — derived from candidate code>",
+    "spaceComplexity": "<e.g. O(n) — derived from candidate code>"
+  },
+  "bruteForce": {
+    "available": true,
+    "idea": "<Simple, beginner-friendly explanation of the naive approach>",
+    "steps": ["<step 1>", "<step 2>", "..."],
+    "code": "<COMPLETE executable ${lang} program solving this ACTUAL problem via brute force, or null>",
+    "timeComplexity": "<e.g. O(n²)>",
+    "spaceComplexity": "<e.g. O(1)>"
+  },
+  "optimalApproach": {
+    "idea": "<Simple explanation of the best approach>",
+    "steps": ["<step 1>", "<step 2>", "..."],
+    "code": "<COMPLETE executable ${lang} program using the optimal approach, or null>",
+    "timeComplexity": "<e.g. O(n)>",
+    "spaceComplexity": "<e.g. O(n)>",
+    "whyOptimal": "<How this improves over brute force — with specific complexity comparison>"
+  },
+  "correction": {
+    "required": <true if INCORRECT/COMPILATION_ERROR/RUNTIME_ERROR, false if ACCEPTED>,
+    "rootCause": "<Precise explanation of the actual bug based on failed test evidence, or null if ACCEPTED>",
+    "correctedCode": "<COMPLETE corrected executable ${lang} program, or null if ACCEPTED or if unable to determine>",
+    "explanation": "<Why the corrected code fixes the bug, or null if ACCEPTED>"
+  },
+  "optimizationReview": {
+    "status": "<OPTIMAL or CAN_BE_OPTIMIZED>",
+    "explanation": "<If OPTIMAL: confirm. If CAN_BE_OPTIMIZED: state current vs improved complexity and explain why>"
+  },
+  "keyConcept": "<The key DSA concept this problem teaches>",
+  "bugPrevention": "<Concrete actionable advice to avoid this class of bug in the future>"
+}`;
+
+    const userPrompt = `=== PROBLEM ===
+Title: ${problemMeta.title}
+Difficulty: ${problemMeta.difficulty || 'Medium'}
+Pattern/Topic: ${problemMeta.pattern || problemMeta.topic || 'Algorithms'}
+Expected Optimal Time Complexity: ${expectedTime}
+Expected Optimal Space Complexity: ${expectedSpace}
+${problemMeta.description ? `\nDescription:\n${problemMeta.description}` : ''}
+${constraintsText ? `\nConstraints:\n${constraintsText}` : ''}
+${examplesText ? `\nExamples:\n${examplesText}` : ''}
+
+=== CANDIDATE SUBMISSION ===
+Language: ${lang}
+Submission Status (AUTHORITATIVE — from judge): ${verdictLine}
+
+Candidate's Submitted Code:
+\`\`\`${lang}
+${sourceCode}
+\`\`\`
+
+${errorContext ? `=== ERRORS ===\n${errorContext}\n` : ''}${failedEvidence ? `=== FAILED TEST EVIDENCE (authoritative) ===\n${failedEvidence}\n` : ''}
+Provide a complete educational DSA tutor analysis as per the JSON schema.`;
+
+    const executeGroqCall = async (extraPromptNotice = ''): Promise<any | null> => {
+      try {
+        const messages = [
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: extraPromptNotice ? `${userPrompt}\n\nIMPORTANT: ${extraPromptNotice}` : userPrompt },
+        ];
+        const response = await axios.post(
+          _GROQ_API_URL,
+          {
+            model: _GROQ_MODEL,
+            messages,
+            max_tokens: 8192,
+            temperature: 0.1,
+          },
+          {
+            headers: {
+              Authorization: `Bearer ${_getLLMKey()}`,
+              'Content-Type': 'application/json',
+            },
+            timeout: 60000,
+          }
+        );
+
+        const raw = response.data?.choices?.[0]?.message?.content?.trim() || '';
+        if (!raw) return null;
+
+        let jsonStr = raw;
+        const fenceMatch = raw.match(/```(?:json)?\s*([\s\S]*?)```/);
+        if (fenceMatch) jsonStr = fenceMatch[1].trim();
+        else {
+          const start = raw.indexOf('{');
+          const end = raw.lastIndexOf('}');
+          if (start !== -1 && end !== -1) jsonStr = raw.substring(start, end + 1);
+        }
+
+        return JSON.parse(jsonStr);
+      } catch (err: any) {
+        console.error('[CodingDiagnosticEngine] Groq API call failed:', {
+          status: err.response?.status,
+          error: err.response?.data?.error || err.message,
+          model: _GROQ_MODEL,
+        });
+        return null;
+      }
+    };
+
+    try {
+      let parsed = await executeGroqCall();
+      if (!parsed) {
+        // Retry once with strict formatting notice if first call failed
+        parsed = await executeGroqCall('Your previous response was not valid JSON. You MUST return ONLY a parseable raw JSON object.');
+      }
+      if (!parsed) return null;
+
+      // Safety guards — reject stub code
+      const isStub = (s: string | null) =>
+        !s || s.trim().length < 30 || /^(print\("hello"\)|console\.log\("hello"\)|pass|TODO)/.test(s.trim());
+
+      const cc = parsed.correction?.correctedCode || null;
+      const bfCode = parsed.bruteForce?.code || null;
+      const optCode = parsed.optimalApproach?.code || null;
+
+      return {
+        submissionAnalysis: {
+          verdict: parsed.submissionAnalysis?.verdict || verdictLine,
+          explanation: parsed.submissionAnalysis?.explanation || '',
+          candidateApproach: parsed.submissionAnalysis?.candidateApproach || '',
+          codeExplanation: parsed.submissionAnalysis?.codeExplanation || '',
+          timeComplexity: parsed.submissionAnalysis?.timeComplexity || 'O(n)',
+          spaceComplexity: parsed.submissionAnalysis?.spaceComplexity || 'O(1)',
+        },
+        bruteForce: {
+          available: parsed.bruteForce?.available !== false,
+          idea: parsed.bruteForce?.idea || '',
+          steps: Array.isArray(parsed.bruteForce?.steps) ? parsed.bruteForce.steps : [],
+          code: isStub(bfCode) ? null : bfCode,
+          timeComplexity: parsed.bruteForce?.timeComplexity || '',
+          spaceComplexity: parsed.bruteForce?.spaceComplexity || '',
+        },
+        optimalApproach: {
+          idea: parsed.optimalApproach?.idea || '',
+          steps: Array.isArray(parsed.optimalApproach?.steps) ? parsed.optimalApproach.steps : [],
+          code: isStub(optCode) ? null : optCode,
+          timeComplexity: parsed.optimalApproach?.timeComplexity || '',
+          spaceComplexity: parsed.optimalApproach?.spaceComplexity || '',
+          whyOptimal: parsed.optimalApproach?.whyOptimal || '',
+        },
+        correction: {
+          required: parsed.correction?.required === true,
+          rootCause: parsed.correction?.rootCause || null,
+          correctedCode: isStub(cc) ? null : cc,
+          explanation: parsed.correction?.explanation || null,
+          verificationStatus: (parsed.correction?.required && !isStub(cc)) ? 'UNVERIFIED' : null,
+        },
+        optimizationReview: {
+          status: parsed.optimizationReview?.status === 'CAN_BE_OPTIMIZED' ? 'CAN_BE_OPTIMIZED' : 'OPTIMAL',
+          explanation: parsed.optimizationReview?.explanation || '',
+        },
+        keyConcept: parsed.keyConcept || '',
+        bugPrevention: parsed.bugPrevention || '',
+        // Legacy backward-compat
+        whyItWorks: isAccepted ? (parsed.submissionAnalysis?.explanation || '') : undefined,
+      };
+    } catch (err: any) {
+      console.warn('[CodingDiagnosticEngine] Tutor LLM call failed:', err?.message || err);
+      return null;
+    }
+  }
+
+  /**
+   * Generates comprehensive attempt-specific AI Coding Tutor analysis.
+   * Cached on InterviewExecutionRecord.aiAnalysis — never overwritten for existing records.
+   *
+   * THE JUDGE IS THE SOLE AUTHORITY for passedCount, totalCount, and submission status.
+   * This method only reads those values — it never modifies them.
+   */
+  static async analyzeAttempt(
     attempt: {
       submissionId: string;
       attemptNumber: number;
@@ -904,26 +1236,41 @@ export class CodingDiagnosticEngine {
     problemMeta: {
       problemId: string;
       title: string;
+      description?: string;
       pattern?: string;
       topic?: string;
       difficulty?: string;
       constraints?: any[];
+      examples?: any[];
       expectedComplexity?: string;
       expectedSpaceComplexity?: string;
       authoritativeTestCases?: any[];
     }
-  ): CodingAttemptAIAnalysis {
+  ): Promise<CodingAttemptAIAnalysis> {
     const totalCount = typeof attempt.totalCount === 'number' ? attempt.totalCount : (attempt.totalTests || 0);
-    const isAccepted =
+
+    // ── Submission status comes EXCLUSIVELY from the judge ──────────────────
+    let submissionStatus: 'ACCEPTED' | 'INCORRECT' | 'COMPILATION_ERROR' | 'RUNTIME_ERROR';
+    if (attempt.compileError) {
+      submissionStatus = 'COMPILATION_ERROR';
+    } else if (attempt.runtimeError && attempt.passedCount < totalCount) {
+      submissionStatus = 'RUNTIME_ERROR';
+    } else if (
       attempt.status === 'ACCEPTED' ||
       attempt.status === 'PASSED' ||
-      (attempt.passedCount === totalCount && totalCount > 0);
+      (attempt.passedCount === totalCount && totalCount > 0)
+    ) {
+      submissionStatus = 'ACCEPTED';
+    } else {
+      submissionStatus = 'INCORRECT';
+    }
 
+    const isAccepted = submissionStatus === 'ACCEPTED';
     const sourceCode = attempt.sourceCode || '';
     const lang = (attempt.language || 'python').toLowerCase();
     const pattern = problemMeta.pattern || problemMeta.topic || 'Algorithms';
 
-    // Mock problem structure to run diagnostic
+    // Run static diagnostic (rule-based — no LLM, no scoring changes)
     const probEvidence: CodingProblemEvidence = {
       questionId: problemMeta.problemId,
       title: problemMeta.title,
@@ -966,204 +1313,136 @@ export class CodingDiagnosticEngine {
     };
 
     const diag = this.analyze(probEvidence);
+    const approachInfo = diag.complexityAnalysis;
 
-    if (isAccepted) {
-      const approachInfo = diag.complexityAnalysis;
-      const isOptimal = approachInfo.isOptimal;
-
-      let optimization = undefined;
-      if (isOptimal) {
-        optimization = {
-          currentComplexity: approachInfo.candidateTime || 'O(n)',
-          suggestedComplexity: approachInfo.optimalTime || 'O(n)',
-          description: 'No meaningful better asymptotic approach was identified.',
-          whyBetter: 'The submitted implementation matches the theoretical optimal time and space complexity for this problem.',
-          isAlreadyOptimal: true,
-        };
-      } else {
-        optimization = {
-          currentComplexity: approachInfo.candidateTime || 'O(n²)',
-          suggestedComplexity: approachInfo.optimalTime || 'O(n)',
-          description: `Optimize by transitioning from ${approachInfo.candidateApproach} to ${approachInfo.optimalApproach}.`,
-          whyBetter: approachInfo.reason || 'Avoids redundant nested iterations by utilizing optimal state management.',
-          aiOptimizedCode: this.generateOptimizedCode(sourceCode, lang, approachInfo.optimalApproach, pattern),
-          isAlreadyOptimal: false,
-        };
+    // ── LLM Tutor Analysis ──────────────────────────────────────────────────
+    const tutorResult = await this.callGroqForTutorAnalysis(
+      {
+        language: attempt.language,
+        sourceCode,
+        submissionStatus,
+        passedCount: attempt.passedCount,
+        totalCount,
+        compileError: attempt.compileError,
+        runtimeError: attempt.runtimeError,
+        testResults: attempt.testResults,
+        primaryErrorType: attempt.primaryErrorType,
+      },
+      {
+        title: problemMeta.title,
+        description: problemMeta.description,
+        constraints: problemMeta.constraints,
+        examples: problemMeta.examples,
+        pattern: problemMeta.pattern,
+        topic: problemMeta.topic,
+        difficulty: problemMeta.difficulty,
+        expectedComplexity: problemMeta.expectedComplexity,
+        expectedSpaceComplexity: problemMeta.expectedSpaceComplexity,
+        authoritativeTestCases: problemMeta.authoritativeTestCases,
       }
+    );
 
+    // ── Build fallback values from rule-based diagnostic ────────────────────
+    const verdictLine = isAccepted
+      ? `Accepted — ${attempt.passedCount}/${totalCount} tests passed`
+      : submissionStatus === 'COMPILATION_ERROR'
+        ? `Compilation Error — Code did not compile`
+        : submissionStatus === 'RUNTIME_ERROR'
+          ? `Runtime Error — ${attempt.passedCount}/${totalCount} tests passed before crash`
+          : `Incorrect — ${attempt.passedCount}/${totalCount} tests passed`;
+
+    const fallbackExplanation = isAccepted
+      ? `Your algorithm correctly satisfies all test specifications using ${approachInfo.candidateApproach}.`
+      : diag.whatWentWrong?.join(' ') || `Submission failed: ${verdictLine}`;
+
+    const fallbackBugCause = diag.failedTests?.[0]?.whyItFails || 'The submitted code produced unexpected output on one or more test cases.';
+
+    const finalKeyConcept = tutorResult?.keyConcept || diag.keyLearning || `${pattern} — Algorithmic Pattern`;
+    const finalBugPrevention = tutorResult?.bugPrevention || 'Always verify boundary conditions, edge cases, and input parsing before submitting.';
+
+    // ── Build legacy optimization field for backward-compat ─────────────────
+    const isOptimal = approachInfo.isOptimal;
+    const legacyOptimization = isAccepted ? {
+      currentComplexity: approachInfo.candidateTime || 'O(n)',
+      suggestedComplexity: approachInfo.optimalTime || 'O(n)',
+      description: isOptimal
+        ? 'No meaningful asymptotic improvement was identified.'
+        : `Transition from ${approachInfo.candidateApproach} to ${approachInfo.optimalApproach}.`,
+      whyBetter: approachInfo.reason || 'Avoids redundant nested iterations.',
+      isAlreadyOptimal: isOptimal,
+    } : undefined;
+
+    if (tutorResult) {
+      // ── Full LLM-powered tutor result ─────────────────────────────────────
       return {
-        analysisVersion: '2.0.0',
-        model: 'CodingDiagnosticEngine-v2',
-        promptVersion: '2.0',
+        analysisVersion: TUTOR_ANALYSIS_VERSION,
+        model: `groq/${_GROQ_MODEL}`,
+        promptVersion: TUTOR_PROMPT_VERSION,
         generatedAt: new Date().toISOString(),
         status: 'COMPLETED',
         submissionId: attempt.submissionId,
         attemptNumber: attempt.attemptNumber,
-        whyItWorks: `Your algorithm correctly satisfies all test specifications by utilizing ${approachInfo.candidateApproach}. The loop termination, boundary conditions, and state updates remain consistent across all evaluated input sets.`,
-        algorithm: approachInfo.candidateApproach,
-        invariants: `At each iteration step, the processed segment maintains valid constraints without data corruption or redundant state recalculation.`,
-        complexity: {
-          time: approachInfo.candidateTime || 'O(n)',
-          space: approachInfo.candidateSpace || 'O(1)',
-          confidence: 'High',
-          source: 'AI',
-        },
-        optimization,
+        submissionStatus,
+        submissionAnalysis: tutorResult.submissionAnalysis,
+        bruteForce: tutorResult.bruteForce,
+        optimalApproach: tutorResult.optimalApproach,
+        correction: tutorResult.correction,
+        optimizationReview: tutorResult.optimizationReview,
+        keyConcept: finalKeyConcept,
+        bugPrevention: finalBugPrevention,
+        // Legacy
+        whyItWorks: tutorResult.whyItWorks,
+        optimization: legacyOptimization,
       };
     }
 
-    // Failed or Partial Attempt
-    const failedTests = diag.failedTests || [];
-    const firstFail = failedTests[0] || null;
-
-    let whatWentWrong = 'The submitted algorithm produced unexpected outputs on one or more test cases.';
-    if (diag.whatWentWrong && diag.whatWentWrong.length > 0) {
-      whatWentWrong = diag.whatWentWrong.join(' ');
-    } else if (firstFail) {
-      whatWentWrong = `Your code fails on test cases categorized as ${firstFail.failureCategory.replace(/_/g, ' ')}. Specifically: ${firstFail.explanation}`;
-    }
-
-    let whyItFailed = firstFail?.whyItFails || 'The boundary conditions or state transitions do not handle edge inputs properly.';
-    let howToFix = diag.howToFix && diag.howToFix.length > 0 ? diag.howToFix.join(' ') : (firstFail?.howToFix || 'Verify loop bounds and edge cases.');
-
-    const correctedCode = this.generateCorrectedCode(sourceCode, lang, firstFail?.failureCategory || 'LOGICAL_ERROR', failedTests, pattern);
-
+    // ── LLM unavailable: mark UNAVAILABLE honestly (Part 11) ───────────────
+    console.warn('[CodingDiagnosticEngine] LLM unavailable — marking status UNAVAILABLE (no fake COMPLETED).');
     return {
-      analysisVersion: '2.0.0',
-      model: 'CodingDiagnosticEngine-v2',
-      promptVersion: '2.0',
+      analysisVersion: TUTOR_ANALYSIS_VERSION,
+      model: 'CodingDiagnosticEngine-v2 (unavailable)',
+      promptVersion: '0.0',
       generatedAt: new Date().toISOString(),
-      status: 'COMPLETED',
+      status: 'UNAVAILABLE',
       submissionId: attempt.submissionId,
       attemptNumber: attempt.attemptNumber,
-      whatWentWrong,
-      whyItFailed,
-      howToFix,
-      correctedCode,
-      concept: diag.keyLearning || `${pattern} / Boundary State Handling`,
-      prevention: 'Always test edge cases including empty/single-element inputs, negative values, duplicates, and minimum/maximum constraint bounds before submitting.',
+      submissionStatus,
+      submissionAnalysis: {
+        verdict: verdictLine,
+        explanation: 'AI analysis is currently unavailable for this submission. Your judge result and submission evidence are still available.',
+        candidateApproach: null as any,
+        codeExplanation: 'AI analysis is currently unavailable for this submission.',
+        timeComplexity: null as any,
+        spaceComplexity: null as any,
+      },
+      bruteForce: {
+        available: false,
+        idea: null as any,
+        steps: [],
+        code: null,
+        timeComplexity: null as any,
+        spaceComplexity: null as any,
+      },
+      optimalApproach: {
+        idea: null as any,
+        steps: [],
+        code: null,
+        timeComplexity: null as any,
+        spaceComplexity: null as any,
+        whyOptimal: null as any,
+      },
+      correction: {
+        required: !isAccepted,
+        rootCause: null,
+        correctedCode: null,
+        explanation: null,
+        verificationStatus: null,
+      },
+      optimizationReview: null as any,
+      keyConcept: null as any,
+      bugPrevention: null as any,
+      whyItWorks: undefined,
+      optimization: null as any,
     };
-  }
-
-  /**
-   * Generates complete corrected code in the candidate's submitted language
-   */
-  private static generateCorrectedCode(
-    sourceCode: string,
-    lang: string,
-    failureCategory: FailureCategory,
-    failedTests: FailedTestAnalysis[],
-    pattern: string
-  ): string {
-    const isJava = lang.includes('java');
-    const isPython = lang.includes('python') || lang.includes('py');
-
-    if (isPython) {
-      if (sourceCode && sourceCode.includes('def solve') || sourceCode.includes('import sys')) {
-        // Return structured Python correction
-        return `# AI Corrected Code (Python)
-import sys
-
-def main():
-    input_data = sys.stdin.read().split()
-    if not input_data:
-        return
-
-    # Corrected implementation addressing: ${failureCategory.replace(/_/g, ' ')}
-    # Fixed boundary handling and state accumulation
-    idx = 0
-    # Process input according to problem constraints
-    # (Bug corrected: properly handles edge inputs and negative prefix transitions)
-${sourceCode.split('\n').map(l => '    # ' + l).slice(0, 15).join('\n')}
-
-if __name__ == '__main__':
-    main()`;
-      }
-      return `# AI Corrected Code (Python)
-import sys
-
-def main():
-    lines = sys.stdin.read().splitlines()
-    if not lines:
-        return
-    # Corrected full program stdin/stdout implementation
-    for line in lines:
-        if line.strip():
-            # Apply corrected algorithm logic
-            pass
-
-if __name__ == '__main__':
-    main()`;
-    }
-
-    if (isJava) {
-      return `// AI Corrected Code (Java)
-import java.util.*;
-import java.io.*;
-
-public class Main {
-    public static void main(String[] args) throws IOException {
-        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-        String line = br.readLine();
-        if (line == null || line.trim().isEmpty()) return;
-
-        // Corrected implementation addressing: ${failureCategory.replace(/_/g, ' ')}
-        // Fixed boundary indices and integer precision
-        StringTokenizer st = new StringTokenizer(line);
-        // Process according to problem specifications
-    }
-}`;
-    }
-
-    return `// AI Corrected Code (${lang})
-// Bug fix applied for: ${failureCategory.replace(/_/g, ' ')}
-${sourceCode}`;
-  }
-
-  /**
-   * Generates complete asymptotically optimized code in the candidate's submitted language
-   */
-  private static generateOptimizedCode(
-    sourceCode: string,
-    lang: string,
-    optimalApproach: string,
-    pattern: string
-  ): string {
-    const isJava = lang.includes('java');
-    const isPython = lang.includes('python') || lang.includes('py');
-
-    if (isPython) {
-      return `# AI Optimized Code (Python) - ${optimalApproach}
-import sys
-
-def main():
-    # Asymptotically optimal implementation for ${pattern}
-    input_data = sys.stdin.read().split()
-    if not input_data:
-        return
-    # Utilizes ${optimalApproach} to reduce asymptotic time complexity
-    # Linear O(N) or O(N log N) pass replacing redundant nested iterations
-
-if __name__ == '__main__':
-    main()`;
-    }
-
-    if (isJava) {
-      return `// AI Optimized Code (Java) - ${optimalApproach}
-import java.util.*;
-import java.io.*;
-
-public class Main {
-    public static void main(String[] args) throws IOException {
-        BufferedReader br = new BufferedReader(new InputStreamReader(System.in));
-        // Asymptotically optimal ${optimalApproach} implementation
-        // Replaces nested comparisons with linear or log-linear state traversal
-    }
-}`;
-    }
-
-    return `// AI Optimized Code (${lang})
-// Approach: ${optimalApproach}
-${sourceCode}`;
   }
 }

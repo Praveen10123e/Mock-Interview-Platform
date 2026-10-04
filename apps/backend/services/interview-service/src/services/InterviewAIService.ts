@@ -10,6 +10,7 @@
 
 import axios from 'axios';
 import { HRTranscriptValidator } from './HRTranscriptValidator';
+import { HRScoreEngine, HRDimensionScores } from './HRScoreEngine';
 import {
   HRRubricService,
   QuestionRubric,
@@ -20,98 +21,293 @@ import {
 const LLM_PROVIDER = (process.env.LLM_PROVIDER || 'GROQ').toUpperCase();
 const LLM_API_KEY = process.env.LLM_API_KEY || '';
 const GROQ_API_URL = 'https://api.groq.com/openai/v1/chat/completions';
-const GROQ_MODEL = 'llama-3.3-70b-versatile';
+const GROQ_MODEL = process.env.GROQ_MODEL || 'openai/gpt-oss-120b';
+
+export interface HREvaluationResult {
+  dimensionScores: HRDimensionScores;
+  overallScore: number;
+  justification: string;
+  strengths: string[];
+  areasForImprovement: string[];
+  starFormatDetected: boolean;
+  wordCount: number;
+  responseQuality: 'empty' | 'weak' | 'adequate' | 'strong' | 'exceptional';
+  metadata: {
+    analysisVersion: string;
+    model: string;
+    promptVersion: string;
+    generatedAt: string;
+    status: 'completed' | 'failed' | 'skipped';
+  };
+}
+
+// ─── Phase 2: STAR & Adaptive Contracts ──────────────────────────────────────
+
+export interface STARComponentResult {
+  present: boolean;
+  score: number; // 0 - 10
+  evidence: string;
+}
+
+export interface STARAnalysisResult {
+  starApplicable: boolean;
+  situation: STARComponentResult;
+  task: STARComponentResult;
+  action: STARComponentResult;
+  result: STARComponentResult;
+  starScore: number;
+  completeness: number;
+  missingComponents: Array<'Situation' | 'Task' | 'Action' | 'Result'>;
+  feedback: string;
+  improvedVersion: string;
+  wordCount: number;
+  metadata: {
+    analysisVersion: string;
+    model: string;
+    promptVersion: string;
+    generatedAt: string;
+    status: 'completed' | 'failed' | 'skipped';
+  };
+}
+
+export interface AdaptiveSelectorInput {
+  previousQuestion: string;
+  previousQuestionId: string;
+  previousScore: number;
+  responseQuality: 'empty' | 'weak' | 'adequate' | 'strong' | 'exceptional';
+  stage?: string;
+  candidateTechLevel?: string;
+  candidateProfile?: any;
+  remainingQuestionBank?: CuratedQuestion[];
+  previousCompetencies: string[];
+  usedQuestionIds: string[];
+}
+
+export interface AdaptiveSelectorResult {
+  nextQuestionId: string;
+  nextQuestionText: string;
+  category: string;
+  difficulty: 'easy' | 'medium' | 'hard';
+  competency: string;
+  reasoning: string;
+  followUp: boolean;
+}
 
 // ─── Curated Behavioral Question Bank ─────────────────────────────────────────
 
 export interface CuratedQuestion {
+  id: string;
   question: string;
   category: 'Self Introduction' | 'Project Challenge' | 'Teamwork' | 'Conflict Resolution' | 'Ownership' | 'Leadership' | 'Adaptability' | 'Situational';
+  competency: 'communication' | 'problem-solving' | 'teamwork' | 'conflict-resolution' | 'ownership' | 'leadership' | 'adaptability' | 'technical-depth' | 'situational';
+  difficulty: 'easy' | 'medium' | 'hard';
+  starApplicable: boolean;
   sequence: number;
 }
 
-const BEHAVIORAL_QUESTION_BANK: CuratedQuestion[] = [
+export const BEHAVIORAL_QUESTION_BANK: CuratedQuestion[] = [
   // --- Self Introduction (Always First) ---
   {
+    id: 'bh-intro-1',
     question: 'Please introduce yourself. Tell me about your academic background, your core technical skills, and what motivated you to pursue a career in software engineering.',
     category: 'Self Introduction',
+    competency: 'communication',
+    difficulty: 'easy',
+    starApplicable: false,
     sequence: 1,
   },
-  // --- Project Challenge ---
+
+  // --- Project Challenge / Problem Solving ---
   {
-    question: 'Describe the most technically challenging project you have worked on. What was the problem, what was your approach, and what were the measurable outcomes?',
-    category: 'Project Challenge',
-    sequence: 2,
-  },
-  {
+    id: 'bh-proj-easy-1',
     question: 'Tell me about a time when you had to learn a new technology, framework, or programming language under a tight deadline. How did you approach the learning curve?',
     category: 'Project Challenge',
+    competency: 'problem-solving',
+    difficulty: 'easy',
+    starApplicable: true,
     sequence: 2,
   },
   {
+    id: 'bh-proj-med-1',
     question: 'Walk me through a scenario where your initial technical solution did not work as expected. How did you debug and pivot to reach the final solution?',
     category: 'Project Challenge',
+    competency: 'problem-solving',
+    difficulty: 'medium',
+    starApplicable: true,
     sequence: 2,
   },
+  {
+    id: 'bh-proj-hard-1',
+    question: 'Describe the most technically challenging project you have worked on. What was the problem, what architectural tradeoffs did you evaluate, and what were the measurable system outcomes?',
+    category: 'Project Challenge',
+    competency: 'problem-solving',
+    difficulty: 'hard',
+    starApplicable: true,
+    sequence: 2,
+  },
+
   // --- Teamwork ---
   {
+    id: 'bh-team-easy-1',
+    question: 'Describe a situation where you worked with a partner or small team on a coding project. How did you divide the work and keep each other updated?',
+    category: 'Teamwork',
+    competency: 'teamwork',
+    difficulty: 'easy',
+    starApplicable: true,
+    sequence: 3,
+  },
+  {
+    id: 'bh-team-med-1',
     question: 'Describe a situation where you collaborated effectively with a diverse team to deliver a product feature or resolve a critical bug. What was your specific contribution?',
     category: 'Teamwork',
+    competency: 'teamwork',
+    difficulty: 'medium',
+    starApplicable: true,
     sequence: 3,
   },
   {
-    question: 'Tell me about a time when you had to work with team members who had different technical opinions than you. How did you reach consensus?',
+    id: 'bh-team-hard-1',
+    question: 'Tell me about a time when you had to work with team members who had conflicting technical opinions on a critical design decision. How did you reach consensus and maintain project momentum?',
     category: 'Teamwork',
+    competency: 'teamwork',
+    difficulty: 'hard',
+    starApplicable: true,
     sequence: 3,
   },
+
   // --- Conflict Resolution ---
   {
+    id: 'bh-conf-easy-1',
+    question: 'Have you ever had a disagreement with a peer or teammate about a project task assignment? How did you talk it through and resolve it?',
+    category: 'Conflict Resolution',
+    competency: 'conflict-resolution',
+    difficulty: 'easy',
+    starApplicable: true,
+    sequence: 3,
+  },
+  {
+    id: 'bh-conf-med-1',
     question: 'Give me an example of a conflict or disagreement you had with a teammate or supervisor. How did you handle it, and what was the result?',
     category: 'Conflict Resolution',
+    competency: 'conflict-resolution',
+    difficulty: 'medium',
+    starApplicable: true,
     sequence: 3,
   },
   {
-    question: 'Describe a time when you had to manage competing priorities from multiple stakeholders. How did you decide what to focus on and how did you communicate that?',
+    id: 'bh-conf-hard-1',
+    question: 'Describe a time when you had to manage competing priorities from multiple stakeholders who held contradictory technical expectations. How did you decide what to focus on and communicate that constructively?',
     category: 'Conflict Resolution',
+    competency: 'conflict-resolution',
+    difficulty: 'hard',
+    starApplicable: true,
     sequence: 3,
   },
+
   // --- Ownership ---
   {
+    id: 'bh-own-easy-1',
+    question: 'Tell me about a situation where you took initiative and completed a project task without waiting to be asked.',
+    category: 'Ownership',
+    competency: 'ownership',
+    difficulty: 'easy',
+    starApplicable: true,
+    sequence: 4,
+  },
+  {
+    id: 'bh-own-med-1',
     question: 'Tell me about a situation where you took initiative and went beyond what was asked of you to ensure a project or task succeeded.',
     category: 'Ownership',
+    competency: 'ownership',
+    difficulty: 'medium',
+    starApplicable: true,
     sequence: 4,
   },
   {
-    question: 'Describe a time when something went wrong on a project you were responsible for. What did you do to fix it and what did you learn?',
+    id: 'bh-own-hard-1',
+    question: 'Describe a time when something went severely wrong on a project or system you were responsible for. What immediate action did you take to fix it, how did you handle accountability, and what did you learn?',
     category: 'Ownership',
+    competency: 'ownership',
+    difficulty: 'hard',
+    starApplicable: true,
     sequence: 4,
   },
+
   // --- Leadership ---
   {
+    id: 'bh-lead-easy-1',
+    question: 'Tell me about a time you mentored a junior teammate or helped a peer understand a complex technical topic.',
+    category: 'Leadership',
+    competency: 'leadership',
+    difficulty: 'easy',
+    starApplicable: true,
+    sequence: 4,
+  },
+  {
+    id: 'bh-lead-med-1',
     question: 'Describe a time you led a team or sub-team, even informally. How did you motivate your teammates and ensure everyone was aligned on the goal?',
     category: 'Leadership',
+    competency: 'leadership',
+    difficulty: 'medium',
+    starApplicable: true,
     sequence: 4,
   },
+  {
+    id: 'bh-lead-hard-1',
+    question: 'Describe a scenario where a project was falling behind schedule and team morale was low. How did you step up to realign technical priorities and motivate the team to deliver successfully?',
+    category: 'Leadership',
+    competency: 'leadership',
+    difficulty: 'hard',
+    starApplicable: true,
+    sequence: 4,
+  },
+
   // --- Adaptability ---
   {
-    question: 'Describe a time when project requirements changed significantly in the middle of development. How did you adapt and what was the final outcome?',
-    category: 'Adaptability',
-    sequence: 4,
-  },
-  {
+    id: 'bh-adapt-easy-1',
     question: 'Tell me about a time you had to work in an environment or with tools that were completely unfamiliar to you. How did you manage?',
     category: 'Adaptability',
+    competency: 'adaptability',
+    difficulty: 'easy',
+    starApplicable: true,
     sequence: 4,
   },
-  // --- Situational ---
   {
+    id: 'bh-adapt-med-1',
+    question: 'Describe a time when project requirements changed significantly in the middle of development. How did you adapt and what was the final outcome?',
+    category: 'Adaptability',
+    competency: 'adaptability',
+    difficulty: 'medium',
+    starApplicable: true,
+    sequence: 4,
+  },
+  {
+    id: 'bh-adapt-hard-1',
+    question: 'Walk me through a situation where a core architectural assumption was invalidated late in development. How did you redesign and adapt under tight constraints?',
+    category: 'Adaptability',
+    competency: 'adaptability',
+    difficulty: 'hard',
+    starApplicable: true,
+    sequence: 4,
+  },
+
+  // --- Situational / Technical Depth ---
+  {
+    id: 'bh-sit-med-1',
     question: 'Imagine you are given a critical bug in production with no clear documentation, and the original developer is unavailable. Walk me through your debugging strategy.',
     category: 'Situational',
+    competency: 'situational',
+    difficulty: 'medium',
+    starApplicable: true,
     sequence: 4,
   },
   {
-    question: 'You join a new team and discover that the codebase has significant technical debt. How would you approach improving it while still delivering new features on schedule?',
+    id: 'bh-sit-hard-1',
+    question: 'You join a new team and discover that the codebase has significant technical debt causing latency spikes. How would you approach refactoring it while still delivering new features on schedule?',
     category: 'Situational',
+    competency: 'technical-depth',
+    difficulty: 'hard',
+    starApplicable: true,
     sequence: 4,
   },
 ];
@@ -764,6 +960,866 @@ Return JSON with this schema:
       starGuidance,
       aiSummary,
       criteriaEvidence: allCriteriaEvidence,
+    };
+  }
+
+  /**
+   * FEATURE B: HR Response Quality Evaluator
+   * Evaluates candidate response across 8 core dimensions (0 - 10):
+   * relevance, specificity, evidence, structure, clarity, technicalDepth, ownership, professionalism.
+   *
+   * FEATURE C: Uses HRScoreEngine for deterministic question scoring.
+   */
+  static async evaluateResponseQuality(
+    question: string,
+    verifiedTranscript: string,
+    category = 'General',
+    durationSeconds = 0
+  ): Promise<HREvaluationResult> {
+    const trimmed = (verifiedTranscript || '').trim();
+    const words = trimmed.split(/\s+/).filter(Boolean);
+    const wordCount = words.length;
+    const isPureFiller = HRTranscriptValidator.isPureFiller(trimmed);
+
+    // Case 1 & Case 2: Silence or pure filler sounds
+    if (wordCount === 0 || isPureFiller) {
+      const zeroScores: HRDimensionScores = {
+        relevance: 0,
+        specificity: 0,
+        evidence: 0,
+        structure: 0,
+        clarity: 0,
+        technicalDepth: 0,
+        ownership: 0,
+        professionalism: 0,
+      };
+      return {
+        dimensionScores: zeroScores,
+        overallScore: 0,
+        justification: wordCount === 0
+          ? 'No audible or substantive responses were provided.'
+          : 'Candidate response contained only speech disfluencies and filler sounds without substantive content.',
+        strengths: [],
+        areasForImprovement: ['Provide a direct, substantive answer to the question asked with concrete technical examples.'],
+        starFormatDetected: false,
+        wordCount,
+        responseQuality: 'empty',
+        metadata: {
+          analysisVersion: '1.0',
+          model: 'deterministic-rule',
+          promptVersion: '1.0',
+          generatedAt: new Date().toISOString(),
+          status: 'completed',
+        },
+      };
+    }
+
+    // Try Groq LLM when available
+    if (isLLMAvailable()) {
+      try {
+        const systemPrompt = `You are a strict, objective technical and HR interview evaluator assessing a software engineering candidate's spoken response.
+Evaluate the candidate's verified response strictly across these EIGHT dimensions, each scored as a number between 0.0 and 10.0:
+1. relevance (0-10): How directly does the response address what the question asked?
+   - 0: Completely off-topic or irrelevant.
+   - 1-3: Minimally addresses question or digresses significantly.
+   - 4-6: Directly addresses the main question with minor omissions.
+   - 7-9: Directly answers with comprehensive alignment to prompt.
+   - 10: Flawlessly focused on the prompt.
+2. specificity (0-10): Concrete details, technical entities, specific scenarios vs vague generalities.
+3. evidence (0-10): Real actions, tools, frameworks, metrics, quantifiable outcomes.
+4. structure (0-10): Logical flow (e.g. STAR: Situation/Task, Action, Result).
+5. clarity (0-10): Intelligible, coherent articulation without ambiguity.
+6. technicalDepth (0-10): Sound technical explanation appropriate for the context.
+7. ownership (0-10): Personal responsibility and initiative ("I designed", "I investigated" vs vague "we").
+8. professionalism (0-10): Constructive, professional tone appropriate for a software engineering interview.
+
+CRITICAL RULES:
+- NO FABRICATION: Never invent technologies, achievements, or experience the candidate did not mention.
+- A long irrelevant answer must receive low relevance and low overall credit.
+- A short but highly relevant answer should receive reasonable credit.
+- Return ONLY valid JSON matching the schema with no markdown formatting.`;
+
+        const userPrompt = `EVALUATION TASK:
+Question: "${question}"
+Category: "${category}"
+Candidate's Verified Response: "${trimmed}"
+
+Return JSON matching this exact schema:
+{
+  "dimensionScores": {
+    "relevance": number,
+    "specificity": number,
+    "evidence": number,
+    "structure": number,
+    "clarity": number,
+    "technicalDepth": number,
+    "ownership": number,
+    "professionalism": number
+  },
+  "justification": "2-3 sentence evidence-based justification",
+  "strengths": ["string", "string"],
+  "areasForImprovement": ["string", "string"],
+  "starFormatDetected": boolean
+}`;
+
+        const llmText = await callGroq([
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ], 650);
+
+        const jsonStart = llmText.indexOf('{');
+        const jsonEnd = llmText.lastIndexOf('}');
+        if (jsonStart !== -1 && jsonEnd !== -1) {
+          const parsed = JSON.parse(llmText.substring(jsonStart, jsonEnd + 1));
+          if (parsed && typeof parsed.dimensionScores === 'object') {
+            const sanitized = HRScoreEngine.sanitizeDimensionScores(parsed.dimensionScores);
+            const questionScore = HRScoreEngine.calculateQuestionScore(sanitized);
+            const quality = HRScoreEngine.determineQuality(questionScore);
+
+            return {
+              dimensionScores: sanitized,
+              overallScore: questionScore,
+              justification: parsed.justification || 'Evaluation completed based on response evidence.',
+              strengths: Array.isArray(parsed.strengths) ? parsed.strengths.filter(Boolean) : [],
+              areasForImprovement: Array.isArray(parsed.areasForImprovement) ? parsed.areasForImprovement.filter(Boolean) : [],
+              starFormatDetected: !!parsed.starFormatDetected,
+              wordCount,
+              responseQuality: quality,
+              metadata: {
+                analysisVersion: '1.0',
+                model: GROQ_MODEL,
+                promptVersion: '1.0',
+                generatedAt: new Date().toISOString(),
+                status: 'completed',
+              },
+            };
+          }
+        }
+      } catch {
+        // Fall back to deterministic heuristic evaluation
+      }
+    }
+
+    return this.evaluateHeuristic8Dimensions(question, trimmed, category, durationSeconds);
+  }
+
+  /**
+   * Question-aware deterministic heuristic evaluator for 8 dimensions.
+   * Ensures high-quality evaluation even when LLM is unavailable.
+   */
+  static evaluateHeuristic8Dimensions(
+    question: string,
+    verifiedTranscript: string,
+    category = 'General',
+    durationSeconds = 0
+  ): HREvaluationResult {
+    const trimmed = verifiedTranscript.trim();
+    const words = trimmed.split(/\s+/).filter(Boolean);
+    const wordCount = words.length;
+    const qLower = question.toLowerCase();
+    const tLower = trimmed.toLowerCase();
+
+    // Check for Direct Entity Question (e.g. "What programming language did you use?")
+    const isDirectEntityQ = /what (programming language|language|database|framework|tool|library)/i.test(qLower);
+    const hasKnownEntity = /\b(java|python|javascript|typescript|c\+\+|c#|go|rust|sql|html|css|react|node|docker|aws|mongodb|postgresql)\b/i.test(tLower);
+
+    if (isDirectEntityQ && hasKnownEntity) {
+      const dimScores: HRDimensionScores = {
+        relevance: 9.0,
+        specificity: 8.0,
+        evidence: 7.5,
+        structure: 7.0,
+        clarity: 9.0,
+        technicalDepth: 7.0,
+        ownership: 7.0,
+        professionalism: 9.0,
+      };
+      const score = HRScoreEngine.calculateQuestionScore(dimScores);
+      return {
+        dimensionScores: dimScores,
+        overallScore: score,
+        justification: `Candidate directly answered the specific technical entity question with concrete evidence.`,
+        strengths: ['Direct, accurate answer to specific question prompt'],
+        areasForImprovement: ['Can provide additional architectural context when time permits'],
+        starFormatDetected: false,
+        wordCount,
+        responseQuality: HRScoreEngine.determineQuality(score),
+        metadata: {
+          analysisVersion: '1.0',
+          model: 'deterministic-heuristic',
+          promptVersion: '1.0',
+          generatedAt: new Date().toISOString(),
+          status: 'completed',
+        },
+      };
+    }
+
+    // Off-topic detection
+    const isTechnicalQuestion = /challeng|problem|project|bug|debug|error|solution|scale|system|code|architecture/i.test(qLower);
+    const hasTechnicalKeywords = /(model|segment|object|threshold|watershed|detect|yolo|algorithm|database|api|backend|frontend|code|server|pipeline|accuracy|loss|mask|split|feature|system|service|deploy|python|react|java|sql)/i.test(tLower);
+    const isPureAcademicOffTopic = /(diploma|marks|percentage|cgpa|school|college|hobbies|cricket|sports|movies)/i.test(tLower) && !hasTechnicalKeywords;
+
+    if (isTechnicalQuestion && isPureAcademicOffTopic) {
+      const dimScores: HRDimensionScores = {
+        relevance: 1.0,
+        specificity: 2.0,
+        evidence: 0.0,
+        structure: 4.0,
+        clarity: 6.0,
+        technicalDepth: 0.0,
+        ownership: 3.0,
+        professionalism: 6.0,
+      };
+      const score = HRScoreEngine.calculateQuestionScore(dimScores);
+      return {
+        dimensionScores: dimScores,
+        overallScore: score,
+        justification: 'Response was off-topic and did not address the technical project or challenge asked in the question.',
+        strengths: ['Coherent speech'],
+        areasForImprovement: ['Address the specific technical challenge asked in the prompt.'],
+        starFormatDetected: false,
+        wordCount,
+        responseQuality: 'weak',
+        metadata: {
+          analysisVersion: '1.0',
+          model: 'deterministic-heuristic',
+          promptVersion: '1.0',
+          generatedAt: new Date().toISOString(),
+          status: 'completed',
+        },
+      };
+    }
+
+    // Detect technical entities and evidence
+    const techMatches = tLower.match(/\b(python|javascript|typescript|java|c\+\+|c#|go|rust|react|node|vue|angular|django|flask|fastapi|spring|sql|postgres|mongodb|redis|docker|kubernetes|aws|azure|git|linux|api|graphql|rest|microservice|database|cache|index|algorithm|model|yolo|pipeline|frontend|backend|fullstack|yolov8)\b/g) || [];
+    const problemMatches = tLower.match(/\b(challeng\w*|problem\w*|bug\w*|error\w*|issue\w*|bottleneck\w*|fail\w*|slow\w*|timeout\w*|crash\w*|obstacle\w*|difficult\w*)\b/g) || [];
+    const actionMatches = tLower.match(/\b(implemented|built|developed|designed|created|investigated|debugged|resolved|optimized|fixed|configured|deployed|tested|integrated|analyzed|refactored|used|handled)\b/g) || [];
+    const resultMatches = tLower.match(/\b(result\w*|improved|reduced|increased|resolved|success\w*|achieved|outcome|delivered|percent|%|faster|accuracy|separated)\b/g) || [];
+    const ownershipMatches = tLower.match(/\b(i\s+(?:handled|implemented|built|designed|resolved|debugged|decided|worked|led|created|managed|took)|my\s+(?:role|responsibility|task|contribution))\b/g) || [];
+    const hasStarCues = /\b(when|situation|task|initially|first|then|so I|because|result|finally)\b/i.test(tLower);
+
+    // Compute dimensions
+    let relevance = 5.0;
+    if (techMatches.length > 0 && (actionMatches.length > 0 || problemMatches.length > 0)) {
+      relevance = wordCount >= 15 ? 8.5 : 7.0;
+    } else if (techMatches.length > 0 || actionMatches.length > 0) {
+      relevance = wordCount >= 10 ? 6.5 : 5.5;
+    } else if (wordCount >= 20) {
+      relevance = 4.5;
+    } else {
+      relevance = 3.0;
+    }
+
+    const specificity = techMatches.length >= 3 ? 8.5 : techMatches.length >= 1 ? 7.0 : wordCount >= 25 ? 5.5 : 4.0;
+    const evidence = (actionMatches.length >= 2 && techMatches.length >= 1) ? 8.0 : (actionMatches.length >= 1 || techMatches.length >= 1) ? 6.5 : 3.5;
+    const structure = (hasStarCues && wordCount >= 20) ? 8.0 : wordCount >= 12 ? 6.5 : 4.5;
+    const clarity = wordCount >= 12 ? 8.5 : 6.5;
+    const technicalDepth = techMatches.length >= 2 ? 8.0 : techMatches.length >= 1 ? 6.5 : 3.5;
+    const ownership = ownershipMatches.length >= 2 ? 8.5 : ownershipMatches.length >= 1 ? 7.5 : 6.0;
+    const professionalism = 8.5;
+
+    const dimScores: HRDimensionScores = HRScoreEngine.sanitizeDimensionScores({
+      relevance,
+      specificity,
+      evidence,
+      structure,
+      clarity,
+      technicalDepth,
+      ownership,
+      professionalism,
+    });
+
+    const overallScore = HRScoreEngine.calculateQuestionScore(dimScores);
+    const starFormatDetected = hasStarCues && actionMatches.length > 0 && resultMatches.length > 0;
+
+    const strengths: string[] = [];
+    if (techMatches.length > 0) strengths.push(`Cited relevant technical technologies (${[...new Set(techMatches)].slice(0, 3).join(', ')})`);
+    if (actionMatches.length > 0) strengths.push('Articulated specific engineering actions taken');
+    if (ownershipMatches.length > 0) strengths.push('Demonstrated individual ownership and initiative');
+    if (strengths.length === 0) strengths.push('Communicated clearly with professional tone');
+
+    const areasForImprovement: string[] = [];
+    if (resultMatches.length === 0) areasForImprovement.push('Quantify the final result or measurable business/performance impact');
+    if (!starFormatDetected) areasForImprovement.push('Structure your answer explicitly using the STAR method (Situation, Task, Action, Result)');
+    if (technicalDepth < 6) areasForImprovement.push('Provide deeper technical detail on implementation and architecture');
+
+    return {
+      dimensionScores: dimScores,
+      overallScore,
+      justification: `Candidate answered with ${wordCount} words, citing concrete engineering details and relevant tools.`,
+      strengths,
+      areasForImprovement,
+      starFormatDetected,
+      wordCount,
+      responseQuality: HRScoreEngine.determineQuality(overallScore),
+      metadata: {
+        analysisVersion: '1.0',
+        model: 'deterministic-heuristic',
+        promptVersion: '1.0',
+        generatedAt: new Date().toISOString(),
+        status: 'completed',
+      },
+    };
+  }
+
+  // ─── Phase 2: STAR Format Detector & Coach ───────────────────────────────────
+
+  /** Return the curated active behavioral question bank */
+  static getQuestionBank(): CuratedQuestion[] {
+    return BEHAVIORAL_QUESTION_BANK;
+  }
+
+  /**
+   * Determine whether a question requires STAR format evaluation.
+   * STAR is applicable to behavioral, leadership, teamwork, conflict, challenge questions.
+   * Factual/introductory questions (e.g. "What programming languages do you know?") do NOT require STAR.
+   */
+  static isStarApplicable(question: string, category = 'General'): boolean {
+    const qLower = (question || '').toLowerCase().trim();
+    const catLower = (category || '').toLowerCase().trim();
+
+    if (catLower === 'self introduction' || catLower === 'intro') return false;
+
+    // Check bank configuration if question matches
+    const bankItem = BEHAVIORAL_QUESTION_BANK.find(
+      (b) => b.question.toLowerCase() === qLower || b.id === question
+    );
+    if (bankItem && typeof bankItem.starApplicable === 'boolean') {
+      return bankItem.starApplicable;
+    }
+
+    // Check for factual / direct entity queries
+    if (/^(what|which) (programming language|language|framework|tool|database|technolog)/i.test(qLower)) {
+      return false;
+    }
+    if (/^(introduce yourself|tell me about yourself|what are your core skills)\b/i.test(qLower)) {
+      return false;
+    }
+
+    return true;
+  }
+
+  /**
+   * STAR Format Detector & Coach.
+   * Evaluates Situation, Task, Action, and Result with 0-10 scores, evidence quotes,
+   * missing components, and coaching version without fabricating experience.
+   */
+  static async analyzeSTAR(
+    question: string,
+    verifiedTranscript: string,
+    category = 'General'
+  ): Promise<STARAnalysisResult> {
+    const trimmed = (verifiedTranscript || '').trim();
+    const words = trimmed.split(/\s+/).filter(Boolean);
+    const wordCount = words.length;
+    const isApplicable = this.isStarApplicable(question, category);
+
+    // If question is factual / intro, STAR is not applicable (do not penalize candidate)
+    if (!isApplicable) {
+      return {
+        starApplicable: false,
+        situation: { present: false, score: 0, evidence: '' },
+        task: { present: false, score: 0, evidence: '' },
+        action: { present: false, score: 0, evidence: '' },
+        result: { present: false, score: 0, evidence: '' },
+        starScore: 0,
+        completeness: 0,
+        missingComponents: [],
+        feedback: 'This question does not require the STAR framework. The candidate is evaluated on factual clarity and communication.',
+        improvedVersion: trimmed,
+        wordCount,
+        metadata: {
+          analysisVersion: '2.0',
+          model: 'rule-based',
+          promptVersion: '2.0',
+          generatedAt: new Date().toISOString(),
+          status: 'completed',
+        },
+      };
+    }
+
+    // Check for empty or pure filler response
+    const isPureFiller = HRTranscriptValidator.isPureFiller(trimmed);
+    if (wordCount === 0 || isPureFiller) {
+      return {
+        starApplicable: true,
+        situation: { present: false, score: 0, evidence: '' },
+        task: { present: false, score: 0, evidence: '' },
+        action: { present: false, score: 0, evidence: '' },
+        result: { present: false, score: 0, evidence: '' },
+        starScore: 0,
+        completeness: 0,
+        missingComponents: ['Situation', 'Task', 'Action', 'Result'],
+        feedback: 'No response was provided. To excel in behavioral interviews, structure your response using the STAR method: Situation, Task, Action, Result.',
+        improvedVersion:
+          'Situation: [Describe the context and background of your challenge.]\nTask: [Explain your specific role and responsibility.]\nAction: [Detail the exact steps and technologies you used.]\nResult: [State the measurable outcome or resolution achieved.]',
+        wordCount,
+        metadata: {
+          analysisVersion: '2.0',
+          model: 'deterministic-rule',
+          promptVersion: '2.0',
+          generatedAt: new Date().toISOString(),
+          status: 'completed',
+        },
+      };
+    }
+
+    // Try Groq LLM for nuanced STAR extraction when available
+    if (isLLMAvailable()) {
+      try {
+        const systemPrompt = `You are an expert technical and HR interview STAR coach.
+Analyze the candidate's verified transcript using the STAR framework (Situation, Task, Action, Result).
+
+CRITICAL RULES:
+1. NO FABRICATION: Every evidence quote MUST be taken directly from the candidate's actual words.
+   If a component was not mentioned, set present=false, score=0, and evidence="". Never invent technologies, metrics, team sizes, percentages, or achievements.
+2. SCORES (0-10):
+   - 0: Completely absent.
+   - 1-3: Very weak, vague, or only implied (e.g. "I worked on a project" with no details).
+   - 4-6: Present but insufficiently developed or lacking specifics.
+   - 7-8: Clear, specific, and directly relevant.
+   - 9-10: Detailed, specific, and evidence-backed.
+3. IMPROVED VERSION RULE:
+   - Restructure the candidate's ACTUAL WORDS into Situation, Task, Action, and Result sections.
+   - DO NOT fabricate candidate achievements or numbers.
+   - If the candidate never provided a result, state: "Result: [The response does not provide a measurable outcome. Add your actual quantifiable impact or final resolution.]"
+4. Return ONLY valid JSON matching the exact schema with no markdown wrapper.`;
+
+        const userPrompt = `TASK:
+Question: "${question}"
+Category: "${category}"
+Verified Transcript: "${trimmed}"
+
+Return JSON matching this schema:
+{
+  "situation": { "present": boolean, "score": number, "evidence": "string" },
+  "task": { "present": boolean, "score": number, "evidence": "string" },
+  "action": { "present": boolean, "score": number, "evidence": "string" },
+  "result": { "present": boolean, "score": number, "evidence": "string" },
+  "missingComponents": ["Situation" | "Task" | "Action" | "Result"],
+  "feedback": "Coaching feedback string",
+  "improvedVersion": "Restructured candidate text without fabricated facts"
+}`;
+
+        const llmText = await callGroq([
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ], 750);
+
+        const jsonStart = llmText.indexOf('{');
+        const jsonEnd = llmText.lastIndexOf('}');
+        if (jsonStart !== -1 && jsonEnd !== -1) {
+          const parsed = JSON.parse(llmText.substring(jsonStart, jsonEnd + 1));
+          if (parsed && parsed.situation && parsed.task && parsed.action && parsed.result) {
+            const sanitizeComp = (c: any): STARComponentResult => ({
+              present: !!c?.present,
+              score: Math.min(10, Math.max(0, typeof c?.score === 'number' ? c.score : 0)),
+              evidence: typeof c?.evidence === 'string' ? c.evidence.trim() : '',
+            });
+
+            const sit = sanitizeComp(parsed.situation);
+            const tsk = sanitizeComp(parsed.task);
+            const act = sanitizeComp(parsed.action);
+            const res = sanitizeComp(parsed.result);
+
+            // Re-derive missing components strictly from scores & present flags
+            const missing: Array<'Situation' | 'Task' | 'Action' | 'Result'> = [];
+            if (!sit.present || sit.score < 4) missing.push('Situation');
+            if (!tsk.present || tsk.score < 4) missing.push('Task');
+            if (!act.present || act.score < 4) missing.push('Action');
+            if (!res.present || res.score < 4) missing.push('Result');
+
+            const presentCount = 4 - missing.length;
+            const starScore = Math.min(100, Math.max(0, Math.round(((sit.score + tsk.score + act.score + res.score) / 4) * 10)));
+            const completeness = Math.round((presentCount / 4) * 100);
+
+            return {
+              starApplicable: true,
+              situation: sit,
+              task: tsk,
+              action: act,
+              result: res,
+              starScore,
+              completeness,
+              missingComponents: missing,
+              feedback: parsed.feedback || 'Response evaluated using the STAR framework.',
+              improvedVersion: parsed.improvedVersion || trimmed,
+              wordCount,
+              metadata: {
+                analysisVersion: '2.0',
+                model: GROQ_MODEL,
+                promptVersion: '2.0',
+                generatedAt: new Date().toISOString(),
+                status: 'completed',
+              },
+            };
+          }
+        }
+      } catch {
+        // Fall back to deterministic STAR evaluation
+      }
+    }
+
+    return this.evaluateHeuristicSTAR(question, trimmed, category);
+  }
+
+  /**
+   * Deterministic Heuristic STAR Analyzer.
+   * Extracts evidence, checks for keyword-only vs detailed responses,
+   * scores 0-10 per component, and builds coaching version without hallucinating.
+   */
+  static evaluateHeuristicSTAR(
+    question: string,
+    verifiedTranscript: string,
+    category = 'General'
+  ): STARAnalysisResult {
+    const trimmed = (verifiedTranscript || '').trim();
+    const words = trimmed.split(/\s+/).filter(Boolean);
+    const wordCount = words.length;
+    const isApplicable = this.isStarApplicable(question, category);
+
+    if (!isApplicable) {
+      return {
+        starApplicable: false,
+        situation: { present: false, score: 0, evidence: '' },
+        task: { present: false, score: 0, evidence: '' },
+        action: { present: false, score: 0, evidence: '' },
+        result: { present: false, score: 0, evidence: '' },
+        starScore: 0,
+        completeness: 0,
+        missingComponents: [],
+        feedback: 'This question does not require the STAR framework. Evaluated on factual clarity and communication.',
+        improvedVersion: trimmed,
+        wordCount,
+        metadata: {
+          analysisVersion: '2.0',
+          model: 'deterministic-heuristic',
+          promptVersion: '2.0',
+          generatedAt: new Date().toISOString(),
+          status: 'completed',
+        },
+      };
+    }
+
+    const sentences = trimmed.split(/(?<=[.?!])\s+/).filter(Boolean);
+    const tLower = trimmed.toLowerCase();
+
+    // 1. Situation Analysis
+    const situationKeywords = /(when I was|during my|in our project|in my project|we were working on|we faced|there was a (?:problem|bug|issue|bottleneck|crash|error|challenge|conflict)|the problem was|issue with|bottleneck|slow query|latency increased|crash|overlap|touching waste|bug in|deadline was)/i;
+    const situationSentences = sentences.filter((s) => situationKeywords.test(s));
+    let situationScore = 0;
+    let situationEvidence = '';
+
+    const hasConcreteProblem = /(latency|response time|database query|overlap|production|algorithm|pipeline|dataset|scale|architecture|error rate|bug|crash|memory leak|bottleneck|obstacle|issue|disagree)/i.test(tLower);
+
+    if (situationSentences.length > 0 && hasConcreteProblem) {
+      situationEvidence = situationSentences.join(' ');
+      const isDetailed = /(latency|response time|database query|overlap|production|algorithm|pipeline|dataset|scale|architecture|error rate|memory leak)/i.test(situationEvidence);
+      situationScore = isDetailed ? (wordCount >= 25 ? 9 : 8) : 6;
+    } else if (/(project|internship|system|work\w*)/i.test(tLower)) {
+      // Vague keyword only e.g. "I worked on a project." or "in our project" with no problem details
+      situationScore = 2;
+      situationEvidence = sentences[0] || trimmed.slice(0, 80);
+    }
+
+    // 2. Task Analysis
+    const taskKeywords = /(my role was|my task was|my responsibility was|I needed to|I was responsible for|we had to|I had to|my goal was|objective was|aimed to|needed to resolve)/i;
+    const taskSentences = sentences.filter((s) => taskKeywords.test(s));
+    let taskScore = 0;
+    let taskEvidence = '';
+
+    const hasSubstantiveTask = taskSentences.some((s) => !/^(?:I did my task|my task|did my task)\.?$/i.test(s.trim()) && s.trim().split(/\s+/).length >= 4);
+
+    if (taskSentences.length > 0 && hasSubstantiveTask) {
+      taskEvidence = taskSentences.join(' ');
+      taskScore = wordCount >= 20 ? 8 : 6;
+    } else if (taskSentences.length > 0 || /(did my task|task was done)/i.test(tLower)) {
+      taskScore = 2;
+      taskEvidence = taskSentences.join(' ') || 'Mentioned task without details.';
+    } else if (situationScore >= 6 && /(implement|fix|resolve|build|debug)/i.test(tLower)) {
+      // Implicit task from context
+      taskScore = 4;
+      taskEvidence = 'Implicitly identified need to address the problem.';
+    }
+
+    // 3. Action Analysis
+    const concreteActionKeywords = /(implemented|built|developed|designed|created|investigated|debugged|resolved|optimized|fixed|configured|deployed|tested|analyzed|refactored|used|added|wrote|applied)\b/i;
+    const actionSentences = sentences.filter((s) => concreteActionKeywords.test(s));
+    let actionScore = 0;
+    let actionEvidence = '';
+
+    if (actionSentences.length > 0) {
+      actionEvidence = actionSentences.join(' ');
+      const actionsCount = (tLower.match(/(implemented|built|developed|designed|created|investigated|debugged|resolved|optimized|fixed|configured|deployed|tested|analyzed|refactored|used|added)/g) || []).length;
+      actionScore = actionsCount >= 2 ? (wordCount >= 25 ? 9 : 8) : 6;
+    } else if (/(did|handled|worked on|took action|action)/i.test(tLower)) {
+      actionScore = 2;
+      actionEvidence = sentences.find((s) => /action/i.test(s)) || sentences[0] || '';
+    }
+
+    // 4. Result Analysis
+    const substantiveResultKeywords = /(as a result,?\s+\w+|outcome was\s+\w+|improved\s+\w+|reduced\s+\w+|increased\s+\w+|resolved\s+\w+|successfully delivered|faster by|percent|%|fixed the issue|separated objects|latency reduced|restored)/i;
+    const resultSentences = sentences.filter((s) => substantiveResultKeywords.test(s));
+    let resultScore = 0;
+    let resultEvidence = '';
+
+    if (resultSentences.length > 0) {
+      resultEvidence = resultSentences.join(' ');
+      const hasMetric = /(%|percent|ms|seconds|minutes|times|reduced by|increased by|restored)/i.test(resultEvidence);
+      resultScore = hasMetric ? (wordCount >= 25 ? 9 : 8) : 6;
+    } else if (/(result|outcome)/i.test(tLower)) {
+      resultScore = 2;
+      resultEvidence = sentences.find((s) => /result/i.test(s)) || '';
+    }
+
+    const situationPresent = situationScore >= 4;
+    const taskPresent = taskScore >= 4;
+    const actionPresent = actionScore >= 4;
+    const resultPresent = resultScore >= 4;
+
+    const missingComponents: Array<'Situation' | 'Task' | 'Action' | 'Result'> = [];
+    if (!situationPresent) missingComponents.push('Situation');
+    if (!taskPresent) missingComponents.push('Task');
+    if (!actionPresent) missingComponents.push('Action');
+    if (!resultPresent) missingComponents.push('Result');
+
+    const starScore = Math.min(
+      100,
+      Math.max(0, Math.round(((situationScore + taskScore + actionScore + resultScore) / 4) * 10))
+    );
+    const completeness = Math.round(((4 - missingComponents.length) / 4) * 100);
+
+    // Build coaching feedback
+    let feedback = '';
+    if (missingComponents.length === 0) {
+      feedback = 'Strong STAR structure. You clearly communicated the situation context, your task responsibility, engineering actions, and final outcome.';
+    } else {
+      feedback = `Solid answer, but missing key STAR components: ${missingComponents.join(', ')}. ${
+        missingComponents.includes('Result')
+          ? 'Add the actual outcome or measurable impact of your action.'
+          : ''
+      } ${
+        missingComponents.includes('Situation')
+          ? 'Clearly set the context and technical problem faced.'
+          : ''
+      }`.trim();
+    }
+
+    // Build improved version without fabricating facts
+    const sitCoaching = situationEvidence && situationScore >= 4
+      ? `Situation: ${situationEvidence}`
+      : `Situation: [Describe the technical context and problem you faced.]`;
+
+    const taskCoaching = taskEvidence && taskScore >= 4
+      ? `Task: ${taskEvidence}`
+      : `Task: [Explain your specific responsibility in resolving this issue.]`;
+
+    const actCoaching = actionEvidence && actionScore >= 4
+      ? `Action: ${actionEvidence}`
+      : `Action: [Detail the exact engineering steps and tools you utilized.]`;
+
+    const resCoaching = resultEvidence && resultScore >= 4
+      ? `Result: ${resultEvidence}`
+      : `Result: [The response does not provide a measurable outcome. Add your actual quantifiable impact or final resolution.]`;
+
+    const improvedVersion = `${sitCoaching}\n${taskCoaching}\n${actCoaching}\n${resCoaching}`;
+
+    return {
+      starApplicable: true,
+      situation: {
+        present: situationPresent,
+        score: situationScore,
+        evidence: situationEvidence,
+      },
+      task: {
+        present: taskPresent,
+        score: taskScore,
+        evidence: taskEvidence,
+      },
+      action: {
+        present: actionPresent,
+        score: actionScore,
+        evidence: actionEvidence,
+      },
+      result: {
+        present: resultPresent,
+        score: resultScore,
+        evidence: resultEvidence,
+      },
+      starScore,
+      completeness,
+      missingComponents,
+      feedback,
+      improvedVersion,
+      wordCount,
+      metadata: {
+        analysisVersion: '2.0',
+        model: 'deterministic-heuristic',
+        promptVersion: '2.0',
+        generatedAt: new Date().toISOString(),
+        status: 'completed',
+      },
+    };
+  }
+
+  // ─── Phase 2: Adaptive Next-Question Selector ─────────────────────────────────
+
+  /**
+   * Select the next question adaptively based on deterministic previous question score,
+   * response quality, difficulty progression, and competency variety.
+   *
+   * Rules:
+   *  - previousScore >= 80 -> Hard question (deeper challenge).
+   *  - previousScore >= 50 && previousScore < 80 -> Medium question with different competency.
+   *  - previousScore < 50:
+   *      if responseQuality == 'empty' -> Gentle follow-up or easy question allowing retry.
+   *      else -> Targeted easy/follow-up question probing weakness.
+   *
+   * Question Bank Authority:
+   *  - Selected question MUST exist in BEHAVIORAL_QUESTION_BANK.
+   *  - Selected question MUST NOT be in usedQuestionIds.
+   *  - AI recommendation is strictly validated; falls back to deterministic selector on any failure.
+   */
+  static async selectAdaptiveNextQuestion(
+    input: AdaptiveSelectorInput
+  ): Promise<AdaptiveSelectorResult | null> {
+    const authorizedPool = (input.remainingQuestionBank || BEHAVIORAL_QUESTION_BANK).filter(
+      (q) => q.category !== 'Self Introduction' && !input.usedQuestionIds.includes(q.id)
+    );
+
+    if (authorizedPool.length === 0) {
+      return null;
+    }
+
+    // Try LLM selection from authorized pool when available
+    if (isLLMAvailable()) {
+      try {
+        const poolOverview = authorizedPool.map((q) => ({
+          id: q.id,
+          question: q.question,
+          category: q.category,
+          difficulty: q.difficulty,
+          competency: q.competency,
+        }));
+
+        const systemPrompt = `You are an adaptive technical interview director selecting the next question for a candidate.
+ADAPTIVE DECISION RULES:
+1. IF previousScore >= 80: Select a 'hard' difficulty question to challenge candidate and test deeper competency.
+2. IF previousScore >= 50 AND previousScore < 80: Select a 'medium' difficulty question. Prefer a different competency than tested previously.
+3. IF previousScore < 50:
+   - If responseQuality is 'empty': Select an accessible question to give the candidate another opportunity.
+   - Else: Select an 'easy' question or targeted follow-up probing weakness.
+4. VARIETY: Prioritize competencies NOT in previousCompetencies.
+5. STRICT QUESTION BANK AUTHORITY: You MUST choose ONLY from the provided Candidate Questions by exact 'nextQuestionId'. Never generate external questions.
+6. Return ONLY valid JSON matching the exact schema with no markdown formatting.`;
+
+        const userPrompt = `ADAPTIVE SELECTION TASK:
+Previous Question: "${input.previousQuestion}" (id: "${input.previousQuestionId}")
+Previous Score: ${input.previousScore} / 100
+Response Quality: "${input.responseQuality}"
+Previous Competencies: [${input.previousCompetencies.map((c) => `"${c}"`).join(', ')}]
+Used Question IDs: [${input.usedQuestionIds.map((id) => `"${id}"`).join(', ')}]
+
+Candidate Questions Pool:
+${JSON.stringify(poolOverview, null, 2)}
+
+Return JSON matching this schema:
+{
+  "nextQuestionId": "string from Candidate Questions Pool",
+  "reasoning": "1-2 sentences explaining why this difficulty and competency were chosen",
+  "followUp": boolean
+}`;
+
+        const llmText = await callGroq([
+          { role: 'system', content: systemPrompt },
+          { role: 'user', content: userPrompt },
+        ], 350);
+
+        const jsonStart = llmText.indexOf('{');
+        const jsonEnd = llmText.lastIndexOf('}');
+        if (jsonStart !== -1 && jsonEnd !== -1) {
+          const parsed = JSON.parse(llmText.substring(jsonStart, jsonEnd + 1));
+          const chosen = authorizedPool.find((q) => q.id === parsed.nextQuestionId);
+
+          // STRICT DETERMINISTIC VALIDATION OF AI OUTPUT
+          if (chosen && !input.usedQuestionIds.includes(chosen.id)) {
+            return {
+              nextQuestionId: chosen.id,
+              nextQuestionText: chosen.question,
+              category: chosen.category,
+              difficulty: chosen.difficulty,
+              competency: chosen.competency,
+              reasoning: parsed.reasoning || `Adaptive selection based on previous score ${input.previousScore}/100.`,
+              followUp: !!parsed.followUp,
+            };
+          }
+        }
+      } catch {
+        // Fall back to deterministic selector
+      }
+    }
+
+    return this.selectDeterministicAdaptiveQuestion(input);
+  }
+
+  /**
+   * Deterministic Fallback Adaptive Selector.
+   * Single source of truth when LLM is unavailable or returns invalid questions.
+   */
+  static selectDeterministicAdaptiveQuestion(
+    input: AdaptiveSelectorInput
+  ): AdaptiveSelectorResult | null {
+    const authorizedPool = (input.remainingQuestionBank || BEHAVIORAL_QUESTION_BANK).filter(
+      (q) => q.category !== 'Self Introduction' && !input.usedQuestionIds.includes(q.id)
+    );
+
+    if (authorizedPool.length === 0) {
+      return null;
+    }
+
+    // Determine target difficulty order
+    let targetDifficulties: Array<'easy' | 'medium' | 'hard'>;
+    if (input.previousScore >= 80) {
+      targetDifficulties = ['hard', 'medium', 'easy'];
+    } else if (input.previousScore >= 50) {
+      targetDifficulties = ['medium', 'hard', 'easy'];
+    } else {
+      targetDifficulties = ['easy', 'medium', 'hard'];
+    }
+
+    // Prioritize unvisited competencies
+    const unvisited = authorizedPool.filter(
+      (q) => !input.previousCompetencies.includes(q.competency)
+    );
+    const poolToSearch = unvisited.length > 0 ? unvisited : authorizedPool;
+
+    // Find best match matching preferred difficulty
+    let selected: CuratedQuestion | undefined;
+    for (const diff of targetDifficulties) {
+      selected = poolToSearch.find((q) => q.difficulty === diff);
+      if (selected) break;
+    }
+
+    if (!selected) {
+      selected = poolToSearch[0] || authorizedPool[0];
+    }
+
+    const reasoning = input.previousScore >= 80
+      ? `Candidate demonstrated strong competency (Score: ${input.previousScore}/100). Advancing to '${selected.difficulty}' difficulty probing '${selected.competency}'.`
+      : input.previousScore >= 50
+      ? `Candidate demonstrated satisfactory performance (Score: ${input.previousScore}/100). Maintaining '${selected.difficulty}' difficulty to explore '${selected.competency}'.`
+      : input.responseQuality === 'empty'
+      ? `Previous response was empty. Providing an accessible '${selected.difficulty}' question on '${selected.competency}' to allow candidate to respond.`
+      : `Previous response scored below threshold (${input.previousScore}/100). Adjusting to '${selected.difficulty}' difficulty probing '${selected.competency}'.`;
+
+    return {
+      nextQuestionId: selected.id,
+      nextQuestionText: selected.question,
+      category: selected.category,
+      difficulty: selected.difficulty,
+      competency: selected.competency,
+      reasoning,
+      followUp: false,
     };
   }
 }

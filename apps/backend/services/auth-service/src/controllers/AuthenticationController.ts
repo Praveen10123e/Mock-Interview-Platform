@@ -109,4 +109,34 @@ export class AuthenticationController extends BaseController {
       next(error);
     }
   };
+
+  public sendPasswordResetOtp = async (req: Request, res: Response, next: NextFunction): Promise<any> => {
+    try {
+      const { email } = req.body;
+      const result = await this.authService.sendPasswordResetOtp(email);
+      return (this as any).sendSuccess(res, result, 'OTP sent successfully');
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public verifyPasswordResetOtp = async (req: Request, res: Response, next: NextFunction): Promise<any> => {
+    try {
+      const { email, otp } = req.body;
+      const result = await this.authService.verifyPasswordResetOtp(email, otp);
+      return (this as any).sendSuccess(res, result, 'OTP verified successfully');
+    } catch (error) {
+      next(error);
+    }
+  };
+
+  public resetPasswordWithToken = async (req: Request, res: Response, next: NextFunction): Promise<any> => {
+    try {
+      const { resetToken, newPassword, confirmPassword } = req.body;
+      const result = await this.authService.resetPasswordWithToken(resetToken, newPassword, confirmPassword);
+      return (this as any).sendSuccess(res, result, 'Password changed successfully');
+    } catch (error) {
+      next(error);
+    }
+  };
 }

@@ -1,5 +1,6 @@
 import { PrismaClient } from '../generated/client';
 import { CompleteSessionEvidence, AptitudeQuestionEvidence, CodingProblemEvidence } from './ReportEvidenceService';
+import { HRScoreEngine } from './HRScoreEngine';
 
 import axios from 'axios';
 
@@ -262,13 +263,15 @@ export class ReportAnalysisService {
         for (const att of rawAttempts) {
           let aiAnalysis = att.aiAnalysis;
           if (!aiAnalysis) {
-            aiAnalysis = CodingDiagnosticEngine.analyzeAttempt(att, {
+            aiAnalysis = await CodingDiagnosticEngine.analyzeAttempt(att, {
               problemId: p.questionId,
               title: p.title,
+              description: (p as any).description,
               pattern: p.pattern,
               topic: p.topic,
               difficulty: p.difficulty,
               constraints: p.constraints,
+              examples: (p as any).examples,
               expectedComplexity: p.expectedComplexity,
               expectedSpaceComplexity: p.expectedSpaceComplexity,
               authoritativeTestCases: p.authoritativeTestCases,
@@ -400,17 +403,32 @@ export class ReportAnalysisService {
         hrStrengths = Array.isArray(hrEval.strengths) ? hrEval.strengths as string[] : [];
         hrImprovements = Array.isArray(hrEval.improvements) ? hrEval.improvements as string[] : [];
         hrAiSummary = hrEval.aiSummary || '';
+        if (hrAiSummary && hrScore > 0) {
+          // Strictly harmonize score in aiSummary to authoritative HRScoreEngine score
+          hrAiSummary = hrAiSummary.replace(/\b\d+\s*\/\s*100\b/g, `${hrScore}/100`);
+        }
         hrStarGuidance = hrEval.starGuidance || hrStarGuidance;
         hrFeedback = hrEval.feedback || (hrScore === 0 ? 'No response was provided, so there was insufficient evidence to evaluate this question.' : '');
-      } else if (evidence.hr.status === 'COMPLETED') {
-        // Fallback when HR was completed but no AI evaluation record exists.
-        // Do NOT fabricate scores — reward based only on actual words spoken.
-        if (avgWordsPerResponse >= 30) {
-          hrScore = 0; // Will be re-evaluated; no fabricated credit without actual AI scoring
-          hrFeedback = `Candidate participated in HR interview (${hrCandidateResponses.length} responses) but evaluation record is missing. Please re-run evaluation.`;
-          hrStrengths = ['Participated in behavioral interview dialogue'];
-          hrImprovements = ['Re-run HR evaluation to obtain scored feedback'];
-        } else {
+      } else {
+        // Fallback: Check if individual responses exist in HRInterviewResponse
+        const storedResponses = await (prisma as any).hRInterviewResponse.findMany({
+          where: { hrSession: { interviewId: evidence.interviewId } },
+        });
+
+        if (storedResponses && storedResponses.length > 0) {
+          const qScores = storedResponses.map((r: any) => typeof r.questionScore === 'number' ? r.questionScore : 0);
+          hrScore = Math.round(HRScoreEngine.calculateOverallHRScore(qScores));
+          const avgDims = HRScoreEngine.calculateAverageDimensionScores(storedResponses);
+          clarityScore = Math.round(avgDims.clarity * 10);
+          relevanceScore = Math.round(avgDims.relevance * 10);
+          hrAiSummary = `Candidate completed ${storedResponses.length} response(s). Overall behavioral score: ${hrScore}/100.`;
+          hrFeedback = hrScore > 0
+            ? 'Candidate provided structured answers addressing behavioral competencies.'
+            : 'No substantive responses were provided during the recorded questions.';
+          hrStrengths = storedResponses.flatMap((r: any) => Array.isArray(r.strengths) ? r.strengths : []).slice(0, 4);
+          hrImprovements = storedResponses.flatMap((r: any) => Array.isArray(r.areasForImprovement) ? r.areasForImprovement : []).slice(0, 4);
+        } else if (evidence.hr.status === 'COMPLETED') {
+          // Fallback when HR was marked completed but no response records exist
           hrScore = 0; clarityScore = 0; relevanceScore = 0;
           hrFeedback = 'HR evaluation record not found. Score cannot be determined without evidence.';
           hrStrengths = [];
