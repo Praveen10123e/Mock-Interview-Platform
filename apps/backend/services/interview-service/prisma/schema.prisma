@@ -463,3 +463,90 @@ model HRInterviewEvaluation {
   @@index([hrSessionId])
 }
 
+// ─── Phase 5: Interview Autopsy Intelligence Models ───────────────────────────
+
+model InterviewAutopsy {
+  id                 String   @id @default(uuid())
+  candidateId        String   // identityId of candidate
+  generatedAt        DateTime @default(now())
+  analysisVersion    String   @default("autopsy-v1")
+  model              String?
+  promptVersion      String?  @default("v1.0")
+  status             String   @default("COMPLETED") // COMPLETED | INSUFFICIENT_DATA
+  interviewsAnalyzed Int      @default(0)
+  evidenceHash       String?
+  isStale            Boolean  @default(false)
+  findings           Json     // Array of structured failure patterns with evidence, root cause, impact, recommendations
+  strengths          Json     @default("[]") // Recurring strengths
+  resolvedPatterns   Json     @default("[]") // Previously failing patterns that have improved
+  crossRoundPatterns Json     @default("[]") // Inferred cross-round themes
+  summary            String   @db.Text
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([candidateId])
+  @@index([candidateId, generatedAt])
+}
+
+// ─── Phase 6: Interview DNA / Skill Genome Models ──────────────────────────────
+
+model InterviewDNASnapshot {
+  id                   String   @id @default(uuid())
+  candidateId          String   // identityId of candidate
+  generatedAt          DateTime @default(now())
+  analysisVersion      String   @default("dna-v1")
+  model                String?  @default("gemini-1.5-pro")
+  promptVersion        String?  @default("v1.0")
+  status               String   @default("COMPLETED") // COMPLETED | BASELINE_ONLY | INSUFFICIENT_DATA
+  interviewsAnalyzed   Int      @default(0)
+  sourceInterviewIds   Json     @default("[]") // string[]
+  isStale              Boolean  @default(false)
+  currentProfile       Json     // Canonical skill metrics (0-100), categories, readiness
+  timelineSnapshots    Json     @default("[]") // Chronological interview points with round & dimension scores
+  trends               Json     @default("[]") // Growth rates, absolute deltas, trend classifications
+  strongestGrowth      Json     @default("[]") // Top improving skills with deltas and evidence
+  recentRegressions    Json     @default("[]") // Regressing skills with deltas
+  stableStrengths      Json     @default("[]") // Consistently high performing skills
+  roundEvolution       Json     // Aptitude, Coding, HR longitudinal trends
+  hrDimensionEvolution Json     // 8 HR dimensions longitudinal trends
+  milestones           Json     @default("[]") // Evidence-backed achievements
+  autopsyConnection    Json?    // Integrated Autopsy findings & resolution status
+  aiInterpretation     Json?    // Cached AI narrative & coaching observations (or null)
+  nextFocus            Json     @default("[]") // High-priority skill focus areas (non-adaptive preview)
+  summary              String   @db.Text
+  createdAt            DateTime @default(now())
+  updatedAt            DateTime @updatedAt
+
+  @@index([candidateId])
+  @@index([candidateId, generatedAt])
+}
+
+// ─── Phase 7: Personalized Improvement Loop Models ───────────────────────────
+
+model PersonalizedImprovementPlan {
+  id                      String   @id @default(uuid())
+  candidateId             String   // identityId of candidate
+  generatedAt             DateTime @default(now())
+  analysisVersion         String   @default("improvement-v1")
+  model                   String?  @default("gemini-1.5-pro")
+  promptVersion           String?  @default("v1.0")
+  status                  String   @default("ACTIVE") // ACTIVE | TARGETS_REACHED | INSUFFICIENT_DATA
+  interviewsAnalyzed      Int      @default(0)
+  sourceAutopsySnapshotId String?
+  sourceDNASnapshotId     String?
+  isStale                 Boolean  @default(false)
+  staleReason             String?
+  priorities              Json     // Array of prioritized improvement areas with scores, rationale, evidence
+  tasks                   Json     // Array of actionable practice tasks with routes, topic filters, completion state
+  targets                 Json     // Target criteria and progress
+  coaching                Json?    // Structured coaching advice and common mistakes
+  reassessmentGuidance    Json?    // Reassessment strategy and recommendations
+  summary                 String   @db.Text
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
+
+  @@index([candidateId])
+  @@index([candidateId, generatedAt])
+}
+
+

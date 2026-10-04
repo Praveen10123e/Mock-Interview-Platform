@@ -364,15 +364,15 @@ export const StudentDashboard: React.FC = () => {
         </Card>
 
         {/* Next Best Action Card */}
-        <Card className="flex flex-col justify-between bg-white border border-blue-200/80 shadow-xs overflow-hidden">
+        <Card className="flex flex-col justify-between bg-white border border-slate-200/80 shadow-xs overflow-hidden">
           <div>
-            <CardHeader className="pb-3 border-b border-blue-100 bg-blue-50/50">
+            <CardHeader className="pb-3 border-b border-slate-100 bg-slate-50/50">
               <div className="flex items-center justify-between">
-                <CardTitle className="text-xs font-bold text-blue-700 uppercase tracking-wider flex items-center gap-1.5 font-mono">
-                  <Target className="h-4 w-4 text-blue-600" />
+                <CardTitle className="text-xs font-bold text-slate-900 uppercase tracking-wider flex items-center gap-1.5 font-mono">
+                  <Target className="h-4 w-4 text-slate-700" />
                   Next Best Action
                 </CardTitle>
-                <span className="px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-700 text-[10px] font-semibold border border-blue-200">
+                <span className="px-2.5 py-0.5 rounded-full bg-slate-100 text-slate-700 text-[10px] font-semibold border border-slate-200">
                   {nextAction.tag}
                 </span>
               </div>
@@ -388,7 +388,7 @@ export const StudentDashboard: React.FC = () => {
           <div className="p-4 pt-0">
             <Button
               onClick={() => navigate(nextAction.actionRoute)}
-              className="w-full gap-1.5 font-semibold bg-blue-600 hover:bg-blue-700 text-white shadow-2xs"
+              className="w-full gap-1.5 font-semibold bg-slate-900 hover:bg-black text-white shadow-2xs cursor-pointer"
             >
               {nextAction.actionLabel} <ArrowRight className="h-4 w-4" />
             </Button>

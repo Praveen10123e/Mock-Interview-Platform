@@ -586,4 +586,170 @@ interviewSessionRouter.post('/:id/report/chat/practice/:practiceQuestionId/answe
   }
 });
 
+// ─── 8. PHASE 5: INTERVIEW AUTOPSY ENGINE ─────────────────────────────────────
+import { InterviewAutopsyService } from '../services/InterviewAutopsyService';
+
+// Get candidate's latest Interview Autopsy (with staleness metadata)
+interviewSessionRouter.get('/autopsy/latest', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const autopsy = await InterviewAutopsyService.getLatestAutopsy(identityId);
+    res.json({ success: true, data: autopsy });
+  } catch (err: any) {
+    console.error('Failed to get latest autopsy:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+interviewSessionRouter.get('/autopsy', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const autopsy = await InterviewAutopsyService.getLatestAutopsy(identityId);
+    res.json({ success: true, data: autopsy });
+  } catch (err: any) {
+    console.error('Failed to get latest autopsy:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+// Explicitly generate / refresh candidate's Interview Autopsy
+interviewSessionRouter.post('/autopsy/generate', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const autopsy = await InterviewAutopsyService.generateAutopsy(identityId);
+    res.json({ success: true, data: autopsy });
+  } catch (err: any) {
+    console.error('Failed to generate autopsy:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+// Get historical autopsy snapshots list
+interviewSessionRouter.get('/autopsy/history', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const history = await InterviewAutopsyService.getAutopsyHistory(identityId);
+    res.json({ success: true, data: history });
+  } catch (err: any) {
+    console.error('Failed to get autopsy history:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+// Get specific historical autopsy record
+interviewSessionRouter.get('/autopsy/:autopsyId', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const autopsy = await InterviewAutopsyService.getAutopsyById(req.params.autopsyId, identityId);
+    if (!autopsy) {
+      return res.status(404).json({ success: false, error: 'Autopsy record not found.' });
+    }
+    res.json({ success: true, data: autopsy });
+  } catch (err: any) {
+    console.error('Failed to get autopsy detail:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── 9. PHASE 6: INTERVIEW DNA / SKILL GENOME ENGINE ─────────────────────────
+import { InterviewDNAService } from '../services/InterviewDNAService';
+
+// Get candidate's latest Interview DNA snapshot (with staleness metadata)
+interviewSessionRouter.get('/dna/latest', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const dna = await InterviewDNAService.getLatestDNA(identityId);
+    res.json({ success: true, data: dna });
+  } catch (err: any) {
+    console.error('Failed to get latest DNA:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+interviewSessionRouter.get('/dna', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const dna = await InterviewDNAService.getLatestDNA(identityId);
+    res.json({ success: true, data: dna });
+  } catch (err: any) {
+    console.error('Failed to get latest DNA:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+// Explicitly generate / refresh candidate's Interview DNA
+interviewSessionRouter.post('/dna/generate', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const dna = await InterviewDNAService.generateDNASnapshot(identityId);
+    res.json({ success: true, data: dna });
+  } catch (err: any) {
+    console.error('Failed to generate DNA:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+interviewSessionRouter.post('/dna/analyze', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const dna = await InterviewDNAService.generateDNASnapshot(identityId);
+    res.json({ success: true, data: dna });
+  } catch (err: any) {
+    console.error('Failed to analyze DNA:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+// ─── 10. PHASE 7: PERSONALIZED IMPROVEMENT LOOP ENGINE ───────────────────────
+import { PersonalizedImprovementEngine } from '../services/PersonalizedImprovementEngine';
+
+// Get candidate's latest Personalized Improvement Plan (with staleness metadata)
+interviewSessionRouter.get('/improvement-plan/latest', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const plan = await PersonalizedImprovementEngine.getLatestPlan(identityId);
+    res.json({ success: true, data: plan });
+  } catch (err: any) {
+    console.error('Failed to get latest improvement plan:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+interviewSessionRouter.get('/improvement-plan', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const plan = await PersonalizedImprovementEngine.getLatestPlan(identityId);
+    res.json({ success: true, data: plan });
+  } catch (err: any) {
+    console.error('Failed to get improvement plan:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+// Explicitly generate / refresh candidate's Personalized Improvement Plan
+interviewSessionRouter.post('/improvement-plan/generate', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const plan = await PersonalizedImprovementEngine.generatePlan(identityId);
+    res.json({ success: true, data: plan });
+  } catch (err: any) {
+    console.error('Failed to generate improvement plan:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+interviewSessionRouter.post('/improvement-plan/refresh', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const plan = await PersonalizedImprovementEngine.generatePlan(identityId);
+    res.json({ success: true, data: plan });
+  } catch (err: any) {
+    console.error('Failed to refresh improvement plan:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+
+
+
 

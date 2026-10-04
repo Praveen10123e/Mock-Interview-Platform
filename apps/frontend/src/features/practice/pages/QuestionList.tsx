@@ -88,6 +88,7 @@ export const QuestionList = () => {
   const { data: questionsData, isLoading, isFetching } = useQuestions({
     page,
     limit: 50,
+    category: selectedCategory || undefined,
     search: debouncedSearch,
     topic: selectedTopic,
     difficulty: selectedDifficulty,

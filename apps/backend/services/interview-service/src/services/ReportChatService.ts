@@ -1,6 +1,7 @@
 import { PrismaClient } from '../generated/client';
 import { ReportEvidenceService, CompleteSessionEvidence } from './ReportEvidenceService';
 import { ReportAnalysisService, SynthesizedReport, DetailedAptitudeAnalysis, DetailedCodingAnalysis } from './ReportAnalysisService';
+import { InterviewAutopsyService } from './InterviewAutopsyService';
 import axios from 'axios';
 import crypto from 'crypto';
 
@@ -327,6 +328,21 @@ export class ReportChatService {
           suggestedFollowups: valRes.suggestedFollowups || [],
         };
       }
+    }
+
+    // 2.5 Check for Interview Autopsy & Recurring Weaknesses Queries (Phase 5)
+    const isAutopsyQuery =
+      qLower.includes('autopsy') ||
+      qLower.includes('recurring') ||
+      qLower.includes('repeatedly') ||
+      qLower.includes('keep failing') ||
+      qLower.includes('why do i keep') ||
+      qLower.includes('cross interview') ||
+      qLower.includes('historical weakness') ||
+      qLower.includes('failure pattern');
+
+    if (isAutopsyQuery) {
+      return this.handleAutopsyChat(userMessage, identityId);
     }
 
     // 3. Check for HR / BEHAVIORAL / SUMMARY queries (Phase 4 Evidence Integration)
@@ -1607,5 +1623,71 @@ Return ONLY a JSON object with this exact schema:
       ],
     };
   }
+
+  /**
+   * Handle Phase 5: Interview Autopsy queries grounded in historical evidence
+   */
+  private static async handleAutopsyChat(userMessage: string, identityId: string): Promise<ChatRouteResponse> {
+    try {
+      const autopsy = await InterviewAutopsyService.getLatestAutopsy(identityId);
+      if (autopsy.status === 'INSUFFICIENT_DATA' || autopsy.interviewsAnalyzed < 2) {
+        return {
+          answer: `🔬 **Interview Autopsy Status: Baseline Recording**\n\n` +
+            `Interview Autopsy requires at least **2 completed mock assessments** to isolate recurring cross-interview failure patterns from single isolated mistakes.\n\n` +
+            `Currently, **${autopsy.interviewsAnalyzed} completed session** is recorded. Complete another mock assessment to generate your multi-interview failure pattern autopsy.`,
+          suggestedFollowups: [
+            'What were my strengths in this session?',
+            'How can I improve my coding score?',
+            'What did I do well in HR?',
+          ],
+        };
+      }
+
+      const topFindings = autopsy.findings.slice(0, 3);
+      if (topFindings.length === 0) {
+        return {
+          answer: `🔬 **Interview Autopsy Summary (${autopsy.interviewsAnalyzed} Assessments Analyzed)**\n\n` +
+            `No acute recurring failure patterns were detected across your ${autopsy.interviewsAnalyzed} completed interviews! You have maintained consistent performance above benchmark thresholds.`,
+          suggestedFollowups: [
+            'What are my key strengths?',
+            'How do I maintain my competitive edge?',
+          ],
+        };
+      }
+
+      let answer = `🔬 **Interview Autopsy: Top Recurring Weaknesses (${autopsy.interviewsAnalyzed} Assessments Analyzed)**\n\n`;
+      topFindings.forEach((f, idx) => {
+        answer += `### ${idx + 1}. ${f.title} (${f.severity} Priority — ${f.patternType.replace(/_/g, ' ')})\n`;
+        answer += `* **Recurrence**: Observed across **${f.interviewsAffected} interviews** (${f.frequency} occurrences).\n`;
+        answer += `* **Likely Root Cause**: ${f.likelyRootCause}\n`;
+        answer += `* **Impact**: ${f.impact}\n`;
+        answer += `* **Recommendation**: ${f.recommendation}\n\n`;
+      });
+
+      if (autopsy.crossRoundPatterns && autopsy.crossRoundPatterns.length > 0) {
+        const cr = autopsy.crossRoundPatterns[0];
+        answer += `### 🔄 Cross-Round Pattern: ${cr.title}\n`;
+        answer += `* **Inference**: ${cr.inference}\n`;
+        answer += `* **Recommendation**: ${cr.recommendation}\n\n`;
+      }
+
+      answer += `You can inspect exact failed test cases and verified transcripts in your **My Progress → Interview Autopsy** tab.`;
+
+      return {
+        answer,
+        suggestedFollowups: [
+          'How do I practice boundary test cases?',
+          'Tell me more about STAR Result structure',
+          'What are my demonstrated strengths?',
+        ],
+      };
+    } catch (err: any) {
+      return {
+        answer: `🔬 **Interview Autopsy**: Unable to retrieve historical autopsy data at this moment (${err.message}).`,
+        suggestedFollowups: ['Show my current report breakdown'],
+      };
+    }
+  }
 }
+
 

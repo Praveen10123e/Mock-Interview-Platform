@@ -55,12 +55,7 @@ const playLampClickSound = (turningOn: boolean) => {
 };
 
 export const Register: FC = () => {
-  const [isOn, setIsOn] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return sessionStorage.getItem('nm_lamp_on') === 'true';
-    }
-    return false;
-  });
+  const [isOn, setIsOn] = useState(false);
   const [isPulling, setIsPulling] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [authError, setAuthError] = useState<string | null>(null);
@@ -88,9 +83,6 @@ export const Register: FC = () => {
     setTimeout(() => {
       setIsOn((prev) => {
         const next = !prev;
-        if (typeof window !== 'undefined') {
-          sessionStorage.setItem('nm_lamp_on', String(next));
-        }
         playLampClickSound(next);
         return next;
       });
