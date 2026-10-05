@@ -564,8 +564,37 @@ export class ReportEvidenceService {
       }
     });
 
+    const hrSession = await (prisma as any).hRInterviewSession.findUnique({
+      where: { interviewId },
+      include: {
+        questions: {
+          include: { response: true },
+          orderBy: { sequence: 'asc' },
+        },
+      },
+    });
+
+    if (transcript.length === 0 && hrSession?.questions) {
+      hrSession.questions.forEach((q: any, idx: number) => {
+        transcript.push({
+          turnIndex: idx * 2,
+          role: 'interviewer',
+          content: q.question,
+          timestamp: q.createdAt ? q.createdAt.toISOString() : new Date().toISOString(),
+        });
+        if (q.response?.verifiedTranscript || q.response?.transcript) {
+          transcript.push({
+            turnIndex: idx * 2 + 1,
+            role: 'candidate',
+            content: q.response.verifiedTranscript || q.response.transcript,
+            timestamp: q.response.submittedAt ? q.response.submittedAt.toISOString() : new Date().toISOString(),
+          });
+        }
+      });
+    }
+
     const candidateResponsesCount = transcript.filter((t) => t.role === 'candidate').length;
-    const hrCompleted = !!hrCompleteEvent || candidateResponsesCount >= 1;
+    const hrCompleted = !!hrCompleteEvent || hrSession?.status === 'COMPLETED' || candidateResponsesCount >= 1;
 
     // ─── D. DURATION & TIMING ─────────────────────────────────────────────────
     const startedAt = interview.session?.startedAt ? interview.session.startedAt.toISOString() : interview.createdAt.toISOString();

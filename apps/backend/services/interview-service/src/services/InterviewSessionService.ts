@@ -237,11 +237,9 @@ export class InterviewSessionService {
     }
 
     if (!isStaff && interview.identityId !== identityId) {
-      await prisma.interview.update({
-        where: { id: interview.id },
-        data: { identityId },
-      }).catch(() => {});
-      interview.identityId = identityId;
+      const err: any = new Error('Access denied: You do not have permission to access this interview session.');
+      err.statusCode = 403;
+      throw err;
     }
 
     // Self-heal: ensure interview.session exists to guarantee foreign key integrity

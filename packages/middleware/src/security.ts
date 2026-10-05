@@ -4,10 +4,30 @@ import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import { DEFAULT_CONFIG } from '@nm/constants';
 
+const getOriginOption = () => {
+  const envOrigin = process.env.CORS_ORIGIN;
+  if (!envOrigin || envOrigin === '*') {
+    return (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+      // Allow requests with no origin (curl, server-to-server) or reflect origin for local development
+      return callback(null, true);
+    };
+  }
+
+  const allowedOrigins = envOrigin.split(',').map((s) => s.trim().replace(/\/+$/, '')).filter(Boolean);
+  return (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
+    if (!origin) return callback(null, true);
+    const normalized = origin.replace(/\/+$/, '');
+    if (allowedOrigins.includes(normalized)) {
+      return callback(null, true);
+    }
+    return callback(null, false);
+  };
+};
+
 export const securityMiddleware = [
-  helmet(),
+  helmet({ crossOriginResourcePolicy: false }),
   cors({
-    origin: process.env.CORS_ORIGIN || '*',
+    origin: getOriginOption(),
     credentials: true,
   }),
   compression(),

@@ -68,6 +68,12 @@ temp/
 .cache/
 **/.cache/
 *.class
+storage/
+**/storage/
+*.webm
+*.mp4
+*.wav
+*.pdf
 
 # ==========================================
 # Scratch / One-Time Test & Debug Scripts

@@ -68,9 +68,15 @@ export const ProgressDashboard: React.FC = () => {
 
     const apt = typeof snap?.stages?.aptitude?.scorePercentage === 'number' ? snap.stages.aptitude.scorePercentage : null;
     const coding = typeof snap?.stages?.coding?.scorePercentage === 'number' ? snap.stages.coding.scorePercentage : null;
-    const hr = typeof (snap?.stages?.hr?.analysis?.overallScore ?? snap?.stages?.hr?.scorePercentage) === 'number'
-      ? (snap?.stages?.hr?.analysis?.overallScore ?? snap?.stages?.hr?.scorePercentage)
-      : null;
+    const rawHr =
+      snap?.stages?.hr?.scorePercentage ??
+      snap?.stages?.hr?.overallScore ??
+      snap?.stages?.hr?.analysis?.overallScore ??
+      snap?.scoreBreakdown?.hrScore ??
+      snap?.stages?.hr?.analysis?.communicationScore ??
+      (typeof inv.hrScore === 'number' ? inv.hrScore : null);
+
+    const hr = typeof rawHr === 'number' && !isNaN(rawHr) ? Math.round(rawHr) : null;
 
     trendPoints.push({
       id: inv.id,

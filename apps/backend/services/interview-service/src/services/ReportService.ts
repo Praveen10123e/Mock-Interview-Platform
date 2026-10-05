@@ -110,6 +110,8 @@ export class ReportService {
           candidateResponsesCount: evidence.hr.candidateResponsesCount,
           conversationLog: evidence.hr.transcript,
           status: evidence.hr.status,
+          scorePercentage: synthesized.scoreBreakdown.hrScore,
+          overallScore: synthesized.scoreBreakdown.hrScore,
           analysis: synthesized.hrAnalysis,
         },
       },

@@ -16,6 +16,7 @@ import { HRTranscriptValidator } from './HRTranscriptValidator';
 import { HRScoreEngine } from './HRScoreEngine';
 import { HRSpeechAnalyzer } from './HRSpeechAnalyzer';
 import { HRInterviewSummaryGenerator } from './HRInterviewSummaryGenerator';
+import { InterviewMediaService } from './InterviewMediaService';
 import path from 'path';
 import fs from 'fs';
 
@@ -605,13 +606,19 @@ export class HRInterviewService {
     });
 
     // Mark session as completed
+    const completedAt = new Date();
     await (prisma as any).hRInterviewSession.update({
       where: { id: hrSession.id },
       data: {
         status: 'COMPLETED',
-        completedAt: new Date(),
+        completedAt,
         overallScore: authoritativeOverallScore,
       },
+    });
+
+    // Lock 1-hour media expiration timer from actual interview completion
+    await InterviewMediaService.updateExpirationOnCompletion(interviewId, completedAt).catch((err) => {
+      console.warn('[HRInterviewService] Failed to update media expiration on completion:', err);
     });
 
     // Build conversation for InterviewHistory (backward compatibility with ReportEvidenceService)
@@ -705,7 +712,11 @@ export class HRInterviewService {
       where: { interviewId },
       include: {
         questions: {
-          include: { response: true },
+          include: {
+            response: {
+              include: { answerMedia: true },
+            },
+          },
           orderBy: { sequence: 'asc' },
         },
         evaluation: true,
@@ -869,8 +880,15 @@ export class HRInterviewService {
               evaluationStatus: q.response.evaluationStatus,
               durationSeconds: q.response.durationSeconds,
               wordCount: q.response.wordCount,
-              hasRecording: !!q.response.recordingPath,
+              hasRecording: !!q.response.recordingPath || !!q.response.answerMedia,
               recordingPath: q.response.recordingPath,
+              answerMedia: q.response.answerMedia
+                ? InterviewMediaService.formatMediaDTO(q.response.answerMedia, hrSession.interviewId)
+                : {
+                    available: false,
+                    status: 'UNAVAILABLE',
+                    reason: 'Answer recording unavailable.',
+                  },
               submittedAt: q.response.submittedAt,
             }
           : null,

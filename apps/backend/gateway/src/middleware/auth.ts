@@ -14,7 +14,8 @@ try {
 }
 
 export const authPlaceholder = (req: Request, res: Response, next: NextFunction) => {
-  const authHeader = req.headers.authorization;
+  const tokenFromQuery = typeof req.query?.token === 'string' ? req.query.token : undefined;
+  const authHeader = req.headers.authorization || (tokenFromQuery ? `Bearer ${tokenFromQuery}` : undefined);
   if (!authHeader || !authHeader.startsWith('Bearer ')) {
     if (
       req.path.includes('/auth/login') ||

@@ -2,10 +2,13 @@ import React, { useEffect, useState } from 'react';
 import {
   BarChart2, Star, TrendingUp, TrendingDown, MessageSquare,
   Clock, FileText, ChevronDown, ChevronUp, Info, Award, CheckCircle2, Loader2,
-  Sparkles, ShieldCheck, AlertTriangle, Mic, Target, ArrowRight
+  Sparkles, ShieldCheck, AlertTriangle, Mic, Target, ArrowRight,
+  Video, Play, Download, X
 } from 'lucide-react';
 import { HRInterviewAPI, SCORING_DIMENSIONS } from '../../services/hrInterview.service';
 import type { HRSession } from '../../services/hrInterview.service';
+import api from '../../../../api/axios/instance';
+import { getAccessToken } from '../../../../store/AuthStore';
 
 interface HRReportTabProps {
   interviewId: string;
@@ -16,6 +19,41 @@ export const HRReportTab: React.FC<HRReportTabProps> = ({ interviewId }) => {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [expandedQ, setExpandedQ] = useState<string | null>(null);
+  const [downloadingMediaId, setDownloadingMediaId] = useState<string | null>(null);
+
+  const handleDownloadVideo = async (mediaId: string, sequenceNumber: number) => {
+    try {
+      setDownloadingMediaId(mediaId);
+      const response = await api.get(`/interviews/${interviewId}/media/${mediaId}/download`, {
+        responseType: 'blob',
+      });
+      const contentType = String(response.headers['content-type'] || 'video/webm');
+      const ext = contentType.includes('mp4') ? 'mp4' : 'webm';
+      const blob = new Blob([response.data], { type: contentType });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Question_${String(sequenceNumber).padStart(2, '0')}_Answer.${ext}`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err: any) {
+      console.error('Failed to download answer video:', err);
+      alert('Failed to download answer video. It may have expired or is unavailable.');
+    } finally {
+      setDownloadingMediaId(null);
+    }
+  };
+
+  const [activeVideoModal, setActiveVideoModal] = useState<{
+    questionNumber: number;
+    questionText: string;
+    durationSeconds: number;
+    mediaId: string;
+    streamUrl: string;
+    downloadUrl: string;
+  } | null>(null);
 
   useEffect(() => {
     const load = async () => {
@@ -493,6 +531,69 @@ export const HRReportTab: React.FC<HRReportTabProps> = ({ interviewId }) => {
                               </div>
                             </div>
                           )}
+
+                          {/* ── Question-Wise Answer Video Evidence ── */}
+                          <div className="pt-2 border-t border-slate-200">
+                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 bg-white p-3 rounded-lg border border-slate-200">
+                              <div className="flex items-start sm:items-center gap-2.5">
+                                <Video className="w-4 h-4 text-black shrink-0 mt-0.5 sm:mt-0" />
+                                <div>
+                                  <span className="text-[11px] font-bold text-black uppercase tracking-wider block">
+                                    Spoken Answer Video Evidence
+                                  </span>
+                                  <span className="text-[11px] text-slate-500">
+                                    {q.response.answerMedia?.available
+                                      ? 'Video available temporarily'
+                                      : q.response.answerMedia?.status === 'EXPIRED'
+                                      ? 'Answer Video Expired: This recording was automatically deleted after 1 hour.'
+                                      : 'Answer recording unavailable.'}
+                                  </span>
+                                </div>
+                              </div>
+
+                              {q.response.answerMedia?.available && (
+                                <div className="flex items-center gap-2 self-start sm:self-auto">
+                                  <button
+                                    type="button"
+                                    onClick={() => {
+                                      const token = getAccessToken();
+                                      const tokenParam = token ? `?token=${encodeURIComponent(token)}` : '';
+                                      const mId = q.response?.answerMedia?.mediaId || '';
+                                      setActiveVideoModal({
+                                        questionNumber: q.sequence,
+                                        questionText: q.question,
+                                        durationSeconds: q.response?.answerMedia?.durationSeconds || q.response?.durationSeconds || 0,
+                                        mediaId: mId,
+                                        streamUrl: `/api/v1/interviews/${interviewId}/media/${mId}/stream${tokenParam}`,
+                                        downloadUrl: `/api/v1/interviews/${interviewId}/media/${mId}/download${tokenParam}`,
+                                      });
+                                    }}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-black text-white text-xs font-semibold rounded-md hover:bg-neutral-800 transition-colors shadow-xs cursor-pointer"
+                                  >
+                                    <Play className="w-3.5 h-3.5 fill-current" /> Watch Answer
+                                  </button>
+
+                                  <button
+                                    type="button"
+                                    disabled={downloadingMediaId === q.response?.answerMedia?.mediaId}
+                                    onClick={() => {
+                                      if (q.response?.answerMedia?.mediaId) {
+                                        handleDownloadVideo(q.response.answerMedia.mediaId, q.sequence);
+                                      }
+                                    }}
+                                    className="inline-flex items-center gap-1.5 px-3 py-1.5 bg-white text-black border border-black text-xs font-semibold rounded-md hover:bg-neutral-100 transition-colors cursor-pointer disabled:opacity-50"
+                                  >
+                                    {downloadingMediaId === q.response.answerMedia.mediaId ? (
+                                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                                    ) : (
+                                      <Download className="w-3.5 h-3.5" />
+                                    )}
+                                    Download Video
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
                         </div>
 
                         {/* AI Quality Evaluation & 8 Dimensions */}
@@ -1098,6 +1199,79 @@ export const HRReportTab: React.FC<HRReportTabProps> = ({ interviewId }) => {
               </div>
             </div>
           )}
+        </div>
+      )}
+
+      {/* ── Question Answer Video Player Modal (Black & White Clean Design) ── */}
+      {activeVideoModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-xs">
+          <div className="w-full max-w-2xl bg-white rounded-lg border border-black shadow-2xl overflow-hidden flex flex-col">
+            {/* Modal Header */}
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-200 bg-white">
+              <div className="pr-4">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">
+                  Question Q{activeVideoModal.questionNumber} Spoken Evidence
+                </span>
+                <h3 className="text-sm font-bold text-black line-clamp-1">
+                  {activeVideoModal.questionText}
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => setActiveVideoModal(null)}
+                className="p-1 rounded-md text-slate-500 hover:text-black hover:bg-slate-100 transition-colors cursor-pointer"
+                title="Close video player"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            {/* Video Content */}
+            <div className="p-5 space-y-3 bg-slate-50">
+              <div className="relative aspect-video bg-black rounded-md overflow-hidden flex items-center justify-center shadow-inner">
+                <video
+                  controls
+                  preload="metadata"
+                  src={activeVideoModal.streamUrl}
+                  className="w-full h-full object-contain"
+                />
+              </div>
+
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between text-xs text-slate-600 gap-1 px-1">
+                <span>
+                  Answer recording duration: <strong>{activeVideoModal.durationSeconds}s</strong>
+                </span>
+                <span className="text-[11px] text-slate-500">
+                  Recordings automatically expire 1 hour after interview completion.
+                </span>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-between px-5 py-3.5 border-t border-slate-200 bg-white">
+              <button
+                type="button"
+                disabled={downloadingMediaId === activeVideoModal.mediaId}
+                onClick={() => handleDownloadVideo(activeVideoModal.mediaId, activeVideoModal.questionNumber)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 bg-white text-black border border-black text-xs font-semibold rounded-md hover:bg-neutral-100 transition-colors cursor-pointer disabled:opacity-50"
+              >
+                {downloadingMediaId === activeVideoModal.mediaId ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <Download className="w-4 h-4" />
+                )}
+                Download Video
+              </button>
+
+              <button
+                type="button"
+                onClick={() => setActiveVideoModal(null)}
+                className="px-4 py-2 bg-black text-white text-xs font-semibold rounded-md hover:bg-neutral-800 transition-colors cursor-pointer"
+              >
+                Close
+              </button>
+            </div>
+          </div>
         </div>
       )}
     </div>

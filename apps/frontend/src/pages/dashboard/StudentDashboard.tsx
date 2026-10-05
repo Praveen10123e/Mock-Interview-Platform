@@ -100,7 +100,16 @@ export const StudentDashboard: React.FC = () => {
   // Round scores of latest completed
   const aptScore = latestSnap?.stages?.aptitude?.scorePercentage ?? null;
   const codingScore = latestSnap?.stages?.coding?.scorePercentage ?? null;
-  const hrScore = latestSnap?.stages?.hr?.analysis?.overallScore ?? latestSnap?.stages?.hr?.scorePercentage ?? null;
+  const rawHrScore =
+    latestSnap?.stages?.hr?.scorePercentage ??
+    latestSnap?.stages?.hr?.overallScore ??
+    latestSnap?.stages?.hr?.analysis?.overallScore ??
+    latestSnap?.scoreBreakdown?.hrScore ??
+    latestSnap?.stages?.hr?.analysis?.communicationScore ??
+    (typeof latestCompleted?.hrScore === 'number' ? latestCompleted.hrScore : null);
+
+  const hrScore = typeof rawHrScore === 'number' && !isNaN(rawHrScore) ? Math.round(rawHrScore) : null;
+  const hrStatus = latestSnap?.stages?.hr?.status || latestCompleted?.hrStatus || (latestCompleted?.session?.status === 'ANALYZING' ? 'ANALYZING' : 'NOT_STARTED');
 
   // Score comparison calculation
   let scoreDiffText: string | null = null;
@@ -170,6 +179,15 @@ export const StudentDashboard: React.FC = () => {
             actionLabel: 'Practice HR Round',
           };
         }
+      } else if (hrScore === null) {
+        nextAction = {
+          title: 'Complete HR Behavioral Round',
+          tag: 'HR Pending Assessment',
+          description: 'Your Aptitude and Coding scores are strong (>= 75%), but your HR Behavioral round has not been evaluated yet.',
+          recommendation: 'Recommended: Complete the HR Behavioral interview to unlock your full readiness profile.',
+          actionRoute: '/student/interviews',
+          actionLabel: 'Complete HR Round',
+        };
       } else {
         nextAction = {
           title: 'Maintain Strong Readiness',
@@ -324,7 +342,11 @@ export const StudentDashboard: React.FC = () => {
                         <span>HR & Behavioral Readiness</span>
                       </div>
                       <span className="font-mono font-bold text-amber-600">
-                        {hrScore !== null ? `${hrScore}%` : 'Not evaluated yet'}
+                        {hrScore !== null
+                          ? `${hrScore}%`
+                          : (hrStatus === 'ANALYZING' || hrStatus === 'IN_PROGRESS' || latestCompleted?.session?.status === 'ANALYZING')
+                          ? 'Evaluation pending'
+                          : 'Not evaluated yet'}
                       </span>
                     </div>
                     <div className="w-full bg-slate-100 rounded-full h-2 overflow-hidden">

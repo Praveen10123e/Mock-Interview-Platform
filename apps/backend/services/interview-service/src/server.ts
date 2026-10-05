@@ -165,12 +165,97 @@ app.get('/', async (req, res) => {
       orderBy: { createdAt: 'desc' },
       include: {
         session: true,
-        history: true
-      }
+        history: true,
+      },
     });
-    res.json(interviews);
+
+    const interviewIds = interviews.map((i) => i.id);
+    const hrSessions = await (prisma as any).hRInterviewSession.findMany({
+      where: { interviewId: { in: interviewIds } },
+      include: {
+        evaluation: true,
+        questions: {
+          include: { response: true },
+          orderBy: { sequence: 'asc' },
+        },
+      },
+    });
+
+    const hrSessionMap = new Map<string, any>();
+    hrSessions.forEach((hs: any) => hrSessionMap.set(hs.interviewId, hs));
+
+    const enriched = interviews.map((inv) => {
+      const hrSession = hrSessionMap.get(inv.id);
+      const session = inv.session;
+      let snap = session?.reportSnapshot ? JSON.parse(JSON.stringify(session.reportSnapshot)) : null;
+
+      // Extract authoritative HR score from HR session / evaluation / stored responses
+      let hrScore: number | null = null;
+      let hrStatus = hrSession?.status || 'NOT_STARTED';
+
+      if (hrSession) {
+        if (typeof hrSession.overallScore === 'number' && !isNaN(hrSession.overallScore)) {
+          hrScore = Math.round(hrSession.overallScore);
+        } else if (typeof hrSession.evaluation?.overallScore === 'number' && !isNaN(hrSession.evaluation.overallScore)) {
+          hrScore = Math.round(hrSession.evaluation.overallScore);
+        } else if (hrSession.questions && Array.isArray(hrSession.questions)) {
+          const qScores = hrSession.questions
+            .filter((q: any) => typeof q.response?.questionScore === 'number' && !isNaN(q.response.questionScore))
+            .map((q: any) => q.response.questionScore);
+          if (qScores.length > 0) {
+            const sum = qScores.reduce((a: number, b: number) => a + b, 0);
+            hrScore = Math.round(sum / qScores.length);
+          }
+        }
+      }
+
+      if (snap) {
+        const existingHrScore =
+          snap.stages?.hr?.scorePercentage ??
+          snap.stages?.hr?.analysis?.overallScore ??
+          snap.scoreBreakdown?.hrScore ??
+          snap.hrAnalysis?.communicationScore ??
+          hrScore;
+
+        const effectiveHrScore = typeof existingHrScore === 'number' && !isNaN(existingHrScore) ? Math.round(existingHrScore) : hrScore;
+
+        if (effectiveHrScore !== null) {
+          if (!snap.stages) snap.stages = {};
+          if (!snap.stages.hr) snap.stages.hr = {};
+          snap.stages.hr.scorePercentage = effectiveHrScore;
+          snap.stages.hr.overallScore = effectiveHrScore;
+          snap.stages.hr.status = snap.stages.hr.status || (effectiveHrScore > 0 ? 'COMPLETED' : hrStatus);
+
+          if (!snap.stages.hr.analysis) snap.stages.hr.analysis = {};
+          snap.stages.hr.analysis.overallScore = effectiveHrScore;
+          snap.stages.hr.analysis.scorePercentage = effectiveHrScore;
+          snap.stages.hr.analysis.communicationScore = snap.stages.hr.analysis.communicationScore ?? effectiveHrScore;
+
+          if (!snap.scoreBreakdown) snap.scoreBreakdown = {};
+          if (snap.scoreBreakdown.hrScore == null) snap.scoreBreakdown.hrScore = effectiveHrScore;
+        }
+
+        return {
+          ...inv,
+          hrScore: effectiveHrScore,
+          hrStatus: snap.stages?.hr?.status || hrStatus,
+          session: {
+            ...session,
+            reportSnapshot: snap,
+          },
+        };
+      }
+
+      return {
+        ...inv,
+        hrScore,
+        hrStatus,
+      };
+    });
+
+    res.json(enriched);
   } catch (err) {
-    console.error(err);
+    console.error('Failed to fetch candidate interviews:', err);
     res.status(500).json({ error: 'Failed to fetch interviews' });
   }
 });
@@ -1254,10 +1339,22 @@ adminRouter.get('/analytics', requireAdmin, async (req, res) => {
 
 app.use('/admin', adminRouter);
 app.use('/faculty/sessions', facultySessionRouter);
-app.use('/faculty/executions', facultySessionRouter);
+import { InterviewMediaService } from './services/InterviewMediaService';
 
 const PORT = process.env.PORT || 3004;
 
 app.listen(PORT, () => {
   console.log(`Interview Service running on port ${PORT}`);
+
+  // Run initial media cleanup on startup
+  InterviewMediaService.cleanupExpiredMedia().catch((err) => {
+    console.warn('[Server] Initial media cleanup warning:', err);
+  });
+
+  // Schedule periodic cleanup every 5 minutes (lightweight, idempotent)
+  setInterval(() => {
+    InterviewMediaService.cleanupExpiredMedia().catch((err) => {
+      console.warn('[Server] Periodic media cleanup warning:', err);
+    });
+  }, 5 * 60 * 1000);
 });

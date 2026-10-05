@@ -30,7 +30,9 @@ import {
   Calculator,
   Info,
   Copy,
-  Check
+  Check,
+  Download,
+  Loader2,
 } from 'lucide-react';
 import { Radar, RadarChart, PolarGrid, PolarAngleAxis, PolarRadiusAxis, ResponsiveContainer } from 'recharts';
 import api from '../../../api/axios/instance';
@@ -210,6 +212,56 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
   const [selectedAttempts, setSelectedAttempts] = useState<Record<number, number>>({});
   const [copiedCorrectedIdx, setCopiedCorrectedIdx] = useState<number | null>(null);
   const [copiedOptimizedIdx, setCopiedOptimizedIdx] = useState<number | null>(null);
+  const [downloadingPdf, setDownloadingPdf] = useState(false);
+  const [downloadingZip, setDownloadingZip] = useState(false);
+
+  // Download PDF Report
+  const handleDownloadPdf = async () => {
+    try {
+      setDownloadingPdf(true);
+      const response = await api.get(`/interviews/${interviewId}/report/pdf`, {
+        responseType: 'blob',
+      });
+      const blob = new Blob([response.data], { type: 'application/pdf' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Interview_Report_${interviewId}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err: any) {
+      console.error('Failed to download PDF report:', err);
+      alert('Failed to download PDF report. Please try again.');
+    } finally {
+      setDownloadingPdf(false);
+    }
+  };
+
+  // Download ZIP Package
+  const handleDownloadZip = async () => {
+    try {
+      setDownloadingZip(true);
+      const response = await api.get(`/interviews/${interviewId}/package/download`, {
+        responseType: 'blob',
+      });
+      const blob = new Blob([response.data], { type: 'application/zip' });
+      const url = window.URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `Interview_Report_${interviewId}.zip`;
+      document.body.appendChild(a);
+      a.click();
+      window.URL.revokeObjectURL(url);
+      document.body.removeChild(a);
+    } catch (err: any) {
+      console.error('Failed to download interview package ZIP:', err);
+      alert('Failed to download interview package ZIP. Please try again.');
+    } finally {
+      setDownloadingZip(false);
+    }
+  };
 
   // Chat State
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -736,20 +788,52 @@ export const ReportWorkspace = ({ sessionData, interviewId }: { sessionData?: an
           </button>
         </div>
 
-        <Button
-          onClick={() => {
-            const role = useAuthStore.getState().user?.roles?.[0];
-            if (role === 'FACULTY') {
-              navigate('/faculty/reports');
-            } else {
-              navigate('/student/interviews');
-            }
-          }}
-          variant="secondary"
-          size="sm"
-        >
-          Exit to Hub
-        </Button>
+        <div className="flex items-center gap-2.5">
+          <button
+            type="button"
+            disabled={downloadingPdf}
+            onClick={handleDownloadPdf}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white text-black border border-black text-xs font-semibold hover:bg-neutral-100 transition-all cursor-pointer shadow-2xs disabled:opacity-50"
+            title="Download complete PDF evaluation report"
+          >
+            {downloadingPdf ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Download className="w-3.5 h-3.5" />
+            )}
+            {downloadingPdf ? 'Generating PDF...' : 'Download Report'}
+          </button>
+
+          <button
+            type="button"
+            disabled={downloadingZip}
+            onClick={handleDownloadZip}
+            className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-black text-white text-xs font-semibold hover:bg-neutral-800 transition-all cursor-pointer shadow-xs disabled:opacity-50"
+            title="Download ZIP package containing PDF report and all available question answer videos"
+          >
+            {downloadingZip ? (
+              <Loader2 className="w-3.5 h-3.5 animate-spin" />
+            ) : (
+              <Download className="w-3.5 h-3.5" />
+            )}
+            {downloadingZip ? 'Creating ZIP...' : 'Download Interview Package'}
+          </button>
+
+          <Button
+            onClick={() => {
+              const role = useAuthStore.getState().user?.roles?.[0];
+              if (role === 'FACULTY') {
+                navigate('/faculty/reports');
+              } else {
+                navigate('/student/interviews');
+              }
+            }}
+            variant="secondary"
+            size="sm"
+          >
+            Exit to Hub
+          </Button>
+        </div>
       </div>
 
       {/* ── MAIN CONTENT AREA ── */}

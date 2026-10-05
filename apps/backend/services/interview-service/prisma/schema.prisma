@@ -43,6 +43,7 @@ model Interview {
   questions           InterviewQuestionReference[]
   history             InterviewHistory[]
   events              InterviewEvent[]
+  answerMedia         InterviewAnswerMedia[]
 
   createdAt           DateTime           @default(now())
   updatedAt           DateTime           @updatedAt
@@ -430,7 +431,33 @@ model HRInterviewResponse {
   wordCount           Int      @default(0)
   submittedAt         DateTime @default(now())
 
+  answerMedia         InterviewAnswerMedia?
+
   @@index([hrSessionId])
+}
+
+model InterviewAnswerMedia {
+  id              String    @id @default(uuid())
+  interviewId     String
+  questionId      String
+  responseId      String    @unique
+  sequenceNumber  Int
+  storageKey      String
+  mimeType        String    @default("video/webm")
+  durationSeconds Int       @default(0)
+  fileSizeBytes   Int       @default(0)
+  createdAt       DateTime  @default(now())
+  expiresAt       DateTime
+  deletedAt       DateTime?
+  status          String    @default("AVAILABLE") // AVAILABLE | EXPIRED | DELETED
+
+  interview       Interview           @relation(fields: [interviewId], references: [id], onDelete: Cascade)
+  response        HRInterviewResponse @relation(fields: [responseId], references: [id], onDelete: Cascade)
+
+  @@index([interviewId])
+  @@index([responseId])
+  @@index([expiresAt])
+  @@index([status])
 }
 
 model HRInterviewEvaluation {

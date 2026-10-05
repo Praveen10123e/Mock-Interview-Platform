@@ -125,9 +125,16 @@ export interface DetailedCodingAnalysis {
 }
 
 export interface DetailedHRAnalysis {
+  overallScore: number;
+  scorePercentage: number;
   communicationScore: number;
   clarityScore: number;
   relevanceScore: number;
+  structureScore?: number;
+  technicalDepthScore?: number;
+  ownershipScore?: number;
+  professionalismScore?: number;
+  competencyScores?: Record<string, number>;
   overallAssessment: string;
   strengthsObserved: string[];
   areasToImprove: string[];
@@ -384,6 +391,11 @@ export class ReportAnalysisService {
     let hrScore = 0;
     let clarityScore = 0;
     let relevanceScore = 0;
+    let structureScore = 0;
+    let technicalDepthScore = 0;
+    let ownershipScore = 0;
+    let professionalismScore = 0;
+    let competencyScores: Record<string, number> = {};
     let hrStrengths: string[] = [];
     let hrImprovements: string[] = [];
     let hrAiSummary = '';
@@ -391,10 +403,42 @@ export class ReportAnalysisService {
     let hrFeedback = 'HR behavioral round was not completed.';
 
     try {
-      const hrEval = await (prisma as any).hRInterviewEvaluation.findFirst({
-        where: { hrSession: { interviewId: evidence.interviewId } },
-        include: { hrSession: true },
+      const hrSession = await (prisma as any).hRInterviewSession.findUnique({
+        where: { interviewId: evidence.interviewId },
+        include: {
+          evaluation: true,
+          questions: {
+            include: { response: true },
+            orderBy: { sequence: 'asc' },
+          },
+        },
       });
+
+      const hrEval = hrSession?.evaluation;
+      const storedResponses = hrSession?.questions
+        ?.map((q: any) => q.response)
+        ?.filter(Boolean) || [];
+
+      if (storedResponses.length > 0) {
+        const responseDims = storedResponses
+          .map((r: any) => r.dimensionScores)
+          .filter((d: any) => d && typeof d === 'object');
+        const avgDims = HRScoreEngine.calculateAverageDimensionScores(responseDims);
+        competencyScores = {
+          relevance: Math.round(avgDims.relevance * 10),
+          specificity: Math.round(avgDims.specificity * 10),
+          evidence: Math.round(avgDims.evidence * 10),
+          structure: Math.round(avgDims.structure * 10),
+          clarity: Math.round(avgDims.clarity * 10),
+          technicalDepth: Math.round(avgDims.technicalDepth * 10),
+          ownership: Math.round(avgDims.ownership * 10),
+          professionalism: Math.round(avgDims.professionalism * 10),
+        };
+        structureScore = competencyScores.structure;
+        technicalDepthScore = competencyScores.technicalDepth;
+        ownershipScore = competencyScores.ownership;
+        professionalismScore = competencyScores.professionalism;
+      }
 
       if (hrEval) {
         hrScore = Math.round(hrEval.overallScore);
@@ -409,31 +453,31 @@ export class ReportAnalysisService {
         }
         hrStarGuidance = hrEval.starGuidance || hrStarGuidance;
         hrFeedback = hrEval.feedback || (hrScore === 0 ? 'No response was provided, so there was insufficient evidence to evaluate this question.' : '');
-      } else {
-        // Fallback: Check if individual responses exist in HRInterviewResponse
-        const storedResponses = await (prisma as any).hRInterviewResponse.findMany({
-          where: { hrSession: { interviewId: evidence.interviewId } },
-        });
-
-        if (storedResponses && storedResponses.length > 0) {
-          const qScores = storedResponses.map((r: any) => typeof r.questionScore === 'number' ? r.questionScore : 0);
-          hrScore = Math.round(HRScoreEngine.calculateOverallHRScore(qScores));
-          const avgDims = HRScoreEngine.calculateAverageDimensionScores(storedResponses);
-          clarityScore = Math.round(avgDims.clarity * 10);
-          relevanceScore = Math.round(avgDims.relevance * 10);
-          hrAiSummary = `Candidate completed ${storedResponses.length} response(s). Overall behavioral score: ${hrScore}/100.`;
-          hrFeedback = hrScore > 0
-            ? 'Candidate provided structured answers addressing behavioral competencies.'
-            : 'No substantive responses were provided during the recorded questions.';
-          hrStrengths = storedResponses.flatMap((r: any) => Array.isArray(r.strengths) ? r.strengths : []).slice(0, 4);
-          hrImprovements = storedResponses.flatMap((r: any) => Array.isArray(r.areasForImprovement) ? r.areasForImprovement : []).slice(0, 4);
-        } else if (evidence.hr.status === 'COMPLETED') {
-          // Fallback when HR was marked completed but no response records exist
-          hrScore = 0; clarityScore = 0; relevanceScore = 0;
-          hrFeedback = 'HR evaluation record not found. Score cannot be determined without evidence.';
-          hrStrengths = [];
-          hrImprovements = ['Provide audible, structured answers to behavioral questions.'];
-        }
+      } else if (typeof hrSession?.overallScore === 'number') {
+        hrScore = Math.round(hrSession.overallScore);
+        clarityScore = competencyScores.clarity || 0;
+        relevanceScore = competencyScores.relevance || 0;
+        hrAiSummary = `Candidate completed ${storedResponses.length} response(s). Overall behavioral score: ${hrScore}/100.`;
+        hrFeedback = hrScore > 0
+          ? 'Candidate provided structured answers addressing behavioral competencies.'
+          : 'No substantive responses were provided during the recorded questions.';
+      } else if (storedResponses.length > 0) {
+        const qScores = storedResponses.map((r: any) => typeof r.questionScore === 'number' ? r.questionScore : 0);
+        hrScore = Math.round(HRScoreEngine.calculateOverallHRScore(qScores));
+        clarityScore = competencyScores.clarity || 0;
+        relevanceScore = competencyScores.relevance || 0;
+        hrAiSummary = `Candidate completed ${storedResponses.length} response(s). Overall behavioral score: ${hrScore}/100.`;
+        hrFeedback = hrScore > 0
+          ? 'Candidate provided structured answers addressing behavioral competencies.'
+          : 'No substantive responses were provided during the recorded questions.';
+        hrStrengths = storedResponses.flatMap((r: any) => Array.isArray(r.strengths) ? r.strengths : []).slice(0, 4);
+        hrImprovements = storedResponses.flatMap((r: any) => Array.isArray(r.areasForImprovement) ? r.areasForImprovement : []).slice(0, 4);
+      } else if (evidence.hr.status === 'COMPLETED') {
+        // Fallback when HR was marked completed but no response records exist
+        hrScore = 0; clarityScore = 0; relevanceScore = 0;
+        hrFeedback = 'HR evaluation record not found. Score cannot be determined without evidence.';
+        hrStrengths = [];
+        hrImprovements = ['Provide audible, structured answers to behavioral questions.'];
       }
     } catch (hrEvalErr) {
       // If DB lookup fails, do not fabricate scores
@@ -442,13 +486,20 @@ export class ReportAnalysisService {
     }
 
     const hrAnalysis: DetailedHRAnalysis = {
+      overallScore: hrScore,
+      scorePercentage: hrScore,
+      communicationScore: hrScore,
+      clarityScore,
+      relevanceScore,
+      structureScore,
+      technicalDepthScore,
+      ownershipScore,
+      professionalismScore,
+      competencyScores,
       overallAssessment:
         evidence.hr.status === 'COMPLETED'
           ? hrAiSummary || hrFeedback || `Candidate participated in a multi-turn behavioral interview dialogue (${hrCandidateResponses.length} candidate responses recorded).`
           : 'HR behavioral round was not completed.',
-      communicationScore: hrScore,
-      clarityScore,
-      relevanceScore,
       strengthsObserved:
         hrStrengths.length > 0
           ? hrStrengths

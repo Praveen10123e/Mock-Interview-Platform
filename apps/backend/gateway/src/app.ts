@@ -138,6 +138,15 @@ export class GatewayApplication extends BaseApplication {
                 if (req.headers['x-request-id']) {
                   proxyReq.setHeader('x-request-id', req.headers['x-request-id']);
                 }
+                if (req.headers['x-identity-id']) {
+                  proxyReq.setHeader('x-identity-id', req.headers['x-identity-id']);
+                }
+                if (req.headers['x-user-role']) {
+                  proxyReq.setHeader('x-user-role', req.headers['x-user-role']);
+                }
+                if (req.headers['x-user-email']) {
+                  proxyReq.setHeader('x-user-email', req.headers['x-user-email']);
+                }
                 fixRequestBody(proxyReq, req);
               },
               error: (err: any, _req: any, res: any) => {

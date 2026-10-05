@@ -1,11 +1,19 @@
 import express from 'express';
+import multer from 'multer';
+import fs from 'fs';
 import { InterviewSessionService } from '../services/InterviewSessionService';
 import { AptitudeService } from '../services/AptitudeService';
 import { CodingEvidenceService } from '../services/CodingEvidenceService';
 import { HRInterviewService } from '../services/HRInterviewService';
+import { InterviewMediaService } from '../services/InterviewMediaService';
 import { ReportService } from '../services/ReportService';
 import { ReportChatService } from '../services/ReportChatService';
 import { PrismaClient } from '../generated/client';
+
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 100 * 1024 * 1024 }, // 100 MB max per answer recording
+});
 
 let _prisma: PrismaClient;
 const prisma = new Proxy({} as PrismaClient, {
@@ -17,12 +25,34 @@ const prisma = new Proxy({} as PrismaClient, {
 
 export const interviewSessionRouter = express.Router();
 
+const parseTokenPayload = (req: express.Request): any => {
+  const token = (req.query?.token as string) || 
+    (req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.split(' ')[1] : undefined);
+  if (!token) return null;
+  try {
+    const parts = token.split('.');
+    if (parts.length === 3) {
+      const payload = JSON.parse(Buffer.from(parts[1], 'base64').toString('utf8'));
+      return payload;
+    }
+  } catch (e) {
+    // ignore
+  }
+  return null;
+};
+
 const getIdentityId = (req: express.Request): string => {
-  return (req.headers['x-identity-id'] as string) || '';
+  if (req.headers['x-identity-id']) return req.headers['x-identity-id'] as string;
+  const payload = parseTokenPayload(req);
+  if (payload?.sub) return payload.sub;
+  return (req.query?.identityId as string) || '';
 };
 
 const getUserRole = (req: express.Request): string => {
-  return (req.headers['x-user-role'] as string) || '';
+  if (req.headers['x-user-role']) return req.headers['x-user-role'] as string;
+  const payload = parseTokenPayload(req);
+  if (payload?.roles) return Array.isArray(payload.roles) ? payload.roles.join(',') : payload.roles;
+  return (req.query?.role as string) || '';
 };
 
 // ─── 1. SESSION INITIALIZATION & RESUME ──────────────────────────────────────
@@ -373,11 +403,165 @@ interviewSessionRouter.post('/:id/hr/response', async (req, res) => {
   }
 });
 
-// Upload audio/video recording blob — stored to disk
+// ─── 4. QUESTION-WISE ANSWER VIDEO EVIDENCE & MEDIA ENDPOINTS ──────────────
+
+// Upload question-specific video/audio answer media blob
+interviewSessionRouter.post('/:id/hr/media', upload.single('file'), async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const { questionId, durationSeconds, mimeType } = req.body;
+
+    if (!questionId) {
+      return res.status(400).json({ success: false, error: 'questionId is required.' });
+    }
+
+    if (!req.file || !req.file.buffer) {
+      return res.status(400).json({ success: false, error: 'Audio/video file buffer is required.' });
+    }
+
+    const result = await InterviewMediaService.saveAnswerMedia({
+      interviewId: Array.isArray(req.params.id) ? req.params.id[0] : req.params.id,
+      identityId,
+      questionId,
+      durationSeconds: Number(durationSeconds) || 0,
+      mimeType: mimeType || req.file.mimetype || 'video/webm',
+      fileBuffer: req.file.buffer,
+    });
+
+    res.json(result);
+  } catch (err: any) {
+    console.error('Failed to upload answer media:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+// Stream question answer video with full Range / seek support
+interviewSessionRouter.get('/:id/media/:mediaId/stream', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const userRole = getUserRole(req);
+
+    const { filePath, fileSizeBytes, mimeType } = await InterviewMediaService.getMediaForAccess(
+      req.params.id,
+      req.params.mediaId,
+      identityId,
+      userRole
+    );
+
+    const range = req.headers.range;
+    if (range) {
+      const parts = range.replace(/bytes=/, '').split('-');
+      const start = parseInt(parts[0], 10);
+      const end = parts[1] ? parseInt(parts[1], 10) : fileSizeBytes - 1;
+
+      if (start >= fileSizeBytes || end >= fileSizeBytes) {
+        res.status(416).setHeader('Content-Range', `bytes */${fileSizeBytes}`);
+        return res.end();
+      }
+
+      const chunkSize = end - start + 1;
+      const fileStream = fs.createReadStream(filePath, { start, end });
+
+      res.writeHead(206, {
+        'Content-Range': `bytes ${start}-${end}/${fileSizeBytes}`,
+        'Accept-Ranges': 'bytes',
+        'Content-Length': chunkSize,
+        'Content-Type': mimeType,
+      });
+
+      fileStream.pipe(res);
+    } else {
+      res.writeHead(200, {
+        'Content-Length': fileSizeBytes,
+        'Content-Type': mimeType,
+        'Accept-Ranges': 'bytes',
+      });
+
+      fs.createReadStream(filePath).pipe(res);
+    }
+  } catch (err: any) {
+    console.error('Failed to stream answer media:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+// Download single question video file
+interviewSessionRouter.get('/:id/media/:mediaId/download', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const userRole = getUserRole(req);
+
+    const { media, filePath, fileSizeBytes, mimeType } = await InterviewMediaService.getMediaForAccess(
+      req.params.id,
+      req.params.mediaId,
+      identityId,
+      userRole
+    );
+
+    const ext = mimeType.includes('mp4') ? 'mp4' : 'webm';
+    const filename = `Question_${String(media.sequenceNumber || 1).padStart(2, '0')}_Answer.${ext}`;
+
+    res.setHeader('Content-Type', mimeType);
+    res.setHeader('Content-Length', fileSizeBytes);
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    fs.createReadStream(filePath).pipe(res);
+  } catch (err: any) {
+    console.error('Failed to download answer media:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+// Download full interview package ZIP (PDF report + all available answer videos)
+interviewSessionRouter.get('/:id/package/download', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const userRole = getUserRole(req);
+
+    res.setHeader('Content-Type', 'application/zip');
+    res.setHeader('Content-Disposition', `attachment; filename="Interview_Report_${req.params.id}.zip"`);
+
+    const zipStream = await InterviewMediaService.generateInterviewPackageZip(
+      req.params.id,
+      identityId,
+      userRole
+    );
+
+    zipStream.pipe(res);
+  } catch (err: any) {
+    console.error('Failed to generate interview package ZIP:', err);
+    if (!res.headersSent) {
+      res.status(err.statusCode || 500).json({ success: false, error: err.message });
+    }
+  }
+});
+
+// Download PDF Report Document
+interviewSessionRouter.get('/:id/report/pdf', async (req, res) => {
+  try {
+    const identityId = getIdentityId(req);
+    const userRole = getUserRole(req);
+
+    const pdfBuffer = await InterviewMediaService.generateReportPdfBuffer(
+      req.params.id,
+      identityId,
+      userRole
+    );
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Length', pdfBuffer.length);
+    res.setHeader('Content-Disposition', `attachment; filename="Interview_Report_${req.params.id}.pdf"`);
+
+    res.send(pdfBuffer);
+  } catch (err: any) {
+    console.error('Failed to generate report PDF:', err);
+    res.status(err.statusCode || 500).json({ success: false, error: err.message });
+  }
+});
+
+// Backward compatibility: save recording path
 interviewSessionRouter.post('/:id/hr/recording', async (req, res) => {
   try {
-    // multer is set up in server.ts if needed; this records path only
-    const identityId = getIdentityId(req);
     const { questionId, hrSessionId, relativePath } = req.body;
     if (!questionId || !relativePath) {
       return res.status(400).json({ success: false, error: 'questionId and relativePath required.' });

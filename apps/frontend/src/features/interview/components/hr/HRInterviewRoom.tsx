@@ -254,22 +254,32 @@ export const HRInterviewRoom: React.FC<HRInterviewRoomProps> = ({
       setIsMicMuted(false);
     }
 
-    // MediaRecorder for answer audio recording if supported
+    // MediaRecorder for question-specific video/audio answer evidence
     audioChunksRef.current = [];
     if (activeStream && typeof MediaRecorder !== 'undefined') {
       try {
+        const videoTracks = activeStream.getVideoTracks();
         const audioTracks = activeStream.getAudioTracks();
-        if (audioTracks.length > 0) {
-          const audioStream = new MediaStream(audioTracks);
-          const recorder = new MediaRecorder(audioStream);
-          recorder.ondataavailable = (e) => {
-            if (e.data.size > 0) {
-              audioChunksRef.current.push(e.data);
-            }
-          };
-          recorder.start(500);
-          mediaRecorderRef.current = recorder;
+        const tracks = [...videoTracks, ...audioTracks];
+        const recordStream = new MediaStream(tracks.length > 0 ? tracks : activeStream.getAudioTracks());
+
+        let mimeType = 'video/webm';
+        if (MediaRecorder.isTypeSupported('video/webm;codecs=vp8,opus')) {
+          mimeType = 'video/webm;codecs=vp8,opus';
+        } else if (MediaRecorder.isTypeSupported('video/webm')) {
+          mimeType = 'video/webm';
+        } else if (MediaRecorder.isTypeSupported('video/mp4')) {
+          mimeType = 'video/mp4';
         }
+
+        const recorder = new MediaRecorder(recordStream, { mimeType });
+        recorder.ondataavailable = (e) => {
+          if (e.data.size > 0) {
+            audioChunksRef.current.push(e.data);
+          }
+        };
+        recorder.start(500);
+        mediaRecorderRef.current = recorder;
       } catch (err) {
         console.warn('MediaRecorder error:', err);
       }
@@ -298,11 +308,12 @@ export const HRInterviewRoom: React.FC<HRInterviewRoomProps> = ({
       recognitionRef.current?.stop();
     } catch {}
 
-    try {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
-        mediaRecorderRef.current.stop();
-      }
-    } catch {}
+    const activeRecorder = mediaRecorderRef.current;
+    if (activeRecorder && activeRecorder.state !== 'inactive') {
+      try {
+        activeRecorder.stop();
+      } catch {}
+    }
 
     const elapsed = Math.max(1, Math.floor((Date.now() - recordingStartTimeRef.current) / 1000));
     setRecordingSeconds(elapsed);
@@ -312,17 +323,36 @@ export const HRInterviewRoom: React.FC<HRInterviewRoomProps> = ({
 
     const finalTranscript = (transcript || liveTranscript || '').trim();
 
+    // Prepare recorded blob if available
+    const mime = activeRecorder?.mimeType || 'video/webm';
+    const recordedBlob = audioChunksRef.current.length > 0
+      ? new Blob(audioChunksRef.current, { type: mime })
+      : null;
+
     try {
       if (!currentQuestion) {
         throw new Error('No question currently active');
       }
 
+      // 1. Submit authoritative response & transcript
       const result = await HRInterviewAPI.submitResponse(
         interviewId,
         currentQuestion.id,
         finalTranscript,
         elapsed
       );
+
+      // 2. Upload question-specific answer video evidence (non-blocking for scoring)
+      if (recordedBlob && recordedBlob.size > 0) {
+        HRInterviewAPI.uploadAnswerMedia(
+          interviewId,
+          currentQuestion.id,
+          recordedBlob,
+          elapsed
+        ).catch((mediaErr) => {
+          console.warn('[HRInterviewRoom] Temporary media evidence upload note:', mediaErr);
+        });
+      }
 
       // Update question state as answered
       setAllQuestions((prev) =>

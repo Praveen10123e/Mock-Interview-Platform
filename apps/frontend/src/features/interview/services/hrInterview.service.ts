@@ -58,9 +58,42 @@ export const HRInterviewAPI = {
     const res = await api.delete(`${BASE}/${interviewId}/hr/recording/${responseId}`);
     return res.data;
   },
+
+  /** Upload question-specific video answer recording blob */
+  uploadAnswerMedia: async (
+    interviewId: string,
+    questionId: string,
+    videoBlob: Blob,
+    durationSeconds: number
+  ) => {
+    const formData = new FormData();
+    const ext = videoBlob.type?.includes('mp4') ? 'mp4' : 'webm';
+    formData.append('file', videoBlob, `answer_${questionId}.${ext}`);
+    formData.append('questionId', questionId);
+    formData.append('durationSeconds', String(durationSeconds));
+    formData.append('mimeType', videoBlob.type || 'video/webm');
+
+    const res = await api.post(`${BASE}/${interviewId}/hr/media`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return res.data;
+  },
 };
 
 // Types for use throughout the HR module
+
+export interface AnswerMediaInfo {
+  available: boolean;
+  mediaId?: string;
+  durationSeconds?: number;
+  expiresAt?: string;
+  mimeType?: string;
+  fileSizeBytes?: number;
+  status: 'AVAILABLE' | 'EXPIRED' | 'DELETED' | 'UNAVAILABLE';
+  reason?: string;
+  watchUrl?: string;
+  downloadUrl?: string;
+}
 
 export interface HRQuestion {
   id: string;
@@ -122,6 +155,7 @@ export interface HRQuestion {
     wordCount: number;
     hasRecording: boolean;
     recordingPath?: string;
+    answerMedia?: AnswerMediaInfo;
     submittedAt: string;
   } | null;
 }

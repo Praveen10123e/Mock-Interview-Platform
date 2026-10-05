@@ -34,6 +34,9 @@ const playLampClickSound = (turningOn: boolean) => {
     const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
     if (!AudioCtx) return;
     const ctx = new AudioCtx();
+    if (ctx.state === 'suspended') {
+      ctx.resume().catch(() => {});
+    }
     const osc = ctx.createOscillator();
     const gain = ctx.createGain();
 
@@ -41,7 +44,7 @@ const playLampClickSound = (turningOn: boolean) => {
     osc.frequency.setValueAtTime(turningOn ? 860 : 540, ctx.currentTime);
     osc.frequency.exponentialRampToValueAtTime(turningOn ? 380 : 180, ctx.currentTime + 0.045);
 
-    gain.gain.setValueAtTime(0.18, ctx.currentTime);
+    gain.gain.setValueAtTime(0.2, ctx.currentTime);
     gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.045);
 
     osc.connect(gain);
@@ -79,6 +82,7 @@ export const Register: FC = () => {
   const navigate = useNavigate();
 
   const toggleLamp = useCallback(() => {
+    if (isPulling) return;
     setIsPulling(true);
     setTimeout(() => {
       setIsOn((prev) => {
@@ -88,7 +92,7 @@ export const Register: FC = () => {
       });
       setIsPulling(false);
     }, 180);
-  }, []);
+  }, [isPulling]);
 
   const onSubmit = async (data: RegisterForm) => {
     setIsLoading(true);
@@ -193,9 +197,13 @@ export const Register: FC = () => {
           />
 
           {/* ── Lamp Head Structure (Cap, Diffuser, Flare) ── */}
-          <div className="relative z-10 flex flex-col items-center">
+          <div
+            onClick={toggleLamp}
+            className="relative z-10 flex flex-col items-center cursor-pointer group select-none"
+            title={isOn ? "Click lamp to turn OFF" : "Click lamp to turn ON"}
+          >
             {/* Top Lamp Cap */}
-            <div className="w-36 sm:w-44 h-5 rounded-full bg-gradient-to-b from-zinc-700 via-zinc-800 to-zinc-950 border-t border-zinc-500/30 shadow-md relative z-10" />
+            <div className="w-36 sm:w-44 h-5 rounded-full bg-gradient-to-b from-zinc-700 via-zinc-800 to-zinc-950 border-t border-zinc-500/30 shadow-md relative z-10 group-hover:brightness-110 transition-all" />
 
             {/* Glowing Diffuser Underside */}
             <motion.div
@@ -227,10 +235,14 @@ export const Register: FC = () => {
           </div>
 
           {/* ── Hanging Pull String & Handle ── */}
-          <div className="absolute top-[20px] left-[58%] sm:left-[59%] z-20 flex flex-col items-center">
+          <div
+            onClick={toggleLamp}
+            className="absolute top-[20px] left-[56%] sm:left-[57%] z-20 flex flex-col items-center cursor-pointer px-3 py-1 group select-none"
+            title={isOn ? "Pull cord to turn OFF" : "Pull cord to turn ON"}
+          >
             {/* Pull Cord String */}
             <motion.div
-              className="w-[1.5px] bg-gradient-to-b from-zinc-400 via-zinc-400 to-zinc-300 origin-top"
+              className="w-[1.5px] bg-gradient-to-b from-zinc-400 via-zinc-400 to-zinc-300 origin-top group-hover:w-[2px] transition-all"
               animate={{
                 height: isPulling ? 64 : 44,
               }}
@@ -244,9 +256,12 @@ export const Register: FC = () => {
             {/* Pull Bead / Handle */}
             <motion.button
               type="button"
-              onClick={toggleLamp}
-              whileHover={{ scale: 1.15 }}
-              whileTap={{ scale: 0.95 }}
+              onClick={(e) => {
+                e.stopPropagation();
+                toggleLamp();
+              }}
+              whileHover={{ scale: 1.2 }}
+              whileTap={{ scale: 0.9 }}
               animate={{
                 y: isPulling ? 20 : 0,
               }}
@@ -255,7 +270,7 @@ export const Register: FC = () => {
                 stiffness: 450,
                 damping: 12,
               }}
-              className="w-3 h-5.5 rounded-full cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 -mt-0.5 relative group shadow-md"
+              className="w-3.5 h-6 rounded-full cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 -mt-0.5 relative group shadow-md"
               style={{
                 background: 'linear-gradient(135deg, #FDE68A 0%, #D97706 60%, #92400E 100%)',
                 border: '1px solid rgba(255, 255, 255, 0.4)',
@@ -264,7 +279,7 @@ export const Register: FC = () => {
                   : '0 2px 6px rgba(0,0,0,0.8)',
               }}
               aria-label="Toggle Lamp Register"
-              title="Click to pull lamp cord"
+              title={isOn ? "Pull cord to turn OFF" : "Pull cord to turn ON"}
             >
               {/* Highlight gleam */}
               <span className="absolute top-1 left-0.5 w-1 h-2 rounded-full bg-white/50 blur-[0.5px]" />
@@ -285,12 +300,17 @@ export const Register: FC = () => {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: -8 }}
                 transition={{ duration: 0.4, delay: 0.15 }}
-                className="absolute top-[82px] left-[66%] sm:left-[68%] whitespace-nowrap z-20 pointer-events-none"
+                className="absolute top-[82px] left-[66%] sm:left-[68%] whitespace-nowrap z-20"
               >
-                <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-zinc-900/90 border border-white/10 text-[11px] font-medium text-amber-200/90 shadow-xl backdrop-blur-md animate-pulse">
+                <button
+                  type="button"
+                  onClick={toggleLamp}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-zinc-900/95 border border-amber-400/30 text-[11px] font-medium text-amber-200/95 shadow-xl backdrop-blur-md hover:bg-zinc-800 hover:border-amber-400/60 hover:scale-105 active:scale-95 transition-all cursor-pointer animate-pulse"
+                  title="Click to turn on the lamp"
+                >
                   <Sparkles className="h-3 w-3 text-amber-400" />
-                  <span>Pull the string to begin</span>
-                </div>
+                  <span>Pull string to turn ON</span>
+                </button>
               </motion.div>
             )}
           </AnimatePresence>
