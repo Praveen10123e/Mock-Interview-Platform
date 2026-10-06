@@ -113,9 +113,28 @@ export class GatewayApplication extends BaseApplication {
     this.app.use('/api/v1', authPlaceholder as any, authzPlaceholder as any);
 
     // ── Existing: Register proxy routes for all active services ──────────────
+    const envUrlMap: Record<string, string | undefined> = {
+      auth: process.env.AUTH_SERVICE_URL,
+      users: process.env.USER_SERVICE_URL,
+      interviews: process.env.INTERVIEW_SERVICE_URL,
+      questions: process.env.QUESTION_BANK_SERVICE_URL,
+      judge: process.env.JUDGE_SERVICE_URL,
+      templates: process.env.INTERVIEW_SERVICE_URL,
+      admin: process.env.INTERVIEW_SERVICE_URL,
+    };
+
     for (const [key, service] of Object.entries(ServiceRegistry)) {
       if (service.status === 'active') {
-        const targetUrl = `http://${service.host}:${service.port}`;
+        const envUrl = envUrlMap[key]?.trim();
+        const rawTargetUrl =
+          envUrl && envUrl.length > 0
+            ? envUrl
+            : service.url && service.url.trim().length > 0
+              ? service.url.trim()
+              : `http://${service.host}:${service.port}`;
+        const targetUrl = rawTargetUrl.replace(/\/+$/, '');
+
+        this.logger.info(`[Gateway] Proxy target: ${key} -> ${targetUrl}`);
 
         this.app.use(
           `/api/v1/${key}`,
