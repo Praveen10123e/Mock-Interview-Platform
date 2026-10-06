@@ -34,12 +34,19 @@ export interface ApiEndpoint {
 
 const BASE_HOST = process.env.GATEWAY_HOST || 'localhost';
 
+const resolveManifestUrl = (envUrl: string | undefined, defaultPort: number | string): string => {
+  if (envUrl && envUrl.trim()) {
+    return envUrl.trim().replace(/\/+$/, '');
+  }
+  return `http://${BASE_HOST}:${defaultPort}`;
+};
+
 export const GatewayManifest: ServiceManifestEntry[] = [
   {
     name: 'Auth Service',
     key: 'auth',
     route: '/api/v1/auth',
-    url: `http://${BASE_HOST}:${process.env.AUTH_SERVICE_PORT || 3001}`,
+    url: resolveManifestUrl(process.env.AUTH_SERVICE_URL, process.env.AUTH_SERVICE_PORT || 3001),
     description: 'Handles authentication, registration, and JWT session management.',
     active: true,
     endpoints: [
@@ -54,7 +61,7 @@ export const GatewayManifest: ServiceManifestEntry[] = [
     name: 'User Service',
     key: 'users',
     route: '/api/v1/users',
-    url: `http://${BASE_HOST}:${process.env.USER_SERVICE_PORT || 3002}`,
+    url: resolveManifestUrl(process.env.USER_SERVICE_URL, process.env.USER_SERVICE_PORT || 3002),
     description: 'Manages student and faculty profiles, skills, education, and completion tracking.',
     active: true,
     endpoints: [
@@ -68,7 +75,7 @@ export const GatewayManifest: ServiceManifestEntry[] = [
     name: 'Interview Service',
     key: 'interviews',
     route: '/api/v1/interviews',
-    url: `http://${BASE_HOST}:${process.env.INTERVIEW_SERVICE_PORT || 3004}`,
+    url: resolveManifestUrl(process.env.INTERVIEW_SERVICE_URL, process.env.INTERVIEW_SERVICE_PORT || 3004),
     description: 'Manages interview state, lifecycle, timelines, and session orchestration.',
     active: true,
     endpoints: [
@@ -82,7 +89,7 @@ export const GatewayManifest: ServiceManifestEntry[] = [
     name: 'Question Bank Service',
     key: 'questions',
     route: '/api/v1/questions',
-    url: `http://${BASE_HOST}:${process.env.QUESTION_BANK_SERVICE_PORT || 3005}`,
+    url: resolveManifestUrl(process.env.QUESTION_BANK_SERVICE_URL, process.env.QUESTION_BANK_SERVICE_PORT || 3005),
     description: 'Stores, indexes, and retrieves technical interview questions with full-text search.',
     active: true,
     endpoints: [
@@ -100,7 +107,7 @@ export const GatewayManifest: ServiceManifestEntry[] = [
     name: 'Judge Service',
     key: 'judge',
     route: '/api/v1/judge',
-    url: `http://${BASE_HOST}:${process.env.JUDGE_SERVICE_PORT || 3006}`,
+    url: resolveManifestUrl(process.env.JUDGE_SERVICE_URL, process.env.JUDGE_SERVICE_PORT || 3006),
     description: 'Connects to Judge0 for sandboxed code execution across multiple languages.',
     active: true,
     endpoints: [
@@ -112,7 +119,7 @@ export const GatewayManifest: ServiceManifestEntry[] = [
     name: 'Faculty Service',
     key: 'faculty',
     route: '/api/v1/faculty',
-    url: `http://${BASE_HOST}:${process.env.FACULTY_SERVICE_PORT || 3007}`,
+    url: resolveManifestUrl(process.env.FACULTY_SERVICE_URL, process.env.FACULTY_SERVICE_PORT || 3007),
     description: 'Handles faculty-specific operations, interview templates, and student management.',
     active: false,
     endpoints: [
@@ -125,7 +132,10 @@ export const GatewayManifest: ServiceManifestEntry[] = [
     name: 'Admin Service',
     key: 'admin',
     route: '/api/v1/admin',
-    url: `http://${BASE_HOST}:${process.env.ADMIN_SERVICE_PORT || 3008}`,
+    url: resolveManifestUrl(
+      process.env.ADMIN_SERVICE_URL || process.env.INTERVIEW_SERVICE_URL,
+      process.env.ADMIN_SERVICE_PORT || 3008,
+    ),
     description: 'Platform administration: user management, system configuration, and data governance.',
     active: false,
     endpoints: [
@@ -138,7 +148,7 @@ export const GatewayManifest: ServiceManifestEntry[] = [
     name: 'Analytics Service',
     key: 'analytics',
     route: '/api/v1/analytics',
-    url: `http://${BASE_HOST}:${process.env.ANALYTICS_SERVICE_PORT || 3009}`,
+    url: resolveManifestUrl(process.env.ANALYTICS_SERVICE_URL, process.env.ANALYTICS_SERVICE_PORT || 3009),
     description: 'Aggregates and surfaces performance analytics, heatmaps, and skill gap analysis.',
     active: false,
     endpoints: [
@@ -150,7 +160,7 @@ export const GatewayManifest: ServiceManifestEntry[] = [
     name: 'Notification Service',
     key: 'notifications',
     route: '/api/v1/notifications',
-    url: `http://${BASE_HOST}:${process.env.NOTIFICATION_SERVICE_PORT || 3010}`,
+    url: resolveManifestUrl(process.env.NOTIFICATION_SERVICE_URL, process.env.NOTIFICATION_SERVICE_PORT || 3010),
     description: 'Manages in-app, email, and push notifications for platform events.',
     active: false,
     endpoints: [
@@ -162,7 +172,7 @@ export const GatewayManifest: ServiceManifestEntry[] = [
     name: 'Recommendation Service',
     key: 'recommendations',
     route: '/api/v1/recommendations',
-    url: `http://${BASE_HOST}:${process.env.RECOMMENDATION_SERVICE_PORT || 3011}`,
+    url: resolveManifestUrl(process.env.RECOMMENDATION_SERVICE_URL, process.env.RECOMMENDATION_SERVICE_PORT || 3011),
     description: 'AI-powered personalized question and study path recommendations.',
     active: false,
     endpoints: [
@@ -174,7 +184,7 @@ export const GatewayManifest: ServiceManifestEntry[] = [
     name: 'Replay Service',
     key: 'replay',
     route: '/api/v1/replay',
-    url: `http://${BASE_HOST}:${process.env.REPLAY_SERVICE_PORT || 3012}`,
+    url: resolveManifestUrl(process.env.REPLAY_SERVICE_URL, process.env.REPLAY_SERVICE_PORT || 3012),
     description: 'Records and replays interview sessions for post-interview review.',
     active: false,
     endpoints: [
@@ -185,7 +195,7 @@ export const GatewayManifest: ServiceManifestEntry[] = [
     name: 'Scoring Service',
     key: 'scoring',
     route: '/api/v1/scoring',
-    url: `http://${BASE_HOST}:${process.env.SCORING_SERVICE_PORT || 3013}`,
+    url: resolveManifestUrl(process.env.SCORING_SERVICE_URL, process.env.SCORING_SERVICE_PORT || 3013),
     description: 'Computes automated coding proficiency scores and evaluation metrics.',
     active: false,
     endpoints: [
