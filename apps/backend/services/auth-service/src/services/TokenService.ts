@@ -12,12 +12,19 @@ export class TokenService extends BaseService {
 
   constructor() {
     super('TokenService');
+
     const keysDir = path.resolve(__dirname, '../../../../../../keys');
 
-    // In production, these would be loaded via EnvLoader / secure secrets manager.
-    // For this monorepo, we read from the generated local keys directory.
-    this.privateKey = fs.readFileSync(path.join(keysDir, 'private.pem'), 'utf8');
-    this.publicKey = fs.readFileSync(path.join(keysDir, 'public.pem'), 'utf8');
+    const privateKeyFromEnv = process.env.JWT_PRIVATE_KEY;
+    const publicKeyFromEnv = process.env.JWT_PUBLIC_KEY;
+
+    this.privateKey = privateKeyFromEnv
+      ? privateKeyFromEnv.replace(/\\n/g, '\n')
+      : fs.readFileSync(path.join(keysDir, 'private.pem'), 'utf8');
+
+    this.publicKey = publicKeyFromEnv
+      ? publicKeyFromEnv.replace(/\\n/g, '\n')
+      : fs.readFileSync(path.join(keysDir, 'public.pem'), 'utf8');
   }
 
   public generateAccessToken(payload: IJwtPayload): string {
