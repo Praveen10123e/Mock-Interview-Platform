@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef, useCallback } from 'react';
 import {
   Mic, MicOff, Square, Play, CheckCircle2, ChevronRight,
   Info, LogOut, AlertTriangle, VideoOff, AlertCircle,
-  RotateCcw, Maximize2, Minimize2, Sparkles, Loader2
+  RotateCcw, Sparkles, Loader2
 } from 'lucide-react';
 import { HRAvatar } from './HRAvatar';
 import type { AvatarState } from './HRAvatar';
@@ -61,9 +61,6 @@ export const HRInterviewRoom: React.FC<HRInterviewRoomProps> = ({
   const [recordingSeconds, setRecordingSeconds] = useState(0);
   const [isSubmittingAnswer, setIsSubmittingAnswer] = useState(false);
 
-  // Fullscreen state tracking
-  const [isFullscreen, setIsFullscreen] = useState<boolean>(!!document.fullscreenElement);
-
   // Modals & Dialogs
   const [showCriteria, setShowCriteria] = useState(false);
   const [showExitConfirm, setShowExitConfirm] = useState(false);
@@ -86,40 +83,6 @@ export const HRInterviewRoom: React.FC<HRInterviewRoomProps> = ({
   const totalMain = mainQuestions.length;
   const answeredMain = mainQuestions.filter((q) => q.response).length;
   const progressPct = totalMain > 0 ? Math.round((answeredMain / totalMain) * 100) : 0;
-
-  // ── Fullscreen Listeners ─────────────────────────────────────────
-  useEffect(() => {
-    const handleFullscreenChange = () => {
-      setIsFullscreen(!!document.fullscreenElement);
-    };
-    document.addEventListener('fullscreenchange', handleFullscreenChange);
-    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
-    return () => {
-      document.removeEventListener('fullscreenchange', handleFullscreenChange);
-      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
-    };
-  }, []);
-
-  const toggleFullscreen = async () => {
-    try {
-      if (!document.fullscreenElement) {
-        const elem = document.documentElement;
-        if (elem.requestFullscreen) {
-          await elem.requestFullscreen();
-        } else if ((elem as any).webkitRequestFullscreen) {
-          await (elem as any).webkitRequestFullscreen();
-        }
-      } else {
-        if (document.exitFullscreen) {
-          await document.exitFullscreen();
-        } else if ((document as any).webkitExitFullscreen) {
-          await (document as any).webkitExitFullscreen();
-        }
-      }
-    } catch (e) {
-      console.warn('Toggle fullscreen warning:', e);
-    }
-  };
 
   // ── Real Camera Initialization & Error States ───────────────────
   const initCamera = useCallback(async () => {
@@ -513,15 +476,10 @@ export const HRInterviewRoom: React.FC<HRInterviewRoomProps> = ({
             <span className="hidden md:inline">Evaluation Criteria</span>
           </button>
 
-          <button
-            type="button"
-            onClick={toggleFullscreen}
-            className="h-7 px-2.5 text-xs font-semibold rounded-md border border-[#CBD5E1] bg-white text-[#0F172A] hover:bg-[#F8FAFC] shadow-2xs flex items-center gap-1.5 transition-colors cursor-pointer"
-            title={isFullscreen ? 'Exit full screen' : 'Enter full screen'}
-          >
-            {isFullscreen ? <Minimize2 className="w-3.5 h-3.5 text-[#64748B]" /> : <Maximize2 className="w-3.5 h-3.5 text-[#64748B]" />}
-            <span className="hidden md:inline">{isFullscreen ? 'Exit Fullscreen' : 'Fullscreen'}</span>
-          </button>
+          <div className="hidden sm:inline-flex items-center gap-1.5 px-2.5 py-1 rounded-md bg-[#F8FAFC] border border-[#E2E8F0] text-[#475569] text-xs font-medium">
+            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+            <span>Fullscreen Active</span>
+          </div>
 
           <button
             type="button"

@@ -68,8 +68,11 @@ temp/
 .cache/
 **/.cache/
 *.class
-storage/
-**/storage/
+/storage/
+**/storage/temp_media/
+apps/backend/services/*/storage/
+!**/src/storage/
+!**/src/storage/**
 *.webm
 *.mp4
 *.wav

@@ -3,9 +3,10 @@ import { useParams } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import {
   CheckCircle2, Lock, Clock, AlertCircle, AlertTriangle, ChevronLeft, ChevronRight,
-  RotateCcw, Shield, XCircle, Loader2
+  RotateCcw, Shield, XCircle, Loader2, Maximize2
 } from 'lucide-react';
 import { ReportWorkspace } from '../components/ReportWorkspace';
+import { isBrowserFullscreen, requestAssessmentFullscreen, exitAssessmentFullscreen } from '../utils/fullscreen';
 
 import api from '../../../api/axios/instance';
 import { Button } from '../../../components/ui/button';
@@ -723,6 +724,8 @@ export const InterviewSession = () => {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [showFinishDialog, setShowFinishDialog] = useState(false);
   const [showLockedToast, setShowLockedToast] = useState(false);
+  const [isFullscreen, setIsFullscreen] = useState<boolean>(() => isBrowserFullscreen());
+  const [fullscreenError, setFullscreenError] = useState<string>('');
 
   // Round state machine
   const [roundState, setRoundState] = useState<RoundState>({
@@ -776,6 +779,7 @@ export const InterviewSession = () => {
     } catch (err: any) {
       console.warn('Auto-finalize response:', err);
     }
+    await exitAssessmentFullscreen();
     setRoundState({ aptitude: 'COMPLETED', coding: 'COMPLETED', hr: 'COMPLETED', report: 'ACTIVE' });
     setActiveRound('report');
   }, [id]);
@@ -865,80 +869,105 @@ export const InterviewSession = () => {
     return () => clearTimeout(timer);
   }, [focusLostToast]);
 
+  const handleAway = useCallback(async () => {
+    if (isAwayRef.current) return;
+    isAwayRef.current = true;
+    const now = Date.now();
+    hiddenTimestampRef.current = now;
+
+    // Count the visibility loss / tab switch event immediately
+    setTabSwitchesCount((prev) => prev + 1);
+
+    try {
+      const res = await api.post(`/interviews/${id}/tab-switch`, {
+        eventType: 'SWITCH_AWAY',
+        leftAt: new Date(now).toISOString(),
+      });
+      if (typeof res.data?.tabSwitchesCount === 'number') {
+        setTabSwitchesCount((prev) => Math.max(prev, res.data.tabSwitchesCount));
+      }
+    } catch (e) {
+      console.warn('Tab switch away log error:', e);
+    }
+  }, [id]);
+
+  const handleReturn = useCallback(async () => {
+    if (!isAwayRef.current) return;
+    isAwayRef.current = false;
+    const now = Date.now();
+    const leftTime = hiddenTimestampRef.current || now - 1000;
+    const durationSec = Math.max(1, Math.round((now - leftTime) / 1000));
+    hiddenTimestampRef.current = null;
+
+    // Play audio warning tone via Web Audio API
+    try {
+      const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
+      if (AudioCtx) {
+        const ctx = new AudioCtx();
+        if (ctx.state === 'suspended') {
+          ctx.resume().catch(() => {});
+        }
+        const osc = ctx.createOscillator();
+        const gain = ctx.createGain();
+        osc.type = 'triangle';
+        osc.frequency.setValueAtTime(520, ctx.currentTime);
+        osc.frequency.exponentialRampToValueAtTime(780, ctx.currentTime + 0.25);
+        gain.gain.setValueAtTime(0.2, ctx.currentTime);
+        gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
+        osc.connect(gain);
+        gain.connect(ctx.destination);
+        osc.start();
+        osc.stop(ctx.currentTime + 0.25);
+      }
+    } catch (_) {}
+
+    // Prompt prominent Alert Dialog immediately
+    setShowTabSwitchAlert(true);
+    setFocusLostToast(
+      'Assessment Focus Lost: You navigated away from the assessment window. This activity has been recorded.'
+    );
+
+    try {
+      const res = await api.post(`/interviews/${id}/tab-switch`, {
+        eventType: 'RETURN',
+        returnedAt: new Date(now).toISOString(),
+        durationSeconds: durationSec,
+      });
+      if (typeof res.data?.tabSwitchesCount === 'number') {
+        setTabSwitchesCount((prev) => Math.max(prev, res.data.tabSwitchesCount));
+      }
+    } catch (e) {
+      console.warn('Tab switch return log error:', e);
+    }
+  }, [id]);
+
+  // Fullscreen change listener (enforces continuous proctored fullscreen)
+  useEffect(() => {
+    const handleFullscreenChange = () => {
+      const active = isBrowserFullscreen();
+      setIsFullscreen(active);
+      if (!active && activeRound !== 'report' && !isTimeExpired) {
+        // Fullscreen exited during active assessment
+        handleAway();
+      }
+    };
+
+    document.addEventListener('fullscreenchange', handleFullscreenChange);
+    document.addEventListener('webkitfullscreenchange', handleFullscreenChange);
+    document.addEventListener('mozfullscreenchange', handleFullscreenChange);
+    document.addEventListener('MSFullscreenChange', handleFullscreenChange);
+
+    return () => {
+      document.removeEventListener('fullscreenchange', handleFullscreenChange);
+      document.removeEventListener('webkitfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('mozfullscreenchange', handleFullscreenChange);
+      document.removeEventListener('MSFullscreenChange', handleFullscreenChange);
+    };
+  }, [activeRound, isTimeExpired, handleAway]);
+
+  // Visibility change & window focus listener
   useEffect(() => {
     if (!id || activeRound === 'report' || isTimeExpired) return;
-
-    const handleAway = async () => {
-      if (isAwayRef.current) return;
-      isAwayRef.current = true;
-      const now = Date.now();
-      hiddenTimestampRef.current = now;
-
-      // Count the visibility loss / tab switch event immediately
-      setTabSwitchesCount((prev) => prev + 1);
-
-      try {
-        const res = await api.post(`/interviews/${id}/tab-switch`, {
-          eventType: 'SWITCH_AWAY',
-          leftAt: new Date(now).toISOString(),
-        });
-        if (typeof res.data?.tabSwitchesCount === 'number') {
-          setTabSwitchesCount((prev) => Math.max(prev, res.data.tabSwitchesCount));
-        }
-      } catch (e) {
-        console.warn('Tab switch away log error:', e);
-      }
-    };
-
-    const handleReturn = async () => {
-      if (!isAwayRef.current) return;
-      isAwayRef.current = false;
-      const now = Date.now();
-      const leftTime = hiddenTimestampRef.current || now - 1000;
-      const durationSec = Math.max(1, Math.round((now - leftTime) / 1000));
-      hiddenTimestampRef.current = null;
-
-      // Play audio warning tone via Web Audio API
-      try {
-        const AudioCtx = window.AudioContext || (window as any).webkitAudioContext;
-        if (AudioCtx) {
-          const ctx = new AudioCtx();
-          if (ctx.state === 'suspended') {
-            ctx.resume().catch(() => {});
-          }
-          const osc = ctx.createOscillator();
-          const gain = ctx.createGain();
-          osc.type = 'triangle';
-          osc.frequency.setValueAtTime(520, ctx.currentTime);
-          osc.frequency.exponentialRampToValueAtTime(780, ctx.currentTime + 0.25);
-          gain.gain.setValueAtTime(0.2, ctx.currentTime);
-          gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + 0.25);
-          osc.connect(gain);
-          gain.connect(ctx.destination);
-          osc.start();
-          osc.stop(ctx.currentTime + 0.25);
-        }
-      } catch (_) {}
-
-      // Prompt prominent Alert Dialog immediately
-      setShowTabSwitchAlert(true);
-      setFocusLostToast(
-        'Assessment Focus Lost: You navigated away from the assessment window. This activity has been recorded.'
-      );
-
-      try {
-        const res = await api.post(`/interviews/${id}/tab-switch`, {
-          eventType: 'RETURN',
-          returnedAt: new Date(now).toISOString(),
-          durationSeconds: durationSec,
-        });
-        if (typeof res.data?.tabSwitchesCount === 'number') {
-          setTabSwitchesCount((prev) => Math.max(prev, res.data.tabSwitchesCount));
-        }
-      } catch (e) {
-        console.warn('Tab switch return log error:', e);
-      }
-    };
 
     const handleVisibilityChange = () => {
       if (document.hidden || document.visibilityState === 'hidden') {
@@ -976,7 +1005,7 @@ export const InterviewSession = () => {
       window.removeEventListener('blur', handleWindowBlur);
       window.removeEventListener('focus', handleWindowFocus);
     };
-  }, [id, activeRound, isTimeExpired]);
+  }, [id, activeRound, isTimeExpired, handleAway, handleReturn]);
 
   // 2. Fetch assigned questions
   const { data: sessionQuestionsRes, isLoading, isError, refetch } = useQuery({
@@ -1034,6 +1063,7 @@ export const InterviewSession = () => {
     } catch (err) {
       console.error('Failed to finalize session:', err);
     }
+    await exitAssessmentFullscreen();
     setRoundState({ aptitude: 'COMPLETED', coding: 'COMPLETED', hr: 'COMPLETED', report: 'ACTIVE' });
     setActiveRound('report');
     refetchState();
@@ -1057,6 +1087,7 @@ export const InterviewSession = () => {
     } finally {
       setIsSubmitting(false);
     }
+    await exitAssessmentFullscreen();
     setRoundState({ aptitude: 'COMPLETED', coding: 'COMPLETED', hr: 'COMPLETED', report: 'ACTIVE' });
     setActiveRound('report');
     refetchState();
@@ -1228,6 +1259,64 @@ export const InterviewSession = () => {
         onConfirm={handleManualSubmit}
         isSubmitting={isSubmitting}
       />
+
+      {/* Fullscreen Mode Required / Exit Detection Blocking Overlay */}
+      {!isFullscreen && activeRound !== 'report' && !isTimeExpired && (
+        <div className="fixed inset-0 z-50 bg-slate-900/80 backdrop-blur-sm flex items-center justify-center p-4">
+          <div className="bg-white border-2 border-rose-300 text-slate-900 rounded-2xl max-w-md w-full p-6 sm:p-8 shadow-2xl flex flex-col items-center text-center animate-in fade-in zoom-in-95 duration-200">
+            <div className="w-14 h-14 rounded-full bg-rose-100 flex items-center justify-center text-rose-600 mb-4 ring-8 ring-rose-50">
+              <Maximize2 className="w-7 h-7 text-rose-600" />
+            </div>
+
+            <h2 className="text-xl font-bold text-slate-900">
+              Fullscreen Mode Required
+            </h2>
+
+            <p className="text-xs sm:text-sm text-slate-600 mt-2 leading-relaxed">
+              This proctored assessment requires full-screen mode to ensure academic integrity.
+              Exiting full-screen is monitored and recorded on your evaluation record.
+            </p>
+
+            {fullscreenError && (
+              <div className="w-full mt-4 p-3 bg-rose-50 border border-rose-200 text-rose-700 text-xs rounded-xl flex items-center gap-2 text-left">
+                <AlertTriangle className="w-4 h-4 shrink-0 text-rose-600" />
+                <span>{fullscreenError}</span>
+              </div>
+            )}
+
+            <div className="w-full my-4 p-3.5 rounded-xl bg-slate-50 border border-slate-200 flex items-center justify-between text-xs">
+              <span className="font-semibold text-slate-600 uppercase tracking-wider">
+                Integrity / Visibility Events
+              </span>
+              <span className="font-mono text-sm font-bold text-rose-600 bg-rose-50 px-2.5 py-0.5 rounded-md border border-rose-200">
+                {tabSwitchesCount}
+              </span>
+            </div>
+
+            <Button
+              size="lg"
+              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-semibold py-3 rounded-xl shadow-xs cursor-pointer flex items-center justify-center gap-2"
+              onClick={async () => {
+                const ok = await requestAssessmentFullscreen();
+                if (!ok) {
+                  setFullscreenError('Fullscreen permission is required to continue the assessment. Please allow fullscreen in your browser.');
+                } else {
+                  setFullscreenError('');
+                  setIsFullscreen(true);
+                  handleReturn();
+                }
+              }}
+            >
+              <Maximize2 className="w-4 h-4" />
+              <span>{fullscreenError ? 'Try Again' : 'Return to Fullscreen'}</span>
+            </Button>
+
+            <p className="text-[11px] text-slate-400 mt-3">
+              Assessment stage: <strong className="capitalize">{activeRound}</strong> • Time remaining: <strong>{formatTime(timeLeft)}</strong>
+            </p>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

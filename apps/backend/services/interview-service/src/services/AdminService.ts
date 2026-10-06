@@ -1,25 +1,111 @@
 import { PrismaClient as InterviewPrisma } from '../generated/client';
-import { PrismaClient as AuthPrisma } from 'd:/MINI_PROJECT/apps/backend/services/auth-service/src/generated/client';
-import { PrismaClient as UserPrisma } from 'd:/MINI_PROJECT/apps/backend/services/user-service/src/generated/client';
-import { PrismaClient as QuestionPrisma } from 'd:/MINI_PROJECT/apps/backend/services/question-bank-service/src/generated/client';
 import http from 'http';
+
+// Domain Interfaces for Cross-Service Queries
+export interface IdentityRoleRelation {
+  role: {
+    id?: string;
+    name: string;
+  };
+}
+
+export interface AuthIdentityRecord {
+  id: string;
+  email: string;
+  roles: IdentityRoleRelation[];
+}
+
+export interface UserProfileRecord {
+  id?: string;
+  identityId: string;
+  firstName?: string | null;
+  lastName?: string | null;
+  adminProfile?: {
+    department?: string | null;
+    designation?: string | null;
+  } | null;
+}
+
+export interface QuestionBankCategoryRecord {
+  id: string;
+  name: string;
+  _count: {
+    questions: number;
+  };
+}
+
+export interface QuestionBankSummaryRecord {
+  id: string;
+  questionType: string;
+  difficulty: string;
+  status: string;
+}
+
+export interface ExecutionRecord {
+  id?: string;
+  runMode?: string;
+  status?: string;
+  passedCount?: number;
+  totalCount?: number;
+  primaryErrorType?: string;
+  compileOutput?: string;
+  stderr?: string;
+  timestamp?: string | Date;
+  language?: string | number;
+}
+
+export interface TabSwitchEventRecord {
+  id?: string;
+  sessionId?: string;
+  durationSeconds?: number;
+  leftAt?: string | Date;
+}
+
+export interface AuthClientInterface {
+  identity: {
+    findUnique(args: { where: { id: string }; include?: any }): Promise<AuthIdentityRecord | null>;
+    findMany(args?: { include?: any }): Promise<AuthIdentityRecord[]>;
+  };
+}
+
+export interface UserClientInterface {
+  profile: {
+    findUnique(args: { where: { identityId: string }; include?: any }): Promise<UserProfileRecord | null>;
+  };
+}
+
+export interface QuestionClientInterface {
+  question: {
+    count(args?: { where?: any }): Promise<number>;
+    findMany(args?: { select?: any; where?: any }): Promise<QuestionBankSummaryRecord[]>;
+  };
+  questionCategory: {
+    findMany(args?: { include?: any }): Promise<QuestionBankCategoryRecord[]>;
+  };
+}
+
+// Database Connection URLs with Production Fallbacks
+const AUTH_DB_URL = process.env.AUTH_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://postgres:9865@localhost:5432/auth_db?schema=public';
+const USER_DB_URL = process.env.USER_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://postgres:9865@localhost:5432/user_db?schema=public';
+const QUESTION_BANK_DB_URL = process.env.QUESTION_BANK_DATABASE_URL || process.env.DATABASE_URL || 'postgresql://postgres:9865@localhost:5432/question_db?schema=public';
 
 // Database Clients (Lazy Initialized Singletons)
 let _interviewPrisma: InterviewPrisma | null = null;
-let _authPrisma: AuthPrisma | null = null;
-let _userPrisma: UserPrisma | null = null;
-let _questionPrisma: QuestionPrisma | null = null;
+let _authPrisma: AuthClientInterface | null = null;
+let _userPrisma: UserClientInterface | null = null;
+let _questionPrisma: QuestionClientInterface | null = null;
 
 function getInterviewPrisma(): InterviewPrisma {
   if (!_interviewPrisma) _interviewPrisma = new InterviewPrisma();
   return _interviewPrisma;
 }
 
-function getAuthPrisma(): AuthPrisma | null {
+function getAuthPrisma(): AuthClientInterface | null {
   if (!_authPrisma) {
     try {
-      _authPrisma = new AuthPrisma({
-        datasources: { db: { url: 'postgresql://postgres:9865@localhost:5432/auth_db?schema=public' } },
+      const { PrismaClient: AuthPrismaClient } = require('../../../auth-service/src/generated/client');
+      _authPrisma = new AuthPrismaClient({
+        datasources: { db: { url: AUTH_DB_URL } },
       });
     } catch {
       _authPrisma = null;
@@ -28,11 +114,12 @@ function getAuthPrisma(): AuthPrisma | null {
   return _authPrisma;
 }
 
-function getUserPrisma(): UserPrisma | null {
+function getUserPrisma(): UserClientInterface | null {
   if (!_userPrisma) {
     try {
-      _userPrisma = new UserPrisma({
-        datasources: { db: { url: 'postgresql://postgres:9865@localhost:5432/user_db?schema=public' } },
+      const { PrismaClient: UserPrismaClient } = require('../../../user-service/src/generated/client');
+      _userPrisma = new UserPrismaClient({
+        datasources: { db: { url: USER_DB_URL } },
       });
     } catch {
       _userPrisma = null;
@@ -41,11 +128,12 @@ function getUserPrisma(): UserPrisma | null {
   return _userPrisma;
 }
 
-function getQuestionPrisma(): QuestionPrisma | null {
+function getQuestionPrisma(): QuestionClientInterface | null {
   if (!_questionPrisma) {
     try {
-      _questionPrisma = new QuestionPrisma({
-        datasources: { db: { url: 'postgresql://postgres:9865@localhost:5432/question_db?schema=public' } },
+      const { PrismaClient: QuestionPrismaClient } = require('../../../question-bank-service/src/generated/client');
+      _questionPrisma = new QuestionPrismaClient({
+        datasources: { db: { url: QUESTION_BANK_DB_URL } },
       });
     } catch {
       _questionPrisma = null;
@@ -72,7 +160,7 @@ function checkServiceHealth(name: string, port: number, route: string = '/health
         path: route,
         timeout: 1500,
       },
-      (res) => {
+      (res: http.IncomingMessage) => {
         const latency = `${Date.now() - start}ms`;
         res.resume();
         resolve({
@@ -108,7 +196,13 @@ export class AdminService {
     const questionPrisma = getQuestionPrisma();
 
     // 1. Authenticated Admin Details
-    let adminProfile: any = {
+    let adminProfile: {
+      fullName: string;
+      email: string;
+      designation: string;
+      department: string;
+      roles: string[];
+    } = {
       fullName: 'System Administrator',
       email: 'admin@nm.edu',
       designation: 'Super Administrator',
@@ -124,7 +218,7 @@ export class AdminService {
         });
         if (adminIdent) {
           adminProfile.email = adminIdent.email;
-          adminProfile.roles = adminIdent.roles.map((r) => r.role.name);
+          adminProfile.roles = adminIdent.roles.map((r: IdentityRoleRelation) => r.role.name);
         }
       } catch (e) {
         console.warn('[AdminService] Admin auth query warn:', e);
@@ -138,7 +232,7 @@ export class AdminService {
           include: { adminProfile: true },
         });
         if (prof) {
-          adminProfile.fullName = `${prof.firstName} ${prof.lastName || ''}`.trim() || 'System Administrator';
+          adminProfile.fullName = `${prof.firstName || ''} ${prof.lastName || ''}`.trim() || 'System Administrator';
           if (prof.adminProfile?.department) adminProfile.department = prof.adminProfile.department;
           if (prof.adminProfile?.designation) adminProfile.designation = prof.adminProfile.designation;
         }
@@ -159,20 +253,20 @@ export class AdminService {
         const allIdentities = await authPrisma.identity.findMany({
           include: { roles: { include: { role: true } } },
         });
-        const clean = allIdentities.filter((i) => !isTestEmail(i.email));
+        const clean = allIdentities.filter((i: AuthIdentityRecord) => !isTestEmail(i.email));
 
-        const studList = clean.filter((i) => i.roles.some((r) => r.role.name === 'STUDENT' || r.role.name === 'CANDIDATE'));
-        const facList = clean.filter((i) => i.roles.some((r) => r.role.name === 'FACULTY'));
-        const admList = clean.filter((i) => i.roles.some((r) => r.role.name === 'ADMINISTRATOR' || r.role.name === 'ADMIN'));
+        const studList = clean.filter((i: AuthIdentityRecord) => i.roles.some((r: IdentityRoleRelation) => r.role.name === 'STUDENT' || r.role.name === 'CANDIDATE'));
+        const facList = clean.filter((i: AuthIdentityRecord) => i.roles.some((r: IdentityRoleRelation) => r.role.name === 'FACULTY'));
+        const admList = clean.filter((i: AuthIdentityRecord) => i.roles.some((r: IdentityRoleRelation) => r.role.name === 'ADMINISTRATOR' || r.role.name === 'ADMIN'));
 
         totalStudents = studList.length;
         totalFaculty = facList.length;
         totalAdmins = admList.length;
         totalUsers = clean.length;
 
-        studList.forEach((s) => {
+        studList.forEach((s: AuthIdentityRecord) => {
           const prefix = s.email.split('@')[0].replace(/[._0-9]+/g, ' ').trim();
-          const name = prefix.split(' ').filter(Boolean).map((w) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || 'Student';
+          const name = prefix.split(' ').filter(Boolean).map((w: string) => w.charAt(0).toUpperCase() + w.slice(1)).join(' ') || 'Student';
           studentIdentitiesMap.set(s.id, { email: s.email, name });
         });
       } catch (e: any) {
@@ -181,7 +275,7 @@ export class AdminService {
     }
 
     // 3. Assessments & Sessions (interview_db)
-    const [interviews, executions, templates] = await Promise.all([
+    const [interviews, executions, templates]: [any[], ExecutionRecord[], any[]] = await Promise.all([
       interviewPrisma.interview.findMany({
         include: { session: true, configuration: true },
         orderBy: { createdAt: 'desc' },
@@ -192,8 +286,8 @@ export class AdminService {
       interviewPrisma.interviewTemplate.findMany().catch(() => []),
     ]);
 
-    const completedInterviews = interviews.filter((i) => i.state === 'COMPLETED' || i.session?.reportSnapshot != null);
-    const inProgressInterviews = interviews.filter((i) => i.state === 'RUNNING' || i.state === 'WAITING');
+    const completedInterviews = interviews.filter((i: any) => i.state === 'COMPLETED' || i.session?.reportSnapshot != null);
+    const inProgressInterviews = interviews.filter((i: any) => i.state === 'RUNNING' || i.state === 'WAITING');
 
     // Finalized scores
     const overallScores: number[] = [];
@@ -202,7 +296,7 @@ export class AdminService {
     const hrScores: number[] = [];
     const dateTrendMap: Record<string, { sum: number; count: number }> = {};
 
-    completedInterviews.forEach((iv) => {
+    completedInterviews.forEach((iv: any) => {
       const rep = iv.session?.reportSnapshot as any;
       if (rep) {
         const ovScore = rep.overallScore ?? rep.metrics?.overallProficiencyScore ?? rep.overallProficiencyScore;
@@ -226,23 +320,23 @@ export class AdminService {
       }
     });
 
-    const avgOverall = overallScores.length > 0 ? Math.round((overallScores.reduce((a, b) => a + b, 0) / overallScores.length) * 10) / 10 : null;
-    const avgAptitude = aptitudeScores.length > 0 ? Math.round((aptitudeScores.reduce((a, b) => a + b, 0) / aptitudeScores.length) * 10) / 10 : null;
-    const avgCoding = codingScores.length > 0 ? Math.round((codingScores.reduce((a, b) => a + b, 0) / codingScores.length) * 10) / 10 : null;
-    const avgHr = hrScores.length > 0 ? Math.round((hrScores.reduce((a, b) => a + b, 0) / hrScores.length) * 10) / 10 : null;
+    const avgOverall = overallScores.length > 0 ? Math.round((overallScores.reduce((a: number, b: number) => a + b, 0) / overallScores.length) * 10) / 10 : null;
+    const avgAptitude = aptitudeScores.length > 0 ? Math.round((aptitudeScores.reduce((a: number, b: number) => a + b, 0) / aptitudeScores.length) * 10) / 10 : null;
+    const avgCoding = codingScores.length > 0 ? Math.round((codingScores.reduce((a: number, b: number) => a + b, 0) / codingScores.length) * 10) / 10 : null;
+    const avgHr = hrScores.length > 0 ? Math.round((hrScores.reduce((a: number, b: number) => a + b, 0) / hrScores.length) * 10) / 10 : null;
 
     // Platform Activity Trend
     const platformTrend = Object.keys(dateTrendMap)
       .sort()
-      .map((date) => ({
+      .map((date: string) => ({
         date,
         averageScore: Math.round((dateTrendMap[date].sum / dateTrendMap[date].count) * 10) / 10,
         assessmentsCount: dateTrendMap[date].count,
       }));
 
     // 4. Coding Executions Analysis (Strict RUN vs SUBMIT separation)
-    const runExecutions = executions.filter((e: any) => e.runMode === 'RUN' || e.runMode === 'CUSTOM_RUN');
-    const submitExecutions = executions.filter((e: any) => e.runMode === 'SUBMIT');
+    const runExecutions = executions.filter((e: ExecutionRecord) => e.runMode === 'RUN' || e.runMode === 'CUSTOM_RUN');
+    const submitExecutions = executions.filter((e: ExecutionRecord) => e.runMode === 'SUBMIT');
 
     let totalTestsPassed = 0;
     let totalTestsCount = 0;
@@ -254,11 +348,11 @@ export class AdminService {
       timeLimitExceeded: 0,
     };
 
-    submitExecutions.forEach((e: any) => {
+    submitExecutions.forEach((e: ExecutionRecord) => {
       totalTestsPassed += e.passedCount || 0;
       totalTestsCount += e.totalCount || 0;
 
-      const isPassed = e.status === 'PASSED' || (e.passedCount > 0 && e.passedCount === e.totalCount);
+      const isPassed = e.status === 'PASSED' || (typeof e.passedCount === 'number' && e.passedCount > 0 && e.passedCount === e.totalCount);
       if (isPassed) {
         verdictDistribution.accepted++;
       } else if (e.status === 'COMPILATION_ERROR' || e.primaryErrorType === 'COMPILATION_ERROR' || (e.compileOutput && e.compileOutput.trim().length > 0)) {
@@ -313,8 +407,8 @@ export class AdminService {
           archivedQuestions: totalQ - publishedQ,
           categoriesCount: categoriesList.length,
           categories: categoriesList
-            .map((c) => ({ name: c.name, count: c._count.questions }))
-            .sort((a, b) => b.count - a.count)
+            .map((c: QuestionBankCategoryRecord) => ({ name: c.name, count: c._count.questions }))
+            .sort((a: { count: number }, b: { count: number }) => b.count - a.count)
             .slice(0, 8),
         };
       } catch (e: any) {
@@ -339,7 +433,7 @@ export class AdminService {
     }> = [];
 
     // Add recent completed assessments
-    completedInterviews.slice(0, 5).forEach((iv) => {
+    completedInterviews.slice(0, 5).forEach((iv: any) => {
       const rep = iv.session?.reportSnapshot as any;
       const studentInfo = studentIdentitiesMap.get(iv.identityId);
       const studentName = studentInfo?.name || 'Student';
@@ -352,25 +446,25 @@ export class AdminService {
         description: `${iv.title || 'Campus Placement Assessment'} • Overall Score: ${score !== undefined ? `${score}%` : 'Pending'}`,
         timestamp: new Date(iv.session?.finishedAt || iv.updatedAt || iv.createdAt).toISOString(),
         badge: score !== undefined ? `${score}%` : 'Finalized',
-        badgeVariant: score >= 50 ? 'success' : 'warning',
+        badgeVariant: typeof score === 'number' && score >= 50 ? 'success' : 'warning',
       });
     });
 
     // Add recent official code submissions
-    submitExecutions.slice(0, 4).forEach((e: any) => {
+    submitExecutions.slice(0, 4).forEach((e: ExecutionRecord) => {
       recentActivities.push({
         id: `exec-${e.id}`,
         type: 'CODE_SUBMITTED',
         title: `Official Code Submission (${e.language || 'Code'})`,
         description: `Verdict: ${e.status || 'EVALUATED'} • Passed Tests: ${e.passedCount || 0}/${e.totalCount || 0}`,
-        timestamp: new Date(e.timestamp).toISOString(),
+        timestamp: new Date(e.timestamp || Date.now()).toISOString(),
         badge: e.status || 'SUBMITTED',
         badgeVariant: e.status === 'PASSED' ? 'success' : 'warning',
       });
     });
 
     // Sort recent activities chronologically
-    recentActivities.sort((a, b) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
+    recentActivities.sort((a: { timestamp: string }, b: { timestamp: string }) => new Date(b.timestamp).getTime() - new Date(a.timestamp).getTime());
 
     // 8. Live System Health Probes
     const healthProbes = await Promise.all([
@@ -466,7 +560,7 @@ export class AdminService {
       recentActivities: recentActivities.slice(0, 8),
       systemHealth: {
         services: healthProbes,
-        overallStatus: healthProbes.every((p) => p.status === 'Healthy') ? 'OPTIMAL' : 'OPERATIONAL',
+        overallStatus: healthProbes.every((p: { status: string }) => p.status === 'Healthy') ? 'OPTIMAL' : 'OPERATIONAL',
         databaseStatus: 'CONNECTED',
       },
       attentionItems,
@@ -506,7 +600,7 @@ export class AdminService {
       dbLatency = 'N/A';
     }
 
-    const healthyCount = healthProbes.filter((p) => p.status === 'Healthy').length;
+    const healthyCount = healthProbes.filter((p: { status: string }) => p.status === 'Healthy').length;
     let overallStatus: 'HEALTHY' | 'DEGRADED' | 'OFFLINE' = 'HEALTHY';
     if (healthyCount === 0 || dbStatus === 'DISCONNECTED') {
       overallStatus = 'OFFLINE';
@@ -530,7 +624,7 @@ export class AdminService {
         isUsed: false,
         reason: 'Stateless JWT Architecture (No caching layer or Redis broker required)',
       },
-      services: healthProbes.map((p) => ({
+      services: healthProbes.map((p: { name: string; port: number; status: string; latency: string }) => ({
         ...p,
         url: `http://localhost:${p.port}`,
         lastChecked: new Date().toISOString(),
@@ -585,7 +679,7 @@ export class AdminService {
       interviewWhere.interviewType = query.assessmentType;
     }
 
-    const [interviews, executions, allIdentities, questions, tabSwitches] = await Promise.all([
+    const [interviews, executions, allIdentities, questions, tabSwitches]: [any[], ExecutionRecord[], AuthIdentityRecord[], QuestionBankSummaryRecord[], TabSwitchEventRecord[]] = await Promise.all([
       interviewPrisma.interview.findMany({
         where: interviewWhere,
         include: { session: true, configuration: true },
@@ -606,12 +700,12 @@ export class AdminService {
       }).catch(() => []),
     ]);
 
-    const cleanIdentities = allIdentities.filter((i: any) => !isTestEmail(i.email));
-    const totalStudents = cleanIdentities.filter((i: any) => i.roles.some((r: any) => r.role.name === 'STUDENT')).length;
-    const totalFaculty = cleanIdentities.filter((i: any) => i.roles.some((r: any) => r.role.name === 'FACULTY')).length;
+    const cleanIdentities = allIdentities.filter((i: AuthIdentityRecord) => !isTestEmail(i.email));
+    const totalStudents = cleanIdentities.filter((i: AuthIdentityRecord) => i.roles.some((r: IdentityRoleRelation) => r.role.name === 'STUDENT')).length;
+    const totalFaculty = cleanIdentities.filter((i: AuthIdentityRecord) => i.roles.some((r: IdentityRoleRelation) => r.role.name === 'FACULTY')).length;
 
-    const completed = interviews.filter((i) => i.state === 'COMPLETED' || i.session?.reportSnapshot != null);
-    const inProgress = interviews.filter((i) => i.state === 'RUNNING' || i.state === 'WAITING');
+    const completed = interviews.filter((i: any) => i.state === 'COMPLETED' || i.session?.reportSnapshot != null);
+    const inProgress = interviews.filter((i: any) => i.state === 'RUNNING' || i.state === 'WAITING');
 
     // Score distributions
     const overallScores: number[] = [];
@@ -620,7 +714,7 @@ export class AdminService {
     const hrScores: number[] = [];
     const dailyMap: Record<string, { total: number; completed: number; sumScore: number; scoreCount: number }> = {};
 
-    interviews.forEach((iv) => {
+    interviews.forEach((iv: any) => {
       const dStr = new Date(iv.createdAt).toISOString().split('T')[0];
       if (!dailyMap[dStr]) dailyMap[dStr] = { total: 0, completed: 0, sumScore: 0, scoreCount: 0 };
       dailyMap[dStr].total++;
@@ -648,16 +742,16 @@ export class AdminService {
       }
     });
 
-    const averageOverall = overallScores.length > 0 ? Math.round((overallScores.reduce((a, b) => a + b, 0) / overallScores.length) * 10) / 10 : 0;
-    const averageAptitude = aptitudeScores.length > 0 ? Math.round((aptitudeScores.reduce((a, b) => a + b, 0) / aptitudeScores.length) * 10) / 10 : 0;
-    const averageCoding = codingScores.length > 0 ? Math.round((codingScores.reduce((a, b) => a + b, 0) / codingScores.length) * 10) / 10 : 0;
-    const averageHr = hrScores.length > 0 ? Math.round((hrScores.reduce((a, b) => a + b, 0) / hrScores.length) * 10) / 10 : 0;
+    const averageOverall = overallScores.length > 0 ? Math.round((overallScores.reduce((a: number, b: number) => a + b, 0) / overallScores.length) * 10) / 10 : 0;
+    const averageAptitude = aptitudeScores.length > 0 ? Math.round((aptitudeScores.reduce((a: number, b: number) => a + b, 0) / aptitudeScores.length) * 10) / 10 : 0;
+    const averageCoding = codingScores.length > 0 ? Math.round((codingScores.reduce((a: number, b: number) => a + b, 0) / codingScores.length) * 10) / 10 : 0;
+    const averageHr = hrScores.length > 0 ? Math.round((hrScores.reduce((a: number, b: number) => a + b, 0) / hrScores.length) * 10) / 10 : 0;
     const completionRate = interviews.length > 0 ? Math.round((completed.length / interviews.length) * 1000) / 10 : 0;
 
     // Timeline trend
     const timelineTrend = Object.keys(dailyMap)
       .sort()
-      .map((date) => ({
+      .map((date: string) => ({
         date,
         interviewsCount: dailyMap[date].total,
         completedCount: dailyMap[date].completed,
@@ -665,8 +759,8 @@ export class AdminService {
       }));
 
     // Coding analytics
-    const submitExecs = executions.filter((e: any) => e.runMode === 'SUBMIT');
-    const runExecs = executions.filter((e: any) => e.runMode === 'RUN' || e.runMode === 'CUSTOM_RUN');
+    const submitExecs = executions.filter((e: ExecutionRecord) => e.runMode === 'SUBMIT');
+    const runExecs = executions.filter((e: ExecutionRecord) => e.runMode === 'RUN' || e.runMode === 'CUSTOM_RUN');
     let totalTestsPassed = 0;
     let totalTestsCount = 0;
     const verdictDistribution = {
@@ -678,7 +772,7 @@ export class AdminService {
     };
     const languageMap: Record<string, number> = {};
 
-    submitExecs.forEach((e: any) => {
+    submitExecs.forEach((e: ExecutionRecord) => {
       totalTestsPassed += e.passedCount || 0;
       totalTestsCount += e.totalCount || 0;
 
@@ -686,7 +780,7 @@ export class AdminService {
       const langName = lang === '71' ? 'Python' : lang === '62' ? 'Java' : lang === '54' ? 'C++' : lang === '63' || lang === '93' ? 'JavaScript' : lang;
       languageMap[langName] = (languageMap[langName] || 0) + 1;
 
-      const isPassed = e.status === 'PASSED' || (e.passedCount > 0 && e.passedCount === e.totalCount);
+      const isPassed = e.status === 'PASSED' || (typeof e.passedCount === 'number' && e.passedCount > 0 && e.passedCount === e.totalCount);
       if (isPassed) {
         verdictDistribution.accepted++;
       } else if (e.status === 'COMPILATION_ERROR' || e.primaryErrorType === 'COMPILATION_ERROR') {
@@ -704,17 +798,17 @@ export class AdminService {
     const testCasePassRate = totalTestsCount > 0 ? Math.round((totalTestsPassed / totalTestsCount) * 1000) / 10 : 0;
 
     // Language breakdown array
-    const languages = Object.keys(languageMap).map((name) => ({
+    const languages = Object.keys(languageMap).map((name: string) => ({
       name,
       count: languageMap[name],
       percentage: submitExecs.length > 0 ? Math.round((languageMap[name] / submitExecs.length) * 100) : 0,
     }));
 
     // Question bank distribution
-    const publishedQuestions = questions.filter((q: any) => q.status === 'PUBLISHED');
+    const publishedQuestions = questions.filter((q: QuestionBankSummaryRecord) => q.status === 'PUBLISHED');
     const questionsByType: Record<string, number> = {};
     const questionsByDifficulty: Record<string, number> = { EASY: 0, MEDIUM: 0, HARD: 0, EXPERT: 0 };
-    publishedQuestions.forEach((q: any) => {
+    publishedQuestions.forEach((q: QuestionBankSummaryRecord) => {
       questionsByType[q.questionType] = (questionsByType[q.questionType] || 0) + 1;
       if (questionsByDifficulty[q.difficulty] !== undefined) {
         questionsByDifficulty[q.difficulty]++;
@@ -723,8 +817,8 @@ export class AdminService {
 
     // Proctoring Metrics
     const totalSwitches = tabSwitches.length;
-    const totalAwaySecs = tabSwitches.reduce((sum: number, ev: any) => sum + (ev.durationSeconds || 0), 0);
-    const sessionsWithSwitches = new Set(tabSwitches.map((ev: any) => ev.sessionId)).size;
+    const totalAwaySecs = tabSwitches.reduce((sum: number, ev: TabSwitchEventRecord) => sum + (ev.durationSeconds || 0), 0);
+    const sessionsWithSwitches = new Set(tabSwitches.map((ev: TabSwitchEventRecord) => ev.sessionId)).size;
 
     return {
       dateRange: range,

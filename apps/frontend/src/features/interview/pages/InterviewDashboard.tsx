@@ -18,10 +18,12 @@ import { PageHeader } from '../../../components/shared/PageHeader';
 import { StatCard } from '../../../components/shared/StatCard';
 import { StatusBadge } from '../../../components/ui/badge';
 import { InterviewService } from '../services/interview.service';
+import { requestAssessmentFullscreen } from '../utils/fullscreen';
 
 export const InterviewDashboard = () => {
   const navigate = useNavigate();
   const [isCreating, setIsCreating] = useState(false);
+
   const [interviews, setInterviews] = useState<any[]>([]);
   const [templates, setTemplates] = useState<any[]>([]);
 
@@ -41,6 +43,7 @@ export const InterviewDashboard = () => {
       setIsCreating(true);
       const res = await api.post('/interviews/practice');
       if (res.data && res.data.id) {
+        await requestAssessmentFullscreen();
         navigate(`/student/interviews/session/${res.data.id}`);
       }
     } catch (err) {
@@ -55,6 +58,7 @@ export const InterviewDashboard = () => {
       setIsCreating(true);
       const res = await api.post(`/interviews/templates/${templateId}/start`);
       if (res.data && res.data.id) {
+        await requestAssessmentFullscreen();
         navigate(`/student/interviews/session/${res.data.id}`);
       }
     } catch (err) {
@@ -62,6 +66,11 @@ export const InterviewDashboard = () => {
     } finally {
       setIsCreating(false);
     }
+  };
+
+  const handleEnterSession = async (sessionId: string) => {
+    await requestAssessmentFullscreen();
+    navigate(`/student/interviews/session/${sessionId}`);
   };
 
   const completedInterviews = interviews.filter((i) => i.state === 'COMPLETED');
@@ -283,7 +292,7 @@ export const InterviewDashboard = () => {
                     ) : (
                       <Button
                         size="sm"
-                        onClick={() => navigate(`/student/interviews/session/${interview.id}`)}
+                        onClick={() => handleEnterSession(interview.id)}
                         rightIcon={<Play className="h-3.5 w-3.5 fill-current" />}
                       >
                         Enter Assessment

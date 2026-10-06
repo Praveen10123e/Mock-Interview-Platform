@@ -1,6 +1,7 @@
 import React from 'react';
 import { Video, Mic, Brain, MessageSquare, Users, Briefcase, ChevronRight, Star, Clock, Award, Maximize2 } from 'lucide-react';
 import { initSpeechEngine } from '../../services/hrSpeechService';
+import { requestAssessmentFullscreen } from '../../utils/fullscreen';
 
 interface HREntryCardProps {
   onStart: () => void;
@@ -23,21 +24,8 @@ export const HREntryCard: React.FC<HREntryCardProps> = ({ onStart }) => {
     initSpeechEngine('start-assessment-click');
     console.log('[HR-TTS-TRACE] INIT_SPEECH_ENGINE_END');
 
-    // Request fullscreen asynchronously in background without blocking synchronous user gesture
-    try {
-      if (!document.fullscreenElement) {
-        const elem = document.documentElement;
-        if (elem.requestFullscreen) {
-          elem.requestFullscreen().catch((err) => {
-            console.warn('Fullscreen request bypassed/rejected:', err);
-          });
-        } else if ((elem as any).webkitRequestFullscreen) {
-          (elem as any).webkitRequestFullscreen();
-        }
-      }
-    } catch (e) {
-      console.warn('Fullscreen error:', e);
-    }
+    // Ensure assessment fullscreen is active
+    requestAssessmentFullscreen().catch((e) => console.warn('Fullscreen check warning:', e));
 
     // Synchronous transition within the user gesture event
     onStart();

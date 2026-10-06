@@ -4,6 +4,7 @@ import { Card, CardHeader, CardTitle, CardContent } from '../../../components/ui
 import { Button } from '../../../components/ui/button';
 import { PageHeader } from '../../../components/shared/PageHeader';
 import { Camera, Mic, Monitor, Wifi, CheckCircle2, AlertCircle, Play, ShieldAlert } from 'lucide-react';
+import { requestAssessmentFullscreen } from '../utils/fullscreen';
 
 export const InterviewLobby: React.FC = () => {
   const { id } = useParams();
@@ -55,7 +56,8 @@ export const InterviewLobby: React.FC = () => {
     setIsChecking(false);
   };
 
-  const handleStartInterview = () => {
+  const handleStartInterview = async () => {
+    await requestAssessmentFullscreen();
     navigate(`/student/interviews/session/${id}`);
   };
 

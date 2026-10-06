@@ -9,6 +9,14 @@ export const PortalLayout: FC = () => {
   const location = useLocation();
   const isInterviewSession = location.pathname.includes('/interviews/session');
 
+  if (isInterviewSession) {
+    return (
+      <div className="h-screen w-screen overflow-hidden bg-bg font-sans">
+        <Outlet />
+      </div>
+    );
+  }
+
   return (
     <div className="flex h-screen w-screen overflow-hidden bg-bg font-sans">
       <Sidebar 
