@@ -7,8 +7,18 @@ import fs from 'fs';
 import path from 'path';
 
 let publicKey: string;
+
 try {
-  publicKey = fs.readFileSync(path.resolve(__dirname, '../../../../../keys/public.pem'), 'utf8');
+  const publicKeyFromEnv = process.env.JWT_PUBLIC_KEY;
+
+  if (publicKeyFromEnv) {
+    publicKey = publicKeyFromEnv.replace(/\\n/g, '\n');
+  } else {
+    publicKey = fs.readFileSync(
+      path.resolve(__dirname, '../../../../../keys/public.pem'),
+      'utf8'
+    );
+  }
 } catch (e: any) {
   console.warn('Could not load public key for Gateway auth validation', e.message);
 }
