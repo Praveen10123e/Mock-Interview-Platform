@@ -21,12 +21,53 @@ app.use(helmet());
 app.use(cors());
 app.use(express.json({ limit: '10mb' }));
 
-app.get('/health', async (req, res) => {
+// ─── HEALTH & READINESS PROBES ────────────────────────────────────────────────
+
+// Liveness probe (process is running)
+app.get('/health/live', (req, res) => {
+  res.status(200).json({
+    status: 'ok',
+    service: 'question-bank-service',
+    uptime: process.uptime(),
+    timestamp: new Date().toISOString(),
+  });
+});
+
+// Readiness & Primary Health probe (verifies database connectivity and schema availability)
+app.get(['/health', '/health/ready'], async (req, res) => {
   try {
+    // 1. Verify database connection
     await prisma.$queryRaw`SELECT 1`;
-    res.json({ status: 'healthy', service: 'question-bank-service', database: 'connected' });
-  } catch (err) {
-    res.status(500).json({ status: 'unhealthy', error: 'Database disconnected' });
+
+    // 2. Verify critical schema availability via catalog lookup (zero table-scan/lock overhead)
+    const tableCheck = await prisma.$queryRaw<Array<{ exists: boolean }>>`
+      SELECT (to_regclass('public."Question"') IS NOT NULL) AS exists
+    `;
+    const tableExists = tableCheck?.[0]?.exists ?? false;
+
+    if (!tableExists) {
+      return res.status(503).json({
+        status: 'degraded',
+        service: 'question-bank-service',
+        database: 'connected',
+        schema: 'uninitialized',
+        error: 'Required schema table public."Question" does not exist in the database. Pending migrations must be applied.',
+      });
+    }
+
+    return res.status(200).json({
+      status: 'healthy',
+      service: 'question-bank-service',
+      database: 'connected',
+      schema: 'ready',
+    });
+  } catch (err: any) {
+    return res.status(500).json({
+      status: 'unhealthy',
+      service: 'question-bank-service',
+      database: 'disconnected',
+      error: 'Database connection failed',
+    });
   }
 });
 
